@@ -35,8 +35,8 @@ export default function Sidebar() {
             
             {/* 1. Header and Toggle Button */}
             <div className="flex justify-between items-center mb-8">
-                <h1 className={`text-xl font-bold text-indigo-600 dark:text-indigo-400 ${isExpanded ? 'opacity-100' : 'opacity-0 w-0 h-0'} transition-opacity duration-300 overflow-hidden`}>
-                    TaskLinex
+                <h1 className={`text-2xl  font-bold text-gray-400 dark:text-white ${isExpanded ? 'opacity-100' : 'opacity-0 w-0 h-0'} transition-opacity duration-300 overflow-hidden`}>
+                    Task<span className='text-indigo-400 dark:text-indigo-500'>Linex</span>
                 </h1>
                 <button
                     onClick={toggleSidebar}

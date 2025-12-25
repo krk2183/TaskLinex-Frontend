@@ -1,13 +1,17 @@
+"use client";   
+
 import { Zap, Clock, AlertTriangle, CheckCircle, XCircle, ArrowRight, CornerDownRight, BarChart3, TrendingUp, TrendingDown } from 'lucide-react';
+import { useState } from 'react';
 
 // --- MOCK DATA FOR ILLUSTRATION ---
 const mockSystemState = 'At Risk'; // 'On Track', 'At Risk', 'Stalled'
 
 const mockCommand = {
-    title: 'Review Project X architecture overhaul',
+    title: 'Forge.AI - V1   ',
     rationale: 'System requires immediate human approval to proceed with deployment stage.',
     urgency: 'Critical',
 };
+
 
 const mockQueue = [
     { title: 'Finalize quarterly financial report', urgency: 'Deadline' },
@@ -46,6 +50,20 @@ const SystemStatusPill = ({ status }) => {
     );
 };
 
+// Add this helper function
+const getUrgencyConfig = (urgency) => {
+    switch (urgency) {
+        case 'Critical':
+            return { icon: Zap, color: 'text-rose-500', bg: 'bg-rose-500/10' };
+        case 'Overdue':
+            return { icon: AlertTriangle, color: 'text-amber-500', bg: 'bg-amber-500/10' };
+        case 'Deadline':
+            return { icon: Clock, color: 'text-indigo-500', bg: 'bg-indigo-500/10' };
+        default:
+            return { icon: CheckCircle, color: 'text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800' };
+    }
+};
+
 // Urgency Icons
 const UrgencyIcon = ({ type }) => {
     switch (type) {
@@ -80,9 +98,27 @@ const PrimaryActionButton = ({ command }) => {
 };
 
 
+
 // 1. Command (Primary Execution Surface)
-const CommandSurface = ({ command }) => {
+interface CommandProps {
+    title: string;
+    rationale: string;
+    urgency: string;
+    nextStep: string;
+    steptitle: string;     
+    reasoning: string;    
+    progress: number;     
+    isUrgent?: boolean;
+}
+
+const handlePress = (): void=>{
+    alert('Hello');
+}
+
+const CommandSurface = ({ command }: {command: CommandProps | null}) => {
     // 5. Failure & Empty State Messaging (replaces Command)
+    const [isNoteOpen, setIsNoteOpen] = useState(false);
+    const [note,setNote] = useState("");
     if (!command) {
         return (
             <div className="bg-gray-100 dark:bg-gray-800 p-10 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700 text-center">
@@ -96,28 +132,97 @@ const CommandSurface = ({ command }) => {
             </div>
         );
     }
+    const urgencyStyle = getUrgencyConfig(command.urgency);
+    const UrgencyIconComp = urgencyStyle.icon;
+    // const upnext = fetch('Organizing code documentation');
 
     return (
-        <div className="bg-white dark:bg-gray-900 p-10 rounded-2xl shadow-2xl border-l-4 border-indigo-500 relative">
-            {/* Urgency Indicator top-right */}
-            <div className="absolute top-6 right-8">
-                <div className="flex items-center space-x-1.5 px-3 py-1 bg-rose-500/10 rounded-full text-rose-500 font-semibold text-sm">
-                    <Zap className="w-3.5 h-3.5" />
-                    <span>{command.urgency}</span>
+        <div className="bg-white dark:bg-gray-900 p-10 rounded-2xl shadow-2xl border-l-5 border-r-5 border-indigo-500 relative">
+            {/* ... Urgency and Title sections remain the same ... */}
+            
+            <div className="mb-10 w-full lg:w-[40%]">
+                {/* PROGRESS SECTION */}
+                <div className="flex items-center gap-2 mb-4">
+                    <div className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                    <span className="text-xs font-black uppercase tracking-widest text-indigo-500">
+                        {command.nextStep ?? 'Enhance clarity'}
+                    </span>
+                </div>
+                
+                <progress 
+                    value={command.progress ?? 60} 
+                    max={100}
+                    className="w-full h-3 rounded-full overflow-hidden accent-indigo-500 appearance-none bg-gray-100 dark:bg-gray-800 [&::-webkit-progress-bar]:bg-gray-100 dark:[&::-webkit-progress-bar]:bg-gray-800 [&::-webkit-progress-value]:bg-indigo-500"
+                />
+
+                {/* THE MAIN BOX WRAPPER */}
+                <div className="relative mt-12">
+                    
+                    {/* PRIMARY BOX */}
+                    <div className="p-6 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-800 shadow-sm">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                                <div className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                                <span className="text-xs font-black uppercase tracking-widest text-indigo-500">
+                                    {command.nextStep ?? 'Enhance clarity'}
+                                </span>
+                            </div>
+
+                            <button 
+                                type="button"
+                                onClick={() => setIsNoteOpen(!isNoteOpen)}
+                                className={`flex items-center justify-center w-8 h-8 rounded-full transition-all duration-300 shadow-md
+                                    ${isNoteOpen ? 'bg-indigo-500 text-white rotate-45' : 'bg-white dark:bg-gray-700 text-indigo-600 hover:scale-110'}`}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="3" stroke="currentColor" className="w-4 h-4">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                </svg>
+                            </button>
+                        </div>
+                        
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                            {command.steptitle ?? 'Page 2 is overly vague'}
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 leading-relaxed">
+                            {command.reasoning ?? 'The Overlay function has been skimmed over instead of having its features broken down'}
+                        </p>
+                    </div>
+
+                    {/* FLOATING MESSAGE FIELD */}
+                    {isNoteOpen && (
+                        <div className="absolute top-0 left-[105%] w-72 z-50 animate-in fade-in zoom-in-95 slide-in-from-left-4 duration-300">
+                            {/* The Speech Bubble Arrow */}
+                            <div className="absolute top-8 -left-2 w-4 h-4 bg-white dark:bg-gray-800 border-l border-t border-gray-200 dark:border-gray-700 rotate-[-45deg] z-0" />
+                            
+                            {/* The Note Card */}
+                            <div className="relative bg-white/80 dark:bg-gray-800/90 backdrop-blur-xl p-5 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <span className="text-[10px] font-bold uppercase text-indigo-500">New Annotation</span>
+                                </div>
+                                
+                                <textarea 
+                                    autoFocus
+                                    value={note}
+                                    onChange={(e) => setNote(e.target.value)}
+                                    placeholder="Type a note..."
+                                    className="w-full min-h-[100px] bg-transparent border-none p-0 text-sm text-gray-800 dark:text-gray-200 placeholder:text-gray-400 focus:ring-0 outline-none resize-none"
+                                />
+
+                                <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                                    <span className="text-[9px] text-gray-400 uppercase tracking-tighter font-medium">Draft Saved</span>
+                                    <button 
+                                        onClick={() => setIsNoteOpen(false)}
+                                        className="text-[10px] font-bold text-indigo-600 hover:text-indigo-400"
+                                    >
+                                        Done
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
-            {/* Title top-left (largest typography on page) */}
-            <h2 className="text-5xl font-extrabold text-gray-900 dark:text-white pr-32 leading-tight">
-                {command.title}
-            </h2>
-
-            {/* Rationale directly under title, smaller text */}
-            <p className="text-xl text-gray-600 dark:text-gray-400 mt-4 mb-10">
-                {command.rationale}
-            </p>
-
-            {/* 4. Primary Action Control */}
             <PrimaryActionButton command={command} />
         </div>
     );
@@ -182,21 +287,15 @@ export default function HomePage() {
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-950 p-8">
-            <div className="max-w-4xl mx-auto py-8">
+            <h1 className="text-4xl font-extrabold text-gray-900 dark:text-white tracking-tight">
+                TaskLinex <span className="text-indigo-400 dark:text-indigo-500">Pulse</span>
+            </h1>
+            <div className="w-4/5 mx-auto py-8">
                 <div className="flex justify-between items-center mb-10">
-                    {/* Main title */}
-                    <h1 className="text-4xl font-extrabold text-gray-900 dark:text-white tracking-tight">
-                        Tasklinex <span className="text-indigo-600 dark:text-indigo-400">Pulse</span>
-                    </h1>
-
-                    {/* 3. System Status Indicator */}
-                    <SystemStatusPill status={mockSystemState} />
+                    {/* System Status could go here */}
                 </div>
-
-                {/* 1. Command (Primary Execution Surface) */}
+                
                 <CommandSurface command={currentCommand} />
-
-                {/* 2. Execution Queue (Immediate Continuation) */}
                 {currentCommand && (
                     <ExecutionQueue queue={currentQueue} />
                 )}
