@@ -14,9 +14,14 @@ const mockCommand = {
     steptitle: 'Exigent matter detected',  
     current:'Enhance Clarity',
     reasoning: 'System has detected an anomaly with model outputs.',  
-    progress: 75 
+    progress: 53
 };
 
+const mockaccount_credent = {
+    name:'Matthew',
+    occupation:'Board Director',
+    availability:'Available',
+}
 
 const mockQueue = [
     { title: 'Finalize quarterly financial report', urgency: 'Deadline' },
@@ -54,18 +59,31 @@ const SystemStatusPill = ({ status }) => {
     );
 };
 
+
+//🔣🔣🔣 ICONS 🔣🔣🔣
 const getUrgencyConfig = (urgency) => {
     switch (urgency) {
         case 'Critical':
             return { icon: Zap, color: 'text-red-800', bg: 'bg-red-800' };
         case 'Overdue':
             return { icon: AlertTriangle, color: 'text-amber-800', bg: 'bg-amber-800/10' };
-        case 'Deadline': //MAKE IT BLINK AT DEADLINE
-            return { icon: Clock, color: 'text-yellow-800', bg: 'bg-yellow-600' };
+        case 'Deadline': //Blinks at Deadline
+            return { icon: Clock, color: 'text-red-800', bg: 'bg-red-600 animate-pulse' };
         default:
             return { icon: CheckCircle, color: 'text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800' };
     }
 };
+
+const getAvailability = (availability) => {
+    switch(availability) {
+        case 'Available':
+            return "bg-emerald-400 animate-pulse shadow-[0_0_20px_rgba(52,211,153,0.8)]";
+        case 'Busy':
+            return "bg-orange-500 animate-pulse";
+        default:
+            return 'bg-gray-600';
+    }
+}
  
 // Urgency Icons
 const UrgencyIcon = ({ type }) => {
@@ -134,16 +152,56 @@ const CommandSurface = ({ command }: {command: CommandProps | null}) => {
         );
     }
     const urgencyStyle = getUrgencyConfig(command.urgency);
+    const nexturgencystyle = getUrgencyConfig(command.nexturgency);
     const UrgencyIconComp = urgencyStyle.icon;
     // const upnext = fetch('Organizing code documentation');
 
     return (
+        <>
+        {/* ACCOUNTS WRAPPER */}
+        <div className="bg-[#0A0E17] border border-[#1e2638] p-6 rounded-xl shadow-2xl relative mb-5 flex items-center justify-between w-full">
+        
+        <div className="flex items-center gap-4">
+            {/* PFP ADDED*/}
+            <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-purple-600 to-blue-500 flex-shrink-0 overflow-hidden border-2 border-gray-800">
+            <img 
+                src="https://via.placeholder.com/150" 
+                alt="PFP" 
+                className="w-full h-full object-cover"
+            />
+            </div>
+
+            {/* Account Name */}
+            <div>
+            <h2 className="text-white font-bold text-lg tracking-tight">{mockaccount_credent.name}</h2>
+            <p className="text-gray-500 text-xs uppercase tracking-widest">{mockaccount_credent.occupation}</p>
+            </div>
+        </div>
+
+        {/* Right Section: Status Dot */}
+        <div className="flex items-center gap-2 bg-[#121620] px-3 py-1 rounded-full border border-gray-800">
+            {/* Change 'bg-green-500' to 'bg-orange-500' or 'bg-red-500' 
+                based on availability state 
+            */}
+            <span className="relative flex h-3 w-3">
+            <span className={`absolute inline-flex h-full w-full rounded-full ${getAvailability(mockaccount_credent.availability)} opacity-75`}></span>
+             <span className={`relative inline-flex rounded-full h-3 w-3 {getAvailability(mockaccount_credent.availability)}`}></span> {/*FIX THIS */}
+            </span>
+            <span className="text-gray-300 text-sm font-medium">{mockaccount_credent.availability}</span>
+        </div>
+
+        </div>
+
+
+
+
+
         <div className="bg-white dark:bg-gray-900 p-10 rounded-2xl shadow-2xl border-l-5 border-r-5 border-indigo-500 relative">
+            
             {/* <div className='absolute top-8 right-10'>
                 <div className='flex items-center gap-1.5 px-4 py-2 rounded-full font-bold text-xs uppercase tacking-wider '></div>
             </div> */}
-
-
+        
 
          <div className="absolute top-8 right-10">
                 <div className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full font-bold text-xs uppercase tracking-wider shadow-sm ${urgencyStyle.bg} ${urgencyStyle.text}`}>
@@ -152,6 +210,7 @@ const CommandSurface = ({ command }: {command: CommandProps | null}) => {
                 </div>
         </div>
 
+        
         
 
         <div className="max-w-2xl">
@@ -172,6 +231,8 @@ const CommandSurface = ({ command }: {command: CommandProps | null}) => {
                     <span className="text-xs font-black uppercase tracking-widest text-indigo-500">
                         {command.current ?? 'Enhance clarity'}
                     </span>
+
+                    <div className='ml-55 text-[13px]'>{command.progress}%</div>
                 </div>
                 
                 <progress 
@@ -191,10 +252,18 @@ const CommandSurface = ({ command }: {command: CommandProps | null}) => {
                                 <span className="text-xs font-black uppercase tracking-widest text-indigo-500">
                                     {command.nextStep ?? 'Enhance clarity'}
                                 </span>
-                                <div className='40'>
+                                {/* INNER ALERT */}
+                                <div className={`ml-2 text-[12px] rounded-full py-0.4 px-1.5 ${nexturgencystyle.bg}`}>
                                     <span>{command.nexturgency}</span>
                                 </div>
                             </div>
+
+                            {/* <div className="absolute top-7 right-40">
+                                    <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider shadow-sm ${urgencyStyle.bg} ${urgencyStyle.text}`}>
+
+                                        <span>{command.urgency ?? 'Standard'}</span>
+                                    </div>
+                            </div> */}
 
                             <button 
                                 type="button"
@@ -252,6 +321,7 @@ const CommandSurface = ({ command }: {command: CommandProps | null}) => {
 
             <PrimaryActionButton command={command} />
         </div>
+        </>
     );
 };
 
