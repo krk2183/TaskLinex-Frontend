@@ -3,13 +3,18 @@
 import { Zap, Clock, AlertTriangle, CheckCircle, XCircle, ArrowRight, CornerDownRight, BarChart3, TrendingUp, TrendingDown } from 'lucide-react';
 import { useState } from 'react';
 
-// --- MOCK DATA FOR ILLUSTRATION ---
-const mockSystemState = 'At Risk'; // 'On Track', 'At Risk', 'Stalled'
+const mockSystemState = 'On Track'; // OPTIONS: 'On Track', 'At Risk', 'Stalled'
 
 const mockCommand = {
-    title: 'Forge.AI - V1   ',
+    title: 'Forge.AI - V1',
     rationale: 'System requires immediate human approval to proceed with deployment stage.',
-    urgency: 'Critical',
+    urgency: 'Deadline',
+    nexturgency:'Critical',
+    nextStep: 'Deployment Stage',
+    steptitle: 'Exigent matter detected',  
+    current:'Enhance Clarity',
+    reasoning: 'System has detected an anomaly with model outputs.',  
+    progress: 75 
 };
 
 
@@ -21,10 +26,9 @@ const mockQueue = [
 ];
 
 const mockEmptyState = {
-    state: 'Active', // 'NoTasks', 'AllBlocked', 'OverdueOverload', 'Active'
+    state: 'Active', // OPTIONS: 'NoTasks', 'AllBlocked', 'OverdueOverload', 'Active'
 };
 
-// --- HELPER COMPONENTS AND FUNCTIONS ---
 
 // 3. System Status Indicator
 const getStatusClasses = (status) => {
@@ -50,20 +54,19 @@ const SystemStatusPill = ({ status }) => {
     );
 };
 
-// Add this helper function
 const getUrgencyConfig = (urgency) => {
     switch (urgency) {
         case 'Critical':
-            return { icon: Zap, color: 'text-rose-500', bg: 'bg-rose-500/10' };
+            return { icon: Zap, color: 'text-red-800', bg: 'bg-red-800' };
         case 'Overdue':
-            return { icon: AlertTriangle, color: 'text-amber-500', bg: 'bg-amber-500/10' };
-        case 'Deadline':
-            return { icon: Clock, color: 'text-indigo-500', bg: 'bg-indigo-500/10' };
+            return { icon: AlertTriangle, color: 'text-amber-800', bg: 'bg-amber-800/10' };
+        case 'Deadline': //MAKE IT BLINK AT DEADLINE
+            return { icon: Clock, color: 'text-yellow-800', bg: 'bg-yellow-600' };
         default:
             return { icon: CheckCircle, color: 'text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800' };
     }
 };
-
+ 
 // Urgency Icons
 const UrgencyIcon = ({ type }) => {
     switch (type) {
@@ -78,10 +81,9 @@ const UrgencyIcon = ({ type }) => {
     }
 };
 
-// 4. Primary Action Control Logic
 const PrimaryActionButton = ({ command }) => {
     const actionText = command ? 'Mark Complete' : 'Start Command';
-    const isInvalid = false; // Mock disabled state logic
+    const isInvalid = false; 
 
     return (
         <button
@@ -99,11 +101,11 @@ const PrimaryActionButton = ({ command }) => {
 
 
 
-// 1. Command (Primary Execution Surface)
 interface CommandProps {
     title: string;
     rationale: string;
     urgency: string;
+    nexturgency: string;
     nextStep: string;
     steptitle: string;     
     reasoning: string;    
@@ -116,7 +118,6 @@ const handlePress = (): void=>{
 }
 
 const CommandSurface = ({ command }: {command: CommandProps | null}) => {
-    // 5. Failure & Empty State Messaging (replaces Command)
     const [isNoteOpen, setIsNoteOpen] = useState(false);
     const [note,setNote] = useState("");
     if (!command) {
@@ -138,14 +139,38 @@ const CommandSurface = ({ command }: {command: CommandProps | null}) => {
 
     return (
         <div className="bg-white dark:bg-gray-900 p-10 rounded-2xl shadow-2xl border-l-5 border-r-5 border-indigo-500 relative">
-            {/* ... Urgency and Title sections remain the same ... */}
-            
+            {/* <div className='absolute top-8 right-10'>
+                <div className='flex items-center gap-1.5 px-4 py-2 rounded-full font-bold text-xs uppercase tacking-wider '></div>
+            </div> */}
+
+
+
+         <div className="absolute top-8 right-10">
+                <div className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full font-bold text-xs uppercase tracking-wider shadow-sm ${urgencyStyle.bg} ${urgencyStyle.text}`}>
+
+                    <span>{command.urgency ?? 'Standard'}</span>
+                </div>
+        </div>
+
+        
+
+        <div className="max-w-2xl">
+                <h2 className="text-4xl font-black text-gray-900 dark:text-white pr-20 leading-[1.1] tracking-tight">
+                    {command.title ?? 'Untitled Command'}
+                </h2>
+                <p className="text-xl text-gray-500 dark:text-gray-400 mt-6 mb-10 leading-relaxed font-medium">
+                    {command.rationale ?? 'No rationale provided for this action.'}
+                </p>
+        </div> 
+
+
+
             <div className="mb-10 w-full lg:w-[40%]">
                 {/* PROGRESS SECTION */}
                 <div className="flex items-center gap-2 mb-4">
                     <div className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
                     <span className="text-xs font-black uppercase tracking-widest text-indigo-500">
-                        {command.nextStep ?? 'Enhance clarity'}
+                        {command.current ?? 'Enhance clarity'}
                     </span>
                 </div>
                 
@@ -155,10 +180,10 @@ const CommandSurface = ({ command }: {command: CommandProps | null}) => {
                     className="w-full h-3 rounded-full overflow-hidden accent-indigo-500 appearance-none bg-gray-100 dark:bg-gray-800 [&::-webkit-progress-bar]:bg-gray-100 dark:[&::-webkit-progress-bar]:bg-gray-800 [&::-webkit-progress-value]:bg-indigo-500"
                 />
 
-                {/* THE MAIN BOX WRAPPER */}
+                {/*📦📦📦 INNER BOX 📦📦📦 */}
                 <div className="relative mt-12">
                     
-                    {/* PRIMARY BOX */}
+                    {/*1️⃣ PRIMARY BOX */}
                     <div className="p-6 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-800 shadow-sm">
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
@@ -166,6 +191,9 @@ const CommandSurface = ({ command }: {command: CommandProps | null}) => {
                                 <span className="text-xs font-black uppercase tracking-widest text-indigo-500">
                                     {command.nextStep ?? 'Enhance clarity'}
                                 </span>
+                                <div className='40'>
+                                    <span>{command.nexturgency}</span>
+                                </div>
                             </div>
 
                             <button 
@@ -188,10 +216,9 @@ const CommandSurface = ({ command }: {command: CommandProps | null}) => {
                         </p>
                     </div>
 
-                    {/* FLOATING MESSAGE FIELD */}
+                    {/*2️⃣ FLOATING MESSAGE FIELD */}
                     {isNoteOpen && (
                         <div className="absolute top-0 left-[105%] w-72 z-50 animate-in fade-in zoom-in-95 slide-in-from-left-4 duration-300">
-                            {/* The Speech Bubble Arrow */}
                             <div className="absolute top-8 -left-2 w-4 h-4 bg-white dark:bg-gray-800 border-l border-t border-gray-200 dark:border-gray-700 rotate-[-45deg] z-0" />
                             
                             {/* The Note Card */}
@@ -204,7 +231,7 @@ const CommandSurface = ({ command }: {command: CommandProps | null}) => {
                                     autoFocus
                                     value={note}
                                     onChange={(e) => setNote(e.target.value)}
-                                    placeholder="Type a note..."
+                                    placeholder="Write a note..."
                                     className="w-full min-h-[100px] bg-transparent border-none p-0 text-sm text-gray-800 dark:text-gray-200 placeholder:text-gray-400 focus:ring-0 outline-none resize-none"
                                 />
 
@@ -228,7 +255,6 @@ const CommandSurface = ({ command }: {command: CommandProps | null}) => {
     );
 };
 
-// 2. Execution Queue (Immediate Continuation)
 const ExecutionQueue = ({ queue }) => {
     if (queue.length === 0) {
         return (
@@ -259,7 +285,7 @@ const ExecutionQueue = ({ queue }) => {
                                 <p className="text-base font-semibold text-gray-800 dark:text-gray-100 truncate">
                                     {item.title}
                                 </p>
-                                {/* Optional Dependency Note */}
+                                {/* Dependency Note */}
                                 {item.dependency && (
                                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5 flex items-center">
                                         {item.dependency}
@@ -278,7 +304,6 @@ const ExecutionQueue = ({ queue }) => {
 };
 
 
-// --- MAIN PAGE COMPONENT ---
 
 export default function HomePage() {
     // Current logic to show "Active" or "Stalled" state
