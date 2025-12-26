@@ -1,36 +1,72 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🎯 TaskLinex
 
-## Getting Started
+**TaskLinex** is a focus-first productivity system designed to reduce cognitive overload by surfacing only what matters now and what comes next.
 
-First, run the development server:
+It is not a notes app, a document wiki, or a workspace clone. It is a tool for **execution**.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+---
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🧠 Core Philosophy
+> **Clarity before complexity. Execution before organization.**
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Most productivity tools fail because they optimize for *storage*, not *action*. TaskLinex is built around the **Pulse**, a central interface designed to answer three questions at a glance:
+1. **What am I working on right now?**
+2. **How far along am I?**
+3. **What should I do next?**
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## ⚡ Pulse (The Core Interface)
+Pulse is the main interaction surface—intentionally minimal and distraction-free.
 
-To learn more about Next.js, take a look at the following resources:
+* **Current Focus:** A glanceable view of your active task with a visual progress indicator (0–100%).
+* **Up Next:** The immediate next task with a short rationale explaining *why* it’s next.
+* **Minimalist Design:** If it does not help you execute the current task, it does not belong here.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 📂 Structure
+Each page is designed to specialize in one responsibility only.
 
-## Deploy on Vercel
+| Page | Status | Responsibility |
+| :--- | :--- | :--- |
+| **Pulse (Home)** | 🏗️ Partial | Execution-focused overview and active task management. |
+| **Dashboard** | 📅 Planned | Broader task and project overview. |
+| **Analytics** | 📅 Planned | Performance insights and progress patterns (no vanity metrics). |
+| **Settings** | ✅ Implementation | User preferences and configuration. |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🛠️ Tech Stack
+The project focuses on UI correctness and structure before introducing backend complexity.
+
+* **Frontend:** [Next.js](https://nextjs.org/) (App Router), React, [Tailwind CSS](https://tailwindcss.com/)
+* **State:** Component-driven UI with mocked data variables
+* **Backend (Planned):** FastAPI with AI-assisted prioritization logic
+
+---
+
+## ✨ Design Principles
+* **Focus > Flexibility:** Fewer decisions, clearer defaults.
+* **One Primary Task:** Designed to eliminate context switching.
+* **Visual Feedback:** Visual progress indicators over raw data tables.
+* **Static First:** Establishing solid foundations before adding adaptive logic.
+
+---
+
+## 🚀 Roadmap
+- [x] UI structure and layout foundations
+- [x] Collapsible sidebar navigation
+- [ ] Finalize Pulse UI (Current Focus + Progress Bar)
+- [ ] Implement consistent task data schema
+- [ ] Introduce FastAPI backend API
+- [ ] Add adaptive task prioritization logic
+- [ ] Expand Analytics with actionable insights
+
+---
+
+## 🚫 Non-Goals
+TaskLinex is intentionally opinionated and does **not** aim to:
+* Replace Notion or become a document/wiki system.
+* Support infinite customization at the cost of clarity.
+* Optimize for aesthetic "vanity" dashboards over execution.
