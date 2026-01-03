@@ -1,6 +1,9 @@
 # 🎯 TaskLinex
 
+## ☕ Platform designed for your team
+
 **TaskLinex** is a focus-first productivity system designed to reduce cognitive overload by surfacing only what matters now and what comes next.
+By putting teams first, Tasklinex reimagines communications and reduces time wasted on meetings. 
 
 It is not a notes app, a document wiki, or a workspace clone. It is a tool for **execution**.
 
@@ -30,8 +33,8 @@ Each page is designed to specialize in one responsibility only.
 
 | Page | Status | Responsibility |
 | :--- | :--- | :--- |
-| **Pulse (Home)** | 🏗️ Partial | Execution-focused overview and active task management. |
-| **Dashboard** | 📅 Planned | Broader task and project overview. |
+| **Pulse (Home)** | ✅ Visually Complete | Execution-focused overview and active task management. |
+| **Roadmap** | ✅ Visually Complete | Broader task and project overview. |
 | **Analytics** | 📅 Planned | Performance insights and progress patterns (no vanity metrics). |
 | **Settings** | 📅 Planned | User preferences and configuration. |
 
@@ -57,7 +60,7 @@ The project focuses on UI correctness and structure before introducing backend c
 ## 🚀 Roadmap
 - [x] UI structure and layout foundations
 - [x] Collapsible sidebar navigation
-- [ ] Finalize Pulse UI (Current Focus + Progress Bar)
+- [x] Finalize Pulse UI (Current Focus + Progress Bar)
 - [ ] Implement consistent task data schema
 - [ ] Introduce FastAPI backend API
 - [ ] Add adaptive task prioritization logic
