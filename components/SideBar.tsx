@@ -16,12 +16,8 @@ const navItems = [
 ];
 
 export default function Sidebar() {
-    // 1. Destructure the dark mode state and toggle from context
-    const { isExpanded, toggleSidebar, isDarkMode, toggleDarkMode } = useLayout();
+    const { isExpanded, toggleSidebar } = useLayout();
     
-    // (Removed: const [isdarkmode, setdarkmode] = useState(false);)
-    // (Removed: const togglemode = () => { ... })
-
     // Dynamic Tailwind Classes based on state
     const sidebarWidth = isExpanded ? 'w-64' : 'w-20';
     const transitionClass = 'transition-width duration-300 ease-in-out';
@@ -35,7 +31,7 @@ export default function Sidebar() {
             
             {/* 1. Header and Toggle Button */}
             <div className="flex justify-between items-center mb-8">
-                <h1 className={`text-2xl  font-bold text-gray-400 dark:text-white ${isExpanded ? 'opacity-100' : 'opacity-0 w-0 h-0'} transition-opacity duration-300 overflow-hidden`}>
+                <h1 className={`text-2xl font-bold text-gray-400 dark:text-white text-center ${isExpanded ? 'opacity-100' : 'opacity-0 w-0 h-0'} transition-opacity duration-300 overflow-hidden`}>
                     Task<span className='text-indigo-400 dark:text-indigo-500'>Linex</span>
                 </h1>
                 <button
@@ -50,34 +46,13 @@ export default function Sidebar() {
                 </button>
             </div>
             
-            {/* Dark Mode Switch Button */}
-            <div className='mb-6'>
-                <button 
-                    // 2. Use toggleDarkMode from context
-                    onClick={toggleDarkMode}
-                    className={`flex items-center w-full py-2 px-3 rounded-xl font-medium transition-colors duration-200 
-                    ${isDarkMode 
-                        ? 'bg-indigo-600 text-white hover:bg-indigo-700' 
-                        : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
-                    }`} 
-                    id='modeswitch' 
-                >
-                    {isDarkMode 
-                        ? <Moon size={20} className='mr-3 flex-shrink-0' /> 
-                        : <Sun size={20} className='mr-3 flex-shrink-0' />
-                    }
-                    {isExpanded && <span>Switch to {isDarkMode ? 'Light' : 'Dark'}</span>}
-                </button>
-            </div>
-
             {/* 2. Navigation Links */}
-            <nav className="flex-1 space-y-2">
+            <nav className="flex-1 space-y-2 mt-10">
                 {navItems.map((item) => (
                     <Link
                         key={item.name}
                         href={item.href}
-                        // 3. Styles updated to use dark: prefix
-                        className={`flex items-center text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-gray-700 hover:text-indigo-600 dark:hover:text-white rounded-lg py-3 px-3 transition-all duration-300 group ${isExpanded ? 'justify-start' : 'justify-center'}`}
+                        className={`flex items-center relative overflow-hidden  text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-gray-700 hover:text-indigo-600 dark:hover:text-white rounded-lg py-3 px-3 transition-all duration-300 group ${isExpanded ? 'justify-start' : 'justify-center'}`}
                     >
                         <item.icon size={24} className="flex-shrink-0" />
                         <span
