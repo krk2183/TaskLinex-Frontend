@@ -31,8 +31,8 @@ Each page is designed to specialize in one responsibility only.
 | :--- | :--- | :--- |
 | **Pulse (Home)** | ✅ Visually Complete | Execution-focused overview and active task management. |
 | **Roadmap** | ✅ Visually Complete | Broader task and project overview. |
-| **Analytics** | 📅 Planned | Performance insights and progress patterns (no vanity metrics). |
-| **Settings** | 📅 Planned | User preferences and configuration. |
+| **Analytics** | ✅ Visually Complete | Performance insights and progress patterns (no vanity metrics). |
+| **Settings** | ✅ Visually Complete | User preferences and configuration. |
 
 ---
 
