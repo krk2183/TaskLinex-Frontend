@@ -8,6 +8,9 @@
 ## 🧠 Core Philosophy
 > **Clarity before complexity. Execution before organization.**
 
+<img width="1662" height="912" alt="THIS" src="https://github.com/user-attachments/assets/acbf5091-7193-4c2e-9ab8-8988c37a0b24" />
+
+---
 TaskLinex is built around the **Pulse**, a central interface designed to answer three questions at a glance:
 1. **What am I working on right now?**
 2. **How far along am I?**
