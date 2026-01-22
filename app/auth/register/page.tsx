@@ -3,14 +3,13 @@
 import React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowRight, Mail, User, Briefcase, ChevronRight } from "lucide-react";
+import { ArrowRight,ArrowLeft ,Mail, User, Briefcase, ChevronRight } from "lucide-react";
 
 // --- COMPONENTS ---
 
 const Logo = () => (
   <div className="flex items-center gap-2 mb-10">
-    <div className="w-2 h-6 bg-violet-600 rounded-sm" />
-    <span className="text-xl font-bold tracking-tight select-none">
+    <span className="text-3xl font-bold tracking-tight select-none">
       <span className="text-white">Task</span>
       <span className="text-violet-500">Linex</span>
     </span>
@@ -45,12 +44,31 @@ const InputField = ({
   </div>
 );
 
+
+const BackButton = () => (
+  <motion.div
+    initial={{ opacity: 0, x: -20 }}
+    animate={{ opacity: 1, x: 0 }}
+    transition={{ delay: 0.2, duration: 0.5 }}
+    className="absolute left-8 md:left-24 xl:left-40 top-[3vw] z-50"
+  >
+    <Link 
+      href="/"
+      className="flex items-center gap-2 px-5 py-3 rounded-full bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 hover:text-white transition-all border-2 border-violet-400/50 text-sm font-medium group backdrop-blur-xl"
+    >
+      <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+      Back
+    </Link>
+  </motion.div>
+);
+
 // --- PAGE ---
 
 export default function SignupPage() {
   return (
     <div className="min-h-screen w-full flex bg-slate-950 text-slate-200 font-sans selection:bg-violet-500/30">
       
+
       {/* LEFT SIDE: VISUALIZATION (Swapped for Signup to create variety from Login) */}
       <div className="hidden lg:flex w-5/12 relative bg-[#0B0F17] overflow-hidden border-r border-slate-800 flex-col justify-between p-12">
          {/* Abstract Background */}
@@ -94,6 +112,7 @@ export default function SignupPage() {
 
       {/* RIGHT SIDE: FORM */}
       <div className="w-full lg:w-7/12 flex flex-col justify-center px-8 md:px-24 xl:px-40 relative z-10 bg-slate-950">
+      <BackButton />
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}

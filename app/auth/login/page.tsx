@@ -3,15 +3,14 @@
 import React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowRight, Lock, Mail, Github, Chrome, ShieldCheck } from "lucide-react";
+import { ArrowRight, Lock, Mail, Github, Chrome, ShieldCheck, ArrowLeft } from "lucide-react";
 
 // --- COMPONENTS ---
 
 const Logo = () => (
   <div className="flex items-center gap-2 mb-12">
-    <div className="w-2 h-6 bg-violet-600 rounded-sm" />
-    <span className="text-xl font-bold tracking-tight select-none">
-      <span className="text-white">Task</span>
+    <span className="text-3xl font-bold tracking-tight select-none">
+      <span className="text-white ">Task</span>
       <span className="text-violet-500">Linex</span>
     </span>
   </div>
@@ -45,14 +44,31 @@ const InputField = ({
   </div>
 );
 
+const BackButton = () => (
+  <motion.div
+    initial={{ opacity: 0, x: -20 }}
+    animate={{ opacity: 1, x: 0 }}
+    transition={{ delay: 0.2, duration: 0.5 }}
+    className="absolute left-8 md:left-24 xl:left-32 top-[5vw] z-50"
+  >
+    <Link 
+      href="/"
+      className="flex items-center gap-2 px-5 py-3 rounded-full bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 hover:text-white transition-all border border-violet-400/50 text-sm font-medium group backdrop-blur-sm"
+    >
+      <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+      Back
+    </Link>
+  </motion.div>
+);
 // --- PAGE ---
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen w-full flex bg-slate-950 text-slate-200 font-sans selection:bg-violet-500/30">
-      
+    <div className="min-h-screen w-full flex bg-slate-950 text-slate-200 font-sans selection:bg-violet-500/30 relative">
       {/* LEFT SIDE: FORM */}
       <div className="w-full lg:w-1/2 flex flex-col justify-center px-8 md:px-24 xl:px-32 relative z-10">
+        <BackButton />
+
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -128,42 +144,71 @@ export default function LoginPage() {
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:3rem_3rem] opacity-20" />
         
         <div className="absolute inset-0 flex items-center justify-center">
-             <div className="w-[400px] h-[300px] bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-xl p-6 relative shadow-2xl">
+             <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                className="w-[400px] h-[300px] bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-xl p-6 relative shadow-2xl"
+             >
                  {/* Decorative Header */}
                  <div className="flex gap-2 mb-6 border-b border-slate-800 pb-4">
-                     <div className="w-3 h-3 rounded-full bg-rose-500/20 border border-rose-500/50" />
-                     <div className="w-3 h-3 rounded-full bg-amber-500/20 border border-amber-500/50" />
-                     <div className="w-3 h-3 rounded-full bg-emerald-500/20 border border-emerald-500/50" />
+                     {[
+                        { color: "bg-rose-500", shadow: "#f43f5e" },
+                        { color: "bg-amber-500", shadow: "#f59e0b" },
+                        { color: "bg-emerald-500", shadow: "#10b981" }
+                     ].map((item, i) => (
+                         <motion.div 
+                            key={i}
+                            whileHover={{ scale: 1.2 }}
+                            whileTap={{ scale: 0.9, boxShadow: `0 0 20px ${item.shadow}` }}
+                            className={`w-3 h-3 rounded-full ${item.color} cursor-pointer`} 
+                         />
+                     ))}
                  </div>
                  
                  {/* Decorative Code/Status */}
                  <div className="space-y-3 font-mono text-xs">
-                     <div className="flex justify-between text-slate-500">
+                     <motion.div 
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.2 }}
+                        className="flex justify-between text-slate-500"
+                     >
                          <span>status</span>
                          <span className="text-emerald-500">active</span>
-                     </div>
-                     <div className="flex justify-between text-slate-500">
+                     </motion.div>
+                     <motion.div 
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.3 }}
+                        className="flex justify-between text-slate-500"
+                     >
                          <span>encryption</span>
                          <span className="text-violet-400">TLS 1.3 / AES-256</span>
-                     </div>
-                     <div className="h-px bg-slate-800 my-2" />
-                     <div className="text-slate-400">
+                     </motion.div>
+                     <motion.div initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ delay: 0.4 }} className="h-px bg-slate-800 my-2 origin-left" />
+                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="text-slate-400">
                         <span className="text-violet-500">➜</span> verifying_handshake...
-                     </div>
-                     <div className="text-slate-400">
+                     </motion.div>
+                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }} className="text-slate-400">
                         <span className="text-violet-500">➜</span> establishing_secure_tunnel...
-                     </div>
-                     <div className="text-slate-200 animate-pulse">
+                     </motion.div>
+                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9 }} className="text-slate-200 animate-pulse">
                         <span className="text-emerald-500">✔</span> ready_for_auth
-                     </div>
+                     </motion.div>
                  </div>
 
                  {/* Secure Badge */}
-                 <div className="absolute -bottom-6 -right-6 bg-slate-950 border border-slate-800 px-4 py-2 rounded-lg flex items-center gap-2 shadow-lg">
+                 <motion.div 
+                    initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ delay: 1.1, type: "spring" }}
+                    className="absolute -bottom-6 -right-6 bg-slate-950 border border-slate-800 px-4 py-2 rounded-lg flex items-center gap-2 shadow-lg"
+                 >
                      <ShieldCheck className="w-4 h-4 text-emerald-500" />
                      <span className="text-xs font-bold text-slate-300">SOC2 Compliant</span>
-                 </div>
-             </div>
+                 </motion.div>
+             </motion.div>
         </div>
       </div>
 

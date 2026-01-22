@@ -150,20 +150,23 @@ function Header() {
       animate={{ y: 0, opacity: 1 }}
       className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 py-4 border-b border-white/[0.06] bg-[#050505]/80 backdrop-blur-xl"
     >
-      <div className="flex items-center gap-3">
-        <div className="w-5 h-5 bg-violet-600 rounded-[6px] shadow-[0_0_15px_rgba(124,58,237,0.5)]" />
-        <span className="text-sm font-semibold tracking-tight text-white">TaskLinex</span>
-      </div>
+    <div className="flex items-center gap-2 mb-12 mt-[1vw]">
+        <span className="text-xl font-bold tracking-tight select-none">
+        <span className="text-white ">Task</span>
+        <span className="text-violet-500">Linex</span>
+        </span>
+    </div>
+
       <nav className="hidden md:flex gap-8 text-[13px] font-medium text-white/50">
         <a href="#envoy" className="hover:text-white transition-colors">Envoy</a>
         <a href="#roadmap" className="hover:text-white transition-colors">Roadmap</a>
         <a href="#pulse" className="hover:text-white transition-colors">Pulse</a>
       </nav>
       <div className="flex items-center gap-4">
-        <a href="#" className="text-[13px] font-medium text-white/70 hover:text-white transition-colors">Log in</a>
-        <button className="bg-white text-black text-[13px] font-semibold px-4 py-2 rounded-lg hover:bg-white/90 transition-all">
+        <a href="auth/login" className="text-[13px] font-medium text-white/70 hover:text-white transition-colors">Log in</a>
+        <a href="auth/register" className="bg-white text-black text-[13px] font-semibold px-4 py-2 rounded-lg hover:bg-white/90 transition-all">
           Get Access
-        </button>
+        </a>
       </div>
     </motion.header>
   );
@@ -830,7 +833,6 @@ function Footer() {
             <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-5 gap-12">
                 <div className="md:col-span-2">
                     <div className="flex items-center gap-3 mb-4">
-                        <div className="w-6 h-6 bg-violet-600 rounded-lg shadow-[0_0_15px_rgba(124,58,237,0.5)]" />
                         <span className="text-lg font-semibold tracking-tight text-white">TaskLinex</span>
                     </div>
                     <p className="text-white/40 text-sm max-w-xs">The operating system for high-velocity engineering teams.</p>
@@ -882,7 +884,7 @@ function Footer() {
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-[#050505] text-slate-200 font-sans selection:bg-violet-500/30">
+    <div className="min-h-screen bg-[#050505] text-slate-200 font-sans selection:bg-violet-500/30 overflow-x-hidden">
       <Header />
       <Hero />
       <EnvoySection />
