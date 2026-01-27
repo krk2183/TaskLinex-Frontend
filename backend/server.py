@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 import bcrypt
 import sqlite3
@@ -7,31 +7,50 @@ from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 import uuid, uvicorn
+import json
 import os
+from contextlib import asynccontextmanager
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 # Server initialization
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 # --- Constants ---
 SECRET_KEY = "your-super-secret-key-change-me"  # Later environment variables
 ALGORITHM = "HS256"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'data', 'database.db')
+DB_PATH = os.path.join(BASE_DIR, 'data', 'tasklinex.db')
 
 # --- CORS Middleware ---
 origins = [
-    "http://localhost:3000",  # Falls du npx create-react-app nutzt
-    "http://localhost:5173",  # Falls du Vite nutzt (sehr wahrscheinlich bei modernem React)
+    "http://localhost:3000",  
+    "http://localhost:5173",  
     "http://127.0.0.1:5173",
+    "http://192.168.0.114:3000",
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Zum Testen erst einmal alles erlauben
+    allow_origins=["*"], # Test
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Debugging: Print validation errors to console
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    print(f"Validation Error: {exc}")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": exc.errors()},
+    )
 
 # Database initialization
 def init_db():
@@ -57,15 +76,18 @@ def init_db():
         CREATE TABLE IF NOT EXISTS tasks (
             pk INTEGER PRIMARY KEY AUTOINCREMENT,
             id TEXT NOT NULL UNIQUE,
-            user_id TEXT NOT NULL,
+            projectId TEXT NOT NULL,
             title TEXT NOT NULL,
-            description TEXT,
+            startDate INTEGER NOT NULL,
+            duration INTEGER NOT NULL,
+            plannedDuration INTEGER NOT NULL,
+            progress INTEGER NOT NULL,
             status TEXT NOT NULL,
-            priority INTEGER NOT NULL,
-            estimate_hours REAL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users(id)
+            priority TEXT NOT NULL,
+            ownerId TEXT NOT NULL,
+            personaId TEXT,
+            dependencyIds TEXT,
+            tags TEXT
         )
     ''')
 
@@ -109,20 +131,22 @@ def init_db():
     conn.commit()
     conn.close()
 
-init_db()
-
 
 # Classes with pydantic
 class Task(BaseModel):
     id: str
+    projectId: str
     title: str
-    description: Optional[str] = None
-    status: str = Field(..., pattern="^(todo|in_progress|blocked|done)$")
-    priority: int = Field(ge=1, le=5)
-    estimate_hours: Optional[float] = Field(gt=0)
-    assignee_id: Optional[str]
-    dependencies: List[str] = []
-    created_at: datetime
+    startDate: int
+    duration: int
+    plannedDuration: int
+    progress: int
+    status: str
+    priority: str
+    ownerId: str
+    personaId: Optional[str] = None
+    dependencyIds: List[str] = []
+    tags: List[str] = []
 
 class Dependency(BaseModel):
     task_id: str
@@ -148,13 +172,13 @@ class EnvoySuggestion(BaseModel):
 class UserCreate(BaseModel):
     firstName: str
     lastName: str
-    email: EmailStr
+    email: str
     password: str
     companyName: Optional[str] = None
     rememberMe: bool = False
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: str
     password: str
     rememberMe: bool = False
 
@@ -165,7 +189,7 @@ async def root():
     return {"status":'ok',"message": "TaskLinex API is active"}
 
 @app.post('/signup')
-async def signup(user: UserCreate):
+async def signup(user: UserCreate, response: Response):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM users WHERE email = ?', (user.email,))
@@ -191,10 +215,20 @@ async def signup(user: UserCreate):
     payload = {'sub': user.email, 'id': user_id, 'exp': expire}
     token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
+    response.set_cookie(
+        key="access_token",
+        value=f"Bearer {token}",
+        httponly=True,
+        max_age=int(token_span.total_seconds()),
+        expires=expire,
+        samesite="lax",
+        secure=False 
+    )
+
     return {"access_token": token, "token_type": "bearer"}
 
 @app.post('/login')
-async def login(form_data: UserLogin):
+async def login(form_data: UserLogin, response: Response):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
@@ -226,8 +260,76 @@ async def login(form_data: UserLogin):
     expire = datetime.now(timezone.utc) + token_span
     payload = {'sub': form_data.email, 'id': user_id, 'exp': expire}
     token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+    response.set_cookie(
+        key="access_token",
+        value=f"Bearer {token}",
+        httponly=True,
+        max_age=int(token_span.total_seconds()),
+        expires=expire,
+        samesite="lax",
+        secure=False 
+    )
     
     return {"access_token": token, "token_type": "bearer"}
+
+@app.get('/renderTask')
+async def renderTask():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM tasks")
+        rows = cursor.fetchall()
+        tasks = []
+        for row in rows:
+            task_dict = dict(row)
+            # Parse JSON fields
+            try:
+                task_dict['dependencyIds'] = json.loads(task_dict['dependencyIds']) if task_dict['dependencyIds'] else []
+                task_dict['tags'] = json.loads(task_dict['tags']) if task_dict['tags'] else []
+            except (json.JSONDecodeError, TypeError):
+                task_dict['dependencyIds'] = []
+                task_dict['tags'] = []
+            
+            if 'pk' in task_dict:
+                del task_dict['pk']
+            tasks.append(task_dict)
+        return tasks
+    except Exception as e:
+        print(f"Error rendering tasks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.post('/createTask')
+async def createTask(task: Task):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT INTO tasks (id, projectId, title, startDate, duration, plannedDuration, progress, status, priority, ownerId, personaId, dependencyIds, tags)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (task.id, task.projectId, task.title, task.startDate, task.duration, task.plannedDuration, task.progress, task.status, task.priority, task.ownerId, task.personaId, json.dumps(task.dependencyIds), json.dumps(task.tags)))
+        conn.commit()
+        return task
+    except Exception as e:
+        print(f"Error creating task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.route('/updateTask')
+def updateTask():
+    pass
+
+@app.route('/deleteTask')
+def deleteTask():
+    pass
+
+@app.route('/renderPersona')
+def renderPersona():
+    pass
 
 if __name__ == "__main__":
     uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)

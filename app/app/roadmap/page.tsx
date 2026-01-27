@@ -111,30 +111,37 @@ const MOCK_TASKS: Task[] = [
     { 
         id: 't1', projectId: 'proj1', title: 'Model Training P1', startDate: 1, duration: 4, plannedDuration: 4,
         progress: 100, status: 'Completed', priority: 'High', ownerId: 'u1', personaId: 'p_u1_1', dependencyIds: [], tags: ['AI']
-    },
-    { 
-        id: 't2', projectId: 'proj1', title: 'Data Validation', startDate: 4, duration: 3, plannedDuration: 2, // Slippage
-        progress: 60, status: 'On Track', priority: 'High', ownerId: 'u2', dependencyIds: ['t1'], tags: ['Data'],
-        envoySuggestion: { id: 's1', type: 'slippage', message: 'Task is 1 week behind schedule.', confidence: 0.9, actionLabel: 'Adjust Timeline' }
-    },
-    { 
-        id: 't3', projectId: 'proj1', title: 'Gateway Integration', startDate: 6, duration: 4, plannedDuration: 4,
-        progress: 20, status: 'At Risk', priority: 'Medium', ownerId: 'u3', dependencyIds: ['t2'], handOffToId: 'u1', tags: ['Backend']
-    },
-    { 
-        id: 't4', projectId: 'proj2', title: 'UX Research', startDate: 2, duration: 3, plannedDuration: 3,
-        progress: 90, status: 'On Track', priority: 'Low', ownerId: 'u3', dependencyIds: [], tags: ['Design']
-    },
-    { 
-        id: 't5', projectId: 'proj2', title: 'Alpha Release', startDate: 8, duration: 1, plannedDuration: 1,
-        progress: 0, status: 'Blocked', priority: 'High', ownerId: 'u1', dependencyIds: ['t3', 't4'], isMilestone: true, tags: ['Release']
     }
 ];
 
 // Async Placeholder
 const MockAPI = {
     sleep: (ms: number) => new Promise(r => setTimeout(r, ms)),
-    fetchData: async () => { await MockAPI.sleep(800); return { tasks: MOCK_TASKS, users: MOCK_USERS, projects: MOCK_PROJECTS }; },
+    // Newly added: Fetchdata to replace MOCK data
+    fetchData: async () => { 
+        try {
+            const response = await fetch('http://localhost:8000/renderTask', { cache: 'no-store' });
+            if (!response.ok) throw new Error('Failed to fetch tasks');
+            const tasks = await response.json();
+            return { tasks: Array.isArray(tasks) ? tasks : [], users: MOCK_USERS, projects: MOCK_PROJECTS };
+        } catch (error) {
+            console.error("Error fetching tasks:", error);
+            return { tasks: [], users: MOCK_USERS, projects: MOCK_PROJECTS };
+        }
+    },
+    // Newly added: CreateTask to replace MOCK data
+    createTask: async (task: Task) => {
+        const response = await fetch('http://localhost:8000/createTask', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(task)
+        });
+        if (!response.ok)  {
+            console.log(response);
+            throw new Error('Failed to create task') 
+        }
+        return response.json();
+    },
     autoBalance: async (tasks: Task[]) => {
         await MockAPI.sleep(1200);
         // Simulate logic: Find overloaded user, move task to underloaded user
@@ -534,7 +541,7 @@ const AddTaskModal = ({ onClose }: { onClose: () => void }) => {
     const [status, setStatus] = useState<TaskStatus>('On Track');
     const [priority, setPriority] = useState<Priority>('Medium');
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         const newTask: Task = {
             id: `t${Date.now()}`,   
@@ -551,8 +558,13 @@ const AddTaskModal = ({ onClose }: { onClose: () => void }) => {
             tags: []
         };
         
-        dispatch({ type: 'UPDATE_TASKS', payload: [...state.tasks, newTask] });
-        onClose();
+        try {
+            const createdTask = await MockAPI.createTask(newTask);
+            dispatch({ type: 'UPDATE_TASKS', payload: [...state.tasks, { ...newTask, ...createdTask }] });
+            onClose();
+        } catch (error) {
+            console.error("Failed to create task:", error);
+        }
     };
 
     return (
