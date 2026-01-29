@@ -40,11 +40,16 @@ Each page is designed to specialize in one responsibility only.
 ---
 
 ## 🛠️ Tech Stack
-The project focuses on UI correctness and structure before introducing backend complexity.
+### Features
+- Full CRUD Operations<sup>*</sup>
+- Secure Payment Processing <sup>To Be Added</sup>
+
+---
+<sup>*</sup> Logic handled by private server.
 
 * **Frontend:** [Next.js](https://nextjs.org/) (App Router), React, [Tailwind CSS](https://tailwindcss.com/)
-* **State:** Component-driven UI with mocked data variables
-* **Backend (Planned):** FastAPI with AI-assisted prioritization logic
+* **State:** Component-driven UI*
+* **Backend:** FastAPI with AI-assisted prioritization logic*
 
 ---
 
@@ -60,8 +65,8 @@ The project focuses on UI correctness and structure before introducing backend c
 - [x] UI structure and layout foundations
 - [x] Collapsible sidebar navigation
 - [x] Finalize Pulse UI (Current Focus + Progress Bar)
-- [ ] Implement consistent task data schema
-- [ ] Introduce FastAPI backend API
+- [x] Implement consistent task data schema
+- [x] Introduce FastAPI backend API*
 - [ ] Add adaptive task prioritization logic
 - [ ] Expand Analytics with actionable insights
 
@@ -72,3 +77,32 @@ TaskLinex is intentionally opinionated and does **not** aim to:
 * Replace Notion or become a document/wiki system.
 * Support infinite customization at the cost of clarity.
 * Optimize for aesthetic "vanity" dashboards over execution.
+
+---
+
+## 🔧 Local Setup
+
+### 1. Environment Configuration
+Create an `.env.local` file in the root directory. 
+
+```bash
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 # Example
+NEXT_PUBLIC_SERVER_PORT=SERVER-PORT
+ALGORITHM=ALGORITHM
+SECRET_KEY="NOT-IN-USE-YET"
+```
+
+## 📦 2. Installation
+```bash
+npm install
+```
+Installing Dependencies
+```bash
+pip install -r requirments.txt
+```
+
+## ⚡ 3. Running the Project
+```bash
+npm run dev
+```
+The application will be live at: http://localhost:3000
