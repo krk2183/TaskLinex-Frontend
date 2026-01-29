@@ -1,16 +1,12 @@
 from fastapi import FastAPI, HTTPException, status, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
-import bcrypt
-import sqlite3
-import jwt
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List
 from datetime import datetime, timedelta, timezone
-import uuid, uvicorn
-import json
-import os
+import json,os,jwt,sqlite3,bcrypt,uuid,uvicorn,dotenv,socket
 from contextlib import asynccontextmanager
 from fastapi.exceptions import RequestValidationError
+from pathlib import Path
 from fastapi.responses import JSONResponse
 
 # Server initialization
@@ -21,23 +17,49 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# Load environment variables
+backend_dir = Path(__file__).resolve().parent
+root_dir = backend_dir.parent
+dotenv_path = root_dir / ".env.local"
+
+if dotenv_path.exists():
+    dotenv.load_dotenv(dotenv_path=dotenv_path)
+    print(f"Loaded .env from: {dotenv_path}")
+else:
+    print(f"Warning: .env not found at {dotenv_path}. Using default settings.")
+
 # --- Constants ---
-SECRET_KEY = "your-super-secret-key-change-me"  # Later environment variables
-ALGORITHM = "HS256"
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'data', 'tasklinex.db')
+SERVER_PORT = int(os.getenv("NEXT_PUBLIC_SERVER_PORT", 8000))
 
 # --- CORS Middleware ---
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(('8.8.8.8', 1))
+        IP = s.getsockname()[0]
+    except Exception:
+        IP = '127.0.0.1'
+    finally:
+        s.close()
+    return IP
+
+local_ip = get_local_ip()
+
 origins = [
-    "http://localhost:3000",  
-    "http://localhost:5173",  
-    "http://127.0.0.1:5173",
-    "http://192.168.0.114:3000",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    f"http://{local_ip}:3000", # Grab the IP
+    'http://192.168.0.113:8000',
+    "https://bushlike-nonvibrating-velma.ngrok-free.dev"
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Test
+    allow_origins=['*'],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -319,17 +341,43 @@ async def createTask(task: Task):
     finally:
         conn.close()
 
-@app.route('/updateTask')
-def updateTask():
-    pass
+@app.post('/updateTask')
+async def updateTask(task: Task):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+        UPDATE tasks SET projectId=?, title=?, startDate=?, duration=?, plannedDuration=?, progress=?, status=?, priority=?, ownerId=?, personaId=?, dependencyIds=?, tags=?
+        WHERE id=?
+        ''',(task.projectId,task.title,task.startDate,task.duration,task.plannedDuration,task.progress,task.status,task.priority,task.ownerId,task.personaId,json.dumps(task.dependencyIds),json.dumps(task.tags),task.id))
+        conn.commit()
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return task
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
 
 @app.route('/deleteTask')
 def deleteTask():
-    pass
+    conn = sqlite3.connect(DB_PATH)
+    cursor = con.cursor()
+    try:
+        cursor.execute('DELETE FROM tasks WHERE id=?', (task_id,)) 
+        conn.commit()
+        return {'message': 'Task deleted successfully'}
+
+    except Exception as e:
+        raise HTTPException(status_code=600,detail=str(e))
+    finally:
+        conn.close()
+
 
 @app.route('/renderPersona')
 def renderPersona():
     pass
 
 if __name__ == "__main__":
-    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("server:app", host="0.0.0.0", port=SERVER_PORT, reload=True)

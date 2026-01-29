@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+
 import {
   motion,
   useScroll,
@@ -8,11 +9,13 @@ import {
   AnimatePresence,
 } from "framer-motion";
 import {
+    Server,Send,
   Zap, Layers, ArrowRight, CheckCircle,
   AlertTriangle, Clock, GitCommit, Sparkles,
   User, Search, GitPullRequest,
   Workflow, MessageSquare, BrainCircuit,
   ChevronRight, Activity
+  ,CornerDownRight
 } from "lucide-react";
 
 // --- UTILS & CONSTANTS ---
@@ -148,25 +151,27 @@ function Header() {
     <motion.header
       initial={{ y: -20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 py-4 border-b border-white/[0.06] bg-[#050505]/80 backdrop-blur-xl"
+      className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 py-0.5 border-b border-white/[0.06] bg-[#050505]/80 backdrop-blur-xl"
     >
-    <div className="flex items-center gap-2 mb-12 mt-[1vw]">
-        <span className="text-xl font-bold tracking-tight select-none">
-        <span className="text-white ">Task</span>
-        <span className="text-violet-500">Linex</span>
+    <div className="flex items-center gap-2 mb-5 mt-[1vw]">
+        <span className="text-sm font-bold tracking-tight select-none">
+        <span className="text-white text-3xl">Task</span>
+        <span className="text-violet-500 text-3xl">Linex</span>
         </span>
     </div>
 
-      <nav className="hidden md:flex gap-8 text-[13px] font-medium text-white/50">
-        <a href="#envoy" className="hover:text-white transition-colors">Envoy</a>
+      <nav className="hidden md:flex gap-7 text-[13px] font-medium text-white/50">
+        <a href="#envoy" className="hover:text-white          transition-colors">Envoy</a>
         <a href="#roadmap" className="hover:text-white transition-colors">Roadmap</a>
-        <a href="#pulse" className="hover:text-white transition-colors">Pulse</a>
+        <a href="#pulse" className="hover:text-white     transition-colors">Pulse</a>
+        <a href="#personas" className="hover:text-white     transition-colors">Personas</a>
+
       </nav>
-      <div className="flex items-center gap-4">
-        <a href="auth/login" className="text-[13px] font-medium text-white/70 hover:text-white transition-colors">Log in</a>
-        <a href="auth/register" className="bg-white text-black text-[13px] font-semibold px-4 py-2 rounded-lg hover:bg-white/90 transition-all">
+      <div className="flex items-center gap-1">
+        <a href="/login" className="text-[13px] mr-2 font-medium text-white/70 hover:text-white transition-colors">Log in</a>
+        <a href="/register" className="bg-white text-black text-[13px] font-semibold px-3 py-1.5 rounded-lg hover:bg-white/90 transition-all">
           Get Access
-        </a>
+        </a>    
       </div>
     </motion.header>
   );
@@ -242,13 +247,13 @@ function Hero() {
          <div className="w-full h-[600px] rounded-xl border border-white/10 bg-[#0B1120] shadow-2xl relative overflow-hidden flex flex-col">
             
             {/* Browser/App Header */}
-            <div className="h-10 border-b border-white/5 bg-[#0F172A] flex items-center px-4 justify-between">
+            <div id='roadmap' className="h-10 border-b border-white/5 bg-[#0F172A] flex items-center px-4 justify-between">
                 <div className="flex gap-2">
                     <div className="w-3 h-3 rounded-full bg-rose-500/20 border border-rose-500/50" />
                     <div className="w-3 h-3 rounded-full bg-amber-500/20 border border-amber-500/50" />
                     <div className="w-3 h-3 rounded-full bg-emerald-500/20 border border-emerald-500/50" />
                 </div>
-                <div className="flex items-center gap-2 px-3 py-1 rounded bg-black/40 border border-white/5 text-[10px] text-white/40 font-mono">
+                <div  className="flex items-center gap-2 px-3 py-1 rounded bg-black/40 border border-white/5 text-[10px] text-white/40 font-mono">
                     <div className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse" />
                     app.tasklinex.com/roadmap
                 </div>
@@ -490,7 +495,8 @@ function WorkflowEngine() {
                         </div>
                     </div>
 
-                    {/* Feature 2: Element-Linked Communication */}
+
+                    {/* /* Feature 2: Element-Linked Communication */}
                     <div className="space-y-8">
                         <div className="flex items-center gap-2">
                             <MessageSquare className="w-5 h-5 text-violet-500" />
@@ -506,19 +512,70 @@ function WorkflowEngine() {
                         </p>
 
                         {/* Visual: Chat Interface */}
-                        <div className={`${GLASS_PANEL} rounded-2xl p-6 h-[320px] relative flex flex-col`}>
+                        <div className={`${GLASS_PANEL} rounded-2xl p-6 h-[340px] relative flex flex-col`}>
+                            {/* Header */}
                             <div className="border-b border-white/5 pb-4 mb-4 flex justify-between items-center">
-                                <span className="text-xs font-bold text-white">Task #892: Auth Flow</span>
-                                <span className="text-[10px] text-white/30 bg-white/5 px-2 py-0.5 rounded">Active Thread</span>
+                                <span className="text-xs font-bold text-white">Roadmap: Q3 Infrastructure</span>
+                                <span className="text-[10px] text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded border border-emerald-400/20">Live Thread</span>
                             </div>
-                            <div className="flex-1 space-y-4 overflow-hidden relative">
-                                <ChatBubble user="AC" text="Blocked on the JWT secret env variable. Can you check?" delay={0.2} />
-                                <ChatBubble user="MR" text="Checking now. It should be in the Vault." delay={0.4} align="right" />
-                                <ChatBubble user="AC" text="Found it. Deploying fix." delay={0.6} />
+
+                            <div className="flex-1 overflow-hidden relative flex flex-col">
                                 
-                                {/* Input Area Simulation */}
-                                <div className="absolute bottom-0 left-0 right-0 h-10 bg-white/5 rounded-lg border border-white/10 flex items-center px-3 text-white/30 text-xs">
-                                    Type a reply...
+                                {/* The Element Being Replied To (Roadmap Item Representation) */}
+                                <div className="relative group">
+                                    {/* Visual connection line */}
+                                    <div className="absolute left-4 top-10 bottom-[-20px] w-4 border-l-2 border-b-2 border-white/10 rounded-bl-xl z-0"></div>
+
+                                    <div className="bg-white/5 border border-white/10 rounded-lg p-3 relative z-10 backdrop-blur-md">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <div className="p-1 bg-violet-500/20 rounded text-violet-400">
+                                                    <Server size={12} />
+                                                </div>
+                                                <span className="text-xs font-bold text-white">Database Migration</span>
+                                            </div>
+                                            <span className="text-[10px] text-white/40">Due: Oct 12</span>
+                                        </div>
+                                        {/* Tiny Roadmap Progress Bar Visual */}
+                                        <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden flex">
+                                            <div className="w-[65%] h-full bg-violet-500"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* The Chat Stream */}
+                                <div className="mt-4 pl-8 space-y-3 relative z-10">
+                                    {/* Reply Indicator Text */}
+                                    <div className="flex items-center gap-1.5 text-[10px] text-white/30 mb-1 ml-1">
+                                        <CornerDownRight size={10} />
+                                        <span>Replying to roadmap item</span>
+                                    </div>
+
+                                    <ChatBubble 
+                                        user="AC" 
+                                        text="We need to pause the cron jobs before this runs." 
+                                        delay={0.2} 
+                                    />
+                                    <ChatBubble 
+                                        user="MR" 
+                                        text="Agreed. I've updated the script to handle the pause automatically." 
+                                        delay={0.4} 
+                                        align="right" 
+                                    />
+                                </div>
+                                
+                                {/* Contextual Collumns */}
+                                <div className="absolute bottom-0 left-0 right-0 h-10 bg-white/5 rounded-lg border border-white/10 flex items-center px-3 mt-auto">
+                                    <div className="flex items-center justify-between w-full">
+                                        <div className="text-xs truncate mr-2">
+                                            <span className="text-violet-400 font-medium">@MR</span> 
+                                            <span className="text-white/60 ml-1">Looks good, proceed.</span>   
+                                            <span className="w-[1.5px] h-3 bg-white-300 animate-pulse">|</span>             
+                                        </div>
+                                        <div className="h-7 w-7 flex items-center justify-center rounded-full bg-violet-500/20 border border-violet-500/30 hover:bg-violet-500/40 transition-all cursor-pointer group">
+                                            <Send className="w-3.5 h-3.5 text-white/40 group-hover:text-violet-400 transition-colors -ml-0.5 mt-0.5" />
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

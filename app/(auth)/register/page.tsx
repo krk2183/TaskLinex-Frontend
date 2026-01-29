@@ -93,7 +93,7 @@ export default function SignupPage() {
   };
 
   const handleSignup = async (e: React.FormEvent) => {
-     
+    e.preventDefault();
     if (Data.password !== Data.confirmPassword) {
       setError("Passwords do not match");
       return;
@@ -101,8 +101,9 @@ export default function SignupPage() {
     setLoading(true);
     const { confirmPassword, ...formData } = Data;
     try {
-      const response = await fetch("http://localhost:8000/signup", {
-        method: "POST",
+      
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/signup`, {
+        method: "POST", 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
@@ -263,24 +264,27 @@ export default function SignupPage() {
                 Remember me
               </label>
             </div>
+            
 
             <div className="pt-2">
                 <button type="submit" disabled={loading} className="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-lg shadow-[0_0_20px_rgba(124,58,237,0.3)] hover:shadow-[0_0_25px_rgba(124,58,237,0.5)] transition-all flex items-center justify-center gap-2 group">
                 {loading ? "Creating Account..." : "Create Account"} {!loading && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
                 </button>
             </div>
-            
+
+          <div className="mt-5 flex justify-center w-full">
+           
+             <div className="mt-0.5 text-sm">Already have an account?</div>  <a href="/login" className="ml-2 text-violet-400 hover:text-violet-300 font-medium">
+              Sign in
+            </a>
+          </div>
+
             <p className="text-[11px] text-slate-500 text-center leading-relaxed max-w-sm mx-auto">
                 By clicking "Create Account", you agree to our <a href="#" className="text-slate-400 underline hover:text-white">Terms of Service</a> and <a href="#" className="text-slate-400 underline hover:text-white">Privacy Policy</a>.
             </p>
           </form>
 
-          <div className="mt-12 text-center text-sm border-t border-slate-900 pt-8">
-            <span className="text-slate-500">Already have a workspace? </span> 
-            <Link href="/login" className="text-violet-400 hover:text-violet-300 font-bold ml-1">
-                Sign In
-            </Link>
-          </div>
+
         </motion.div>
       </div>
 

@@ -6,10 +6,10 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { 
-    Calendar, Filter, ZoomIn, ChevronRight, 
-    AlertTriangle, CheckCircle, Clock, ArrowRight, 
+    Info, ChevronRight, 
+     CheckCircle, ArrowRight, 
     GitCommit, Layers, Zap, BrainCircuit, UserCog,
-    MessageSquare, RefreshCw, Plus, Search, X
+    RefreshCw, Plus, Search, X
 } from 'lucide-react';
 
 // 1. BACKEND-READY TYPES & INTERFACES
@@ -80,6 +80,11 @@ interface FilterState {
     onlyMyPersonas: boolean;
 }
 
+interface AddTaskModalProps {
+    onClose: () => void;
+    taskToEdit?: Task;
+}
+
 // ==========================================
 // 2. MOCK DATA & API SIMULATION
 // ==========================================
@@ -120,7 +125,7 @@ const MockAPI = {
     // Newly added: Fetchdata to replace MOCK data
     fetchData: async () => { 
         try {
-            const response = await fetch('http://localhost:8000/renderTask', { cache: 'no-store' });
+            const response = await fetch(`http://localhost:${process.env.NEXT_PUBLIC_SERVER_PORT}/renderTask`, { cache: 'no-store' });
             if (!response.ok) throw new Error('Failed to fetch tasks');
             const tasks = await response.json();
             return { tasks: Array.isArray(tasks) ? tasks : [], users: MOCK_USERS, projects: MOCK_PROJECTS };
@@ -131,7 +136,7 @@ const MockAPI = {
     },
     // Newly added: CreateTask to replace MOCK data
     createTask: async (task: Task) => {
-        const response = await fetch('http://localhost:8000/createTask', {
+        const response = await fetch(`http://localhost:${process.env.NEXT_PUBLIC_SERVER_PORT}/createTask`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(task)
@@ -180,6 +185,7 @@ type Action =
     | { type: 'SET_FILTER', payload: Partial<FilterState> }
     | { type: 'SET_VIEW_MODE', payload: ViewMode }
     | { type: 'TOGGLE_PERSONA', payload: string }
+    | { type: 'ADD_TASK', payload: Task[] }
     | { type: 'UPDATE_TASKS', payload: Task[] }
     | { type: 'SET_LOADING', payload: boolean }
     | { type: 'TRIGGER_ENVOY', payload: string | null };
@@ -382,7 +388,7 @@ const EnvoyPopup = ({ task, onClose, triggerRef }: { task: Task, onClose: () => 
 };
 
 // Task Item
-const TaskItem = ({ task, user, dispatch, isEnvoyActive }: { task: Task, user: User | undefined, dispatch: any, isEnvoyActive: boolean }) => {
+const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit }: { task: Task, user: User | undefined, dispatch: any, isEnvoyActive: boolean,onEdit: (t: Task) => void}) => {    
     const triggerRef = useRef<HTMLButtonElement>(null);
     const statusColor = {
         'On Track': 'bg-indigo-500', 'At Risk': 'bg-amber-500', 'Blocked': 'bg-rose-500', 'Completed': 'bg-emerald-500'
@@ -397,48 +403,47 @@ const TaskItem = ({ task, user, dispatch, isEnvoyActive }: { task: Task, user: U
             className="absolute top-2 h-10 group"
             style={{ left: `${(task.startDate - 1) * 8.33}%`, width: `${task.duration * 8.33}%` }}
         >
-            {/* Envoy Trigger (Hover) */}
+            {/* NEW: Left Side Trigger (Hover) */}
+            <button
+                onClick={() => onEdit(task)} // Trigger the edit flow
+                className="absolute top-6 -right-3 z-[60] bg-white dark:bg-slate-900 text-gray-400 rounded-full shadow transition-all scale-0 group-hover:scale-100 hover:text-indigo-600 p-1">
+                <Info className="w-4 h-4" />
+            </button>
+
+            {/* Envoy Trigger (Hover) - Right Side */}
             <button 
                 ref={triggerRef}
                 onClick={() => dispatch({ type: 'TRIGGER_ENVOY', payload: isEnvoyActive ? null : task.id })}
                 className={`absolute -top-3 -right-3 z-[60] bg-white dark:bg-slate-900 rounded-full p-1 shadow border transition-all ${task.envoySuggestion ? 'text-indigo-600 scale-100' : 'text-gray-400 scale-0 group-hover:scale-100'}`}
             >
-                <BrainCircuit className="w-3.5 h-3.5" />
+                <BrainCircuit className="w-4 h-4" />
             </button>
+            
 
             {/* Envoy Popup */}
             {isEnvoyActive && (
                 <EnvoyPopup task={task} onClose={() => dispatch({ type: 'TRIGGER_ENVOY', payload: null })} triggerRef={triggerRef} />
             )}
-            {/* Ghost Bar (Future) */}
+
+            {/* Ghost Bar */}
             {isSlipping && (
                 <div className="absolute inset-0 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-md opacity-50 w-full" style={{ width: `${ghostWidth}%` }} />
             )}
 
-                {/* Main Bar */}
-                <div className={`
-                    relative h-full rounded-md shadow-sm 
-                    flex items-center px-3 gap-2 overflow-hidden
-                    ${statusColor[task.status]}
-                    
-                    /* THE ANIMATION MAGIC */
-                    transition-all transition-gpu duration-300 ease-in-out 
-                    hover:w-max hover:min-w-full hover:z-50 hover:shadow-xl
-                    group
-                `}>
-                {/* Progress Background */}
+            {/* Main Bar */}
+            <div className={`
+                relative h-full rounded-md shadow-sm 
+                flex items-center px-3 gap-2 overflow-hidden
+                ${statusColor[task.status as keyof typeof statusColor]}
+                transition-all transition-gpu duration-300 ease-in-out 
+                hover:w-max hover:min-w-full hover:z-50 hover:shadow-xl
+            `}>
                 <div className="absolute left-0 top-0 bottom-0 bg-black/20" style={{ width: `${task.progress}%` }} />
                 
-                {/* Text */}
-                <span className="
-                    relative z-10 text-xs font-bold text-white 
-                    truncate group-hover:whitespace-normal group-hover:overflow-visible
-                    transition-all duration-300
-                ">
+                <span className="relative z-10 text-xs font-bold text-white truncate transition-all duration-300">
                     {task.title}
                 </span>
 
-                {/* Avatar */}
                 {user && (
                     <img 
                         src={user.avatar} 
@@ -530,49 +535,70 @@ const WorkloadHUD = () => {
 };
 
 // Add Task Modal
-const AddTaskModal = ({ onClose }: { onClose: () => void }) => {
+const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     // Save the variables in memory
     const { state, dispatch } = useContext(AppContext)!;
-    const [title, setTitle] = useState('');
-    const [projectId, setProjectId] = useState(state.projects[0]?.id || '');
-    const [ownerId, setOwnerId] = useState(state.users[0]?.id || '');
-    const [startDate, setStartDate] = useState(1);
-    const [duration, setDuration] = useState(1);
-    const [status, setStatus] = useState<TaskStatus>('On Track');
-    const [priority, setPriority] = useState<Priority>('Medium');
+    const headline = taskToEdit?  'Update Task Details': "Add New Task";
+    const buttontitle = taskToEdit? 'Edit Task':'Create Task';
 
+    // Fallback defaults
+    const [title, setTitle] = useState(taskToEdit?.title || '');
+    const [projectId, setProjectId] = useState(taskToEdit?.projectId || state.projects[0]?.id || '');
+    const [ownerId, setOwnerId] = useState(taskToEdit?.ownerId || state.users[0]?.id || '');
+    const [startDate, setStartDate] = useState(taskToEdit?.startDate || 1);
+    const [duration, setDuration] = useState(taskToEdit?.duration || 1);
+    const [status, setStatus] = useState<TaskStatus>(taskToEdit?.status || 'On Track');
+    const [priority, setPriority] = useState<Priority>(taskToEdit?.priority || 'Medium');
+
+    // handleSubmit decides between adding tasks and updating tasks
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const newTask: Task = {
-            id: `t${Date.now()}`,   
+        const taskPayload = {
+            id: taskToEdit ? taskToEdit.id : `t${Date.now()}`, 
             projectId,
             title,
             startDate: Number(startDate),
             duration: Number(duration),
-            plannedDuration: Number(duration),
-            progress: 0,
+            plannedDuration: taskToEdit ? taskToEdit.plannedDuration : Number(duration),
+            progress: taskToEdit ? taskToEdit.progress : 0,
             status,
             priority,
             ownerId,
-            dependencyIds: [],
-            tags: []
+            dependencyIds: taskToEdit ? taskToEdit.dependencyIds : [],
+            tags: taskToEdit ? taskToEdit.tags : []
         };
         
         try {
-            const createdTask = await MockAPI.createTask(newTask);
-            dispatch({ type: 'UPDATE_TASKS', payload: [...state.tasks, { ...newTask, ...createdTask }] });
-            onClose();
-        } catch (error) {
-            console.error("Failed to create task:", error);
-        }
-    };
+                const endpoint = taskToEdit ? '/updateTask' : '/createTask';
+                // Use the dynamic IP or localhost consistently
+                const response = await fetch(`http://192.168.0.113:8000${endpoint}`, { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(taskPayload)
+                });
 
+                if (!response.ok) throw new Error('Failed to save task');
+                const savedTask = await response.json();
+
+                // FIX: If updating, find the task in the current list and replace it
+                if (taskToEdit) {
+                    const updatedTasks = state.tasks.map(t => t.id === savedTask.id ? savedTask : t);
+                    dispatch({ type: 'UPDATE_TASKS', payload: updatedTasks });
+                } else {
+                    dispatch({ type: 'UPDATE_TASKS', payload: [...state.tasks, savedTask] });
+                }
+
+                onClose();
+            } catch (error) {
+                console.error("Failed to save task:", error);
+            }
+        };
     return (
         // Creates the background blur
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white dark:bg-[#0F172A] w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 scale-100 animate-in zoom-in-95 duration-200">
                 <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">Add New Task</h2>
+                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">{headline}</h2>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
                         <X className="w-5 h-5" />
                     </button>
@@ -681,7 +707,7 @@ const AddTaskModal = ({ onClose }: { onClose: () => void }) => {
                             type="submit"
                             className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-lg shadow-indigo-500/20 transition-all transform hover:scale-105 active:scale-95"
                         >
-                            Create Task
+                            {buttontitle}
                         </button>
                     </div>
                 </form>
@@ -694,10 +720,14 @@ const AddTaskModal = ({ onClose }: { onClose: () => void }) => {
 
 export default function RoadmapPage() {
     const [state, dispatch] = useReducer(appReducer, initialState);
-    
+    const [taskToEdit, setTaskToEdit] = useState<Task | undefined>(undefined);
     // Initial Data Fetch
     useEffect(() => {
-        MockAPI.fetchData().then(data => dispatch({ type: 'INIT_DATA', payload: data }));
+        const loadData = async () => {
+            const data = await MockAPI.fetchData(); // This now calls your /renderTask
+            dispatch({ type: 'INIT_DATA', payload: data });
+        };
+        loadData();
     }, []);
 
     // Filter Logic
@@ -893,11 +923,15 @@ export default function RoadmapPage() {
                                                                         </div>
                                                                     ) : (
                                                                         // Standard Task Render
-                                                                        <TaskItem 
-                                                                            task={task} 
-                                                                            user={state.users.find(u => u.id === task.ownerId)} 
+                                                                        <TaskItem
+                                                                            task={task}
+                                                                            user={state.users.find(u => u.id === task.ownerId)}
                                                                             dispatch={dispatch}
                                                                             isEnvoyActive={state.envoyActive === task.id}
+                                                                            onEdit={(t) => {
+                                                                                setTaskToEdit(t); // Set the task data
+                                                                                setAVisible(true); // Opens the Modal
+                                                                            }}
                                                                         />
                                                                     )}
                                                                     
@@ -914,14 +948,24 @@ export default function RoadmapPage() {
                         </div>
                     </div>
                     <div className='fixed bottom-6 right-6 z-50' id='addButton'>
-                        <button className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-[12px] p-4 shadow-lg transition-transform hover:scale-110"
-                        onClick={()=>setAVisible(!addVisible)}>
+                        <button 
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-[12px] p-4 shadow-lg transition-transform hover:scale-110"
+                            onClick={() => {
+                                    setTaskToEdit(undefined);
+                                    setAVisible(true);
+                                }}>
                             <Plus className="w-15 h-6" />
                         </button>
                     </div>
-
                     {/* Open the AddTaskModal window */}
-                    {addVisible && <AddTaskModal onClose={() => setAVisible(false)} />}
+                    {addVisible && ( <AddTaskModal 
+                    onClose={() => {
+                        setAVisible(false);
+                        setTaskToEdit(undefined);
+                    }} 
+                    taskToEdit={taskToEdit} />)}
+
+                        
                 </div>
 
             </div>

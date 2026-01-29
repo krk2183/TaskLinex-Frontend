@@ -16,6 +16,8 @@ const Logo = () => (
   </div>
 );
 
+const port = process.env.NEXT_PUBLIC_SERVER_PORT;
+
 const InputField = ({ 
   label, 
   type, 
@@ -91,7 +93,7 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const response = await fetch("http://localhost:8000/login", {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -104,7 +106,7 @@ export default function LoginPage() {
       
       const result = await response.json();
       localStorage.setItem("token", result.access_token);
-      window.location.href = "/app";
+      window.location.href = "/pulse";
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred.");
     } finally {
@@ -201,9 +203,11 @@ export default function LoginPage() {
             </button>
           </div>
 
-          <p className="mt-10 text-center text-sm text-slate-500">
-            No active session? <Link href="/signup" className="text-violet-400 hover:text-violet-300 font-medium">Initialize Workspace</Link>
-          </p>
+          <div className="mt-5 flex justify-center w-full">
+              <div className="mt-0.5 text-sm">Don't have an account?</div> <a href="/register" className="ml-1 text-violet-400 hover:text-violet-300 font-medium">
+              Initialize Workspace
+            </a>
+          </div>
         </motion.div>
       </div>
 
