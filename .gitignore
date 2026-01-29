@@ -19,7 +19,7 @@
 /out/
 
 # production
-/backend
+# /backend
 
 # misc
 .DS_Store
@@ -32,7 +32,7 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
-.env.local
+# .env.local
 
 # vercel
 .vercel
@@ -42,4 +42,4 @@ yarn-error.log*
 
 
 #Self
-ngrok.yml
+# ngrok.yml
