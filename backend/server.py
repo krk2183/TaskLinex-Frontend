@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi.exceptions import RequestValidationError
 from pathlib import Path
 from fastapi.responses import JSONResponse
-
+from google import genai 
 # Server initialization
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -29,6 +29,7 @@ else:
     print(f"Warning: .env not found at {dotenv_path}. Using default settings.")
 
 # --- Constants ---
+GEMINI_API = os.getenv('GEMINI_API_KEY')
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -115,7 +116,7 @@ def init_db():
 
     # Dependencies table
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS dependencies (
+        CREATE TABLE IF NOT EXISTS dependencyIds (
             pk INTEGER PRIMARY KEY AUTOINCREMENT,
             id TEXT NOT NULL UNIQUE,
             task_id TEXT NOT NULL,
@@ -204,6 +205,15 @@ class UserLogin(BaseModel):
     password: str
     rememberMe: bool = False
 
+class Proposal(BaseModel):
+    field:str
+    suggested:str
+    reason:Optional[str]=None
+class EnvoyRequest(BaseModel):
+    task_id:str
+    all:Optional[bool]=False
+    context_text: Optional[str]=None
+    proposals:Optional[List[Proposal]] = None
 
 # Endpoints
 @app.get('/')
@@ -337,6 +347,7 @@ async def createTask(task: Task):
         return task
     except Exception as e:
         print(f"Error creating task: {e}")
+        conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
@@ -355,13 +366,14 @@ async def updateTask(task: Task):
             raise HTTPException(status_code=404, detail="Task not found")
         return task
     except Exception as e:
+        conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
 
 
 @app.route('/deleteTask')
-def deleteTask():
+def deleteTask(task_id):
     conn = sqlite3.connect(DB_PATH)
     cursor = con.cursor()
     try:
@@ -370,7 +382,154 @@ def deleteTask():
         return {'message': 'Task deleted successfully'}
 
     except Exception as e:
+        conn.rollback()
         raise HTTPException(status_code=600,detail=str(e))
+    finally:
+        conn.close()
+'''
+INPUT EXAMPLE
+{
+  "task_id": "123",
+  "proposals": [
+    {
+      "field": "priority",
+      "current": "low",
+      "suggested": "high",
+      "reason": "Task is overdue and has dependencies"
+    }
+  ]
+}
+
+'''
+
+# -----------------------------
+# Gemini Suggest Endpoint
+# -----------------------------
+@app.post("/envoy/suggest")
+def suggest(req: EnvoyRequest):
+    # 1) Fetch a snapshot of tasks from the DB
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    if req.all:
+        # get neighbors in project
+        cursor.execute(
+            "SELECT id, title, status, priority, plannedDuration, dependencyIds FROM tasks WHERE projectId = (SELECT projectId FROM tasks WHERE id = ?)",
+            (req.task_id,),
+        )
+    else:
+        cursor.execute(
+            "SELECT id, title, status, priority, plannedDuration, dependencyIds FROM tasks WHERE id = ?",
+            (req.task_id,),
+        )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    tasks_list = []
+    for row in rows:
+        tasks_list.append({
+            "id": row[0],
+            "title": row[1],
+            "status": row[2],
+            "priority": row[3],
+            "plannedDuration": row[4],
+            "dependencyIds": row[5],
+        })
+
+    # 2) Build the prompt we send to Gemini
+    prompt_text = f"""
+        You are an assistant that suggests structured changes for tasks.
+        User context: {req.context_text or 'none'}
+
+        Here are tasks context:
+        {tasks_list}
+
+        Return a JSON list of proposals:
+        [
+        {{
+            "task_id": "...",
+            "field": "...",
+            "suggested": "...",
+            "reason": "..."
+        }}
+        ]
+    """
+
+    # 3) Call Gemini via the GenAI SDK
+    client = genai.Client(api_key=GEMINI_API) 
+    model = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt_text
+    )
+    ai_text = model.text  # get raw text response
+
+    cleaned_text = ai_text.strip()
+    if cleaned_text.startswith("```"):
+        import re
+        cleaned_text = re.sub(r"^```[a-z]*\n", "", cleaned_text, flags=re.MULTILINE)
+        cleaned_text = re.sub(r"\n```$", "", cleaned_text, flags=re.MULTILINE)
+
+    try:
+        parsed = json.loads(cleaned_text)
+    except Exception:
+        print(f"JSON Parse Failed. Raw AI Text: {ai_text}")
+        return {"error": "Failed to parse Gemini output", "raw": ai_text}
+
+    proposals = []
+    if isinstance(parsed, list):
+        for p in parsed:
+            if isinstance(p, dict):
+                unique_id = str(uuid.uuid4())                
+                proposals.append({
+                    "id": unique_id, 
+                    "field": p.get("field", ""),
+                    "suggested": p.get("suggested", ""),
+                    "reason": p.get("reason", "")
+                })
+    return {
+        "task_id": req.task_id,
+        "proposals": proposals
+    }
+# -----------------------------
+# Envoy Apply Endpoint
+# -----------------------------
+IMMUTABLE_FIELDS = {"pk", "id", "projectId", "ownerId", "personaId", "progress", "createdAt"}
+AI_MUTABLE_FIELDS = {"status", "priority"}
+AI_OPTIONAL_FIELDS = {"startDate", "duration", "plannedDuration", "dependencyIds", "tags"}
+
+@app.post("/envoy/apply")
+def apply(req: EnvoyRequest):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    applied = []
+    skipped_immutable = []
+
+    try:
+        for p in req.proposals or []:
+            field = p.field
+            suggested = p.suggested
+            # Only allows known safe fields
+            if field in AI_MUTABLE_FIELDS or field in AI_OPTIONAL_FIELDS:
+                val = json.dumps(suggested) if isinstance(suggested, list) else suggested
+                query = f"UPDATE tasks SET {field} = ? WHERE id = ?"
+                cursor.execute(query, (val, req.task_id))
+                applied.append(field)
+            else:
+                skipped_immutable.append(field)
+
+        conn.commit()
+        return {
+            "message": "Task update processed",
+            "applied_fields": applied,
+            "skipped_fields": skipped_immutable
+        }
+
+    except Exception as e:
+        conn.rollback()
+        return {"error": str(e)}
+
     finally:
         conn.close()
 

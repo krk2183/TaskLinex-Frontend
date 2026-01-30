@@ -5,6 +5,7 @@ import React, {
     useEffect, useState, useMemo, useRef 
 } from 'react';
 import { createPortal } from 'react-dom';
+import {  Check, Eye, Loader2, AlertCircle, Sparkles } from 'lucide-react';
 import { 
     Info, ChevronRight, 
      CheckCircle, ArrowRight, 
@@ -83,6 +84,20 @@ interface FilterState {
 interface AddTaskModalProps {
     onClose: () => void;
     taskToEdit?: Task;
+}
+
+interface Proposal {
+    id: string;
+    field: 'status' | 'priority' | 'startDate' | 'duration' | 'plannedDuration' | 'dependencyIds' | 'tags';
+    suggested: any;
+    reason?: string;
+}
+
+interface EnvoyDrawerProps {
+    taskId: string;
+    isOpen: boolean;
+    onClose: () => void;
+    onUpdateSuccess?: () => void;
 }
 
 // ==========================================
@@ -292,100 +307,100 @@ const DependencyLayer = ({ tasks, projects, viewMode, collapsedProjects }: { tas
 };
 
 // 4.2 The "Envoy" AI Assistant Popup
-const EnvoyPopup = ({ task, onClose, triggerRef }: { task: Task, onClose: () => void, triggerRef: React.RefObject<HTMLElement> }) => {
-    const [status, setStatus] = useState<'idle' | 'thinking' | 'done'>('idle');
-    const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
-    const popupRef = useRef<HTMLDivElement>(null);
+// const EnvoyPopup = ({ task, onClose, triggerRef }: { task: Task, onClose: () => void, triggerRef: React.RefObject<HTMLElement> }) => {
+//     const [status, setStatus] = useState<'idle' | 'thinking' | 'done'>('idle');
+//     const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+//     const popupRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => {
-        if (triggerRef.current) {
-            const rect = triggerRef.current.getBoundingClientRect();
-            setCoords({
-                top: rect.bottom + 10,
-                left: rect.left
-            });
-        }
-    }, [triggerRef]);
+//     useEffect(() => {
+//         if (triggerRef.current) {
+//             const rect = triggerRef.current.getBoundingClientRect();
+//             setCoords({
+//                 top: rect.bottom + 10,
+//                 left: rect.left
+//             });
+//         }
+//     }, [triggerRef]);
 
-    // Handle click outside
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (
-                popupRef.current && 
-                !popupRef.current.contains(event.target as Node) &&
-                triggerRef.current &&
-                !triggerRef.current.contains(event.target as Node)
-            ) {
-                onClose();
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [onClose, triggerRef]);
+//     // Handle click outside
+//     useEffect(() => {
+//         const handleClickOutside = (event: MouseEvent) => {
+//             if (
+//                 popupRef.current && 
+//                 !popupRef.current.contains(event.target as Node) &&
+//                 triggerRef.current &&
+//                 !triggerRef.current.contains(event.target as Node)
+//             ) {
+//                 onClose();
+//             }
+//         };
+//         document.addEventListener('mousedown', handleClickOutside);
+//         return () => document.removeEventListener('mousedown', handleClickOutside);
+//     }, [onClose, triggerRef]);
 
-    // Close on scroll/resize to prevent detached popup
-    useEffect(() => {
-        const handleDismiss = () => onClose();
-        window.addEventListener('scroll', handleDismiss, true);
-        window.addEventListener('resize', handleDismiss);
-        return () => {
-            window.removeEventListener('scroll', handleDismiss, true);
-            window.removeEventListener('resize', handleDismiss);
-        };
-    }, [onClose]);
+//     // Close on scroll/resize to prevent detached popup
+//     useEffect(() => {
+//         const handleDismiss = () => onClose();
+//         window.addEventListener('scroll', handleDismiss, true);
+//         window.addEventListener('resize', handleDismiss);
+//         return () => {
+//             window.removeEventListener('scroll', handleDismiss, true);
+//             window.removeEventListener('resize', handleDismiss);
+//         };
+//     }, [onClose]);
     
-    const handleAction = async () => {
-        setStatus('thinking');
-        await MockAPI.triggerEnvoyAction(task.id, 'Optimized Schedule');
-        setStatus('done');
-        setTimeout(onClose, 1500);
-    };
+//     const handleAction = async () => {
+//         setStatus('thinking');
+//         await MockAPI.triggerEnvoyAction(task.id, 'Optimized Schedule');
+//         setStatus('done');
+//         setTimeout(onClose, 1500);
+//     };
 
-    if (typeof document === 'undefined' || !coords) return null;
+//     if (typeof document === 'undefined' || !coords) return null;
 
-    return createPortal(
-        <div 
-            ref={popupRef}
-            className="fixed z-[9999] w-64 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-indigo-100 dark:border-indigo-900 p-4 animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-200 ease-out"
-            style={{ top: coords.top, left: coords.left }}
-        >
-            <div className="flex items-center gap-2 mb-3 border-b border-gray-100 dark:border-gray-700 pb-2">
-                <BrainCircuit className="w-4 h-4 text-indigo-500" />
-                <span className="font-bold text-xs uppercase tracking-wider text-indigo-900 dark:text-indigo-100">Envoy AI</span>
-            </div>
+//     return createPortal(
+//         <div 
+//             ref={popupRef}
+//             className="fixed z-[9999] w-64 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-indigo-100 dark:border-indigo-900 p-4 animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-200 ease-out"
+//             style={{ top: coords.top, left: coords.left }}
+//         >
+//             <div className="flex items-center gap-2 mb-3 border-b border-gray-100 dark:border-gray-700 pb-2">
+//                 <BrainCircuit className="w-4 h-4 text-indigo-500" />
+//                 <span className="font-bold text-xs uppercase tracking-wider text-indigo-900 dark:text-indigo-100">Envoy AI</span>
+//             </div>
             
-            {status === 'idle' && (
-                <>
-                    <p className="text-xs text-slate-600 dark:text-slate-300 mb-3">
-                        {task.envoySuggestion?.message || "I can help optimize this task's allocation."}
-                    </p>
-                    <button 
-                        onClick={handleAction}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
-                    >
-                        <Zap className="w-3 h-3" />
-                        {task.envoySuggestion?.actionLabel || "Analyze Impact"}
-                    </button>
-                </>
-            )}
+//             {status === 'idle' && (
+//                 <>
+//                     <p className="text-xs text-slate-600 dark:text-slate-300 mb-3">
+//                         {task.envoySuggestion?.message || "I can help optimize this task's allocation."}
+//                     </p>
+//                     <button 
+//                         onClick={handleAction}
+//                         className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
+//                     >
+//                         <Zap className="w-3 h-3" />
+//                         {task.envoySuggestion?.actionLabel || "Analyze Impact"}
+//                     </button>
+//                 </>
+//             )}
 
-            {status === 'thinking' && (
-                <div className="flex flex-col items-center py-2 text-indigo-500">
-                    <RefreshCw className="w-5 h-5 animate-spin mb-2" />
-                    <span className="text-xs">Optimizing critical path...</span>
-                </div>
-            )}
+//             {status === 'thinking' && (
+//                 <div className="flex flex-col items-center py-2 text-indigo-500">
+//                     <RefreshCw className="w-5 h-5 animate-spin mb-2" />
+//                     <span className="text-xs">Optimizing critical path...</span>
+//                 </div>
+//             )}
 
-            {status === 'done' && (
-                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-                    <CheckCircle className="w-5 h-5" />
-                    <span className="text-xs font-bold">Optimization Applied</span>
-                </div>
-            )}
-        </div>,
-        document.body
-    );
-};
+//             {status === 'done' && (
+//                 <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+//                     <CheckCircle className="w-5 h-5" />
+//                     <span className="text-xs font-bold">Optimization Applied</span>
+//                 </div>
+//             )}
+//         </div>,
+//         document.body
+//     );
+// };
 
 // Task Item
 const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit }: { task: Task, user: User | undefined, dispatch: any, isEnvoyActive: boolean,onEdit: (t: Task) => void}) => {    
@@ -421,9 +436,9 @@ const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit }: { task: Task,
             
 
             {/* Envoy Popup */}
-            {isEnvoyActive && (
+            {/* {isEnvoyActive && (
                 <EnvoyPopup task={task} onClose={() => dispatch({ type: 'TRIGGER_ENVOY', payload: null })} triggerRef={triggerRef} />
-            )}
+            )} */}
 
             {/* Ghost Bar */}
             {isSlipping && (
@@ -436,7 +451,7 @@ const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit }: { task: Task,
                 flex items-center px-3 gap-2 overflow-hidden
                 ${statusColor[task.status as keyof typeof statusColor]}
                 transition-all transition-gpu duration-300 ease-in-out 
-                hover:w-max hover:min-w-full hover:z-50 hover:shadow-xl
+                group-hover:w-max hover:min-w-full hover:z-50 hover:shadow-xl
             `}>
                 <div className="absolute left-0 top-0 bottom-0 bg-black/20" style={{ width: `${task.progress}%` }} />
                 
@@ -716,6 +731,214 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     );
 };
 
+const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUpdateSuccess }) => {
+    const [proposals, setProposals] = useState<Proposal[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [applyingId, setApplyingId] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    
+    // Modal state for "Review" fields
+    const [reviewProposal, setReviewProposal] = useState<Proposal | null>(null);
+
+    const autoApplyFields = ['status', 'priority'];
+
+    const fetchSuggestions = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            // const response = await fetch('http://192.168.0.113:8000/envoy/suggest', {
+            const response = await fetch(`http://localhost:${process.env.NEXT_PUBLIC_SERVER_PORT || 8000}/envoy/suggest`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_id: taskId, all: true })
+            });
+            if (!response.ok) throw new Error('Failed to fetch suggestions');
+            const data = await response.json();
+            setProposals(data.proposals || []);
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (isOpen && taskId) {
+            fetchSuggestions();
+        }
+    }, [isOpen, taskId]);
+
+    const handleApply = async (proposal: Proposal) => {
+        setApplyingId(proposal.id);
+        try {
+            const response = await fetch('http://192.168.0.113:8000/envoy/apply', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    task_id: taskId, 
+                    proposals: [proposal] 
+                })
+            });
+            if (!response.ok) throw new Error('Failed to apply change');
+            
+            setProposals(prev => prev.filter(p => p.id !== proposal.id));
+            setReviewProposal(null);
+            if (onUpdateSuccess) onUpdateSuccess();
+        } catch (err: any) {
+            alert(err.message);
+        } finally {
+            setApplyingId(null);
+        }
+    };
+
+    const autoProposals = proposals.filter(p => autoApplyFields.includes(p.field));
+    const optionalProposals = proposals.filter(p => !autoApplyFields.includes(p.field));
+
+    return (
+        <>
+            {/* Drawer Overlay */}
+            {isOpen && (
+                <div 
+                    className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[100] transition-opacity"
+                    onClick={onClose}
+                />
+            )}
+
+            {/* Sidebar Drawer */}
+            <div className={`fixed top-0 left-0 h-full w-96 bg-gray-900 shadow-2xl z-[101] transform transition-transform duration-300 ease-in-out border-r-[5px] rounded-xl border-violet-700 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                <div className="p-6 h-full flex flex-col">
+                    <div className="flex items-center justify-between mb-8">
+                        <div className="flex items-center gap-2 text-indigo-600">
+                            <BrainCircuit className="w-6 h-6" />
+                            <h2 className="text-2xl font-bold tracking-tight">Envoy AI Proposals</h2>
+                        </div>
+                        <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                            <X className="w-5 h-5 text-slate-500" />
+                        </button>
+                    </div>
+
+                    {loading ? (
+                        <div className="flex flex-col items-center justify-center flex-1 text-slate-500">
+                            <Loader2 className="w-8 h-8 animate-spin mb-2" />
+                            <p>Analyzing project context...</p>
+                        </div>
+                    ) : error ? (
+                        <div className="p-4 bg-rose-50 border border-rose-100 rounded-lg text-rose-600 flex items-start gap-3">
+                            <AlertCircle className="w-5 h-5 mt-0.5" />
+                            <p className="text-sm">{error}</p>
+                        </div>
+                    ) : (
+                        <div className="flex-1 overflow-y-auto space-y-8 pr-2">
+                            {/* Section: Auto-Apply */}
+                            <section>
+                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Direct Optimization</h3>
+                                {autoProposals.length === 0 && <p className="text-sm text-slate-400 italic">No immediate field updates suggested.</p>}
+                                {autoProposals.map(p => (
+                                    <div key={p.id||i} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-3">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className="text-xs font-medium px-2 py-0.5 bg-slate-100 rounded text-slate-600 capitalize">{p.field}</span>
+                                            <button 
+                                                onClick={() => handleApply(p)}
+                                                disabled={applyingId === p.id}
+                                                className="flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
+                                            >
+                                                {applyingId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                                Apply
+                                            </button>
+                                        </div>
+                                        <p className="text-sm font-semibold text-slate-800">Change to: <span className="text-indigo-600">{p.suggested}</span></p>
+                                        {p.reason && <p className="text-xs text-slate-500 mt-2 leading-relaxed italic">"{p.reason}"</p>}
+                                    </div>
+                                ))}
+                            </section>
+
+                            {/* Section: Optional/Review */}
+                            <section>
+                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Strategic Timeline Adjustments</h3>
+                                {optionalProposals.length === 0 && <p className="text-sm text-slate-400 italic">No timeline changes suggested.</p>}
+                                {optionalProposals.map(p => (
+                                    <div key={p.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-3">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className="text-xs font-medium px-2 py-0.5 bg-indigo-50 rounded text-indigo-600 capitalize">{p.field.replace('Ids', '')}</span>
+                                            <button 
+                                                onClick={() => setReviewProposal(p)}
+                                                className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700"
+                                            >
+                                                <Eye className="w-3 h-3" />
+                                                Review
+                                            </button>
+                                        </div>
+                                        <p className="text-sm text-slate-600">Suggested: <span className="font-mono font-bold text-slate-900">{JSON.stringify(p.suggested)}</span></p>
+                                    </div>
+                                ))}
+                            </section>
+                        </div>
+                    )}
+                    
+                    <button 
+                        onClick={fetchSuggestions}
+                        className="mt-4 w-full py-3 bg-gray-700 border-[4px] border-violet-700  text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors shadow-sm"
+                    >
+                        <Sparkles className="w-4 h-4 text-indigo-500" />
+                        Refresh Suggestions
+                    </button>
+                </div>
+            </div>
+
+            {/* Review Modal */}
+            {reviewProposal && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setReviewProposal(null)} />
+                    <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 overflow-hidden">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 bg-indigo-100 rounded-lg">
+                                <Eye className="w-5 h-5 text-indigo-600" />
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-900">Review AI Suggestion</h3>
+                        </div>
+                        
+                        <div className="space-y-4 mb-6">
+                            <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                                <p className="text-xs font-bold text-slate-400 uppercase mb-1">Field</p>
+                                <p className="text-sm font-semibold capitalize">{reviewProposal.field}</p>
+                            </div>
+                            <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                                <p className="text-xs font-bold text-slate-400 uppercase mb-1">Proposed Value</p>
+                                <code className="text-sm font-bold text-indigo-600">{JSON.stringify(reviewProposal.suggested)}</code>
+                            </div>
+                            {reviewProposal.reason && (
+                                <div className="p-3 bg-indigo-50/50 rounded-lg border border-indigo-100">
+                                    <p className="text-xs font-bold text-indigo-400 uppercase mb-1">AI Reasoning</p>
+                                    <p className="text-sm text-slate-700 italic">"{reviewProposal.reason}"</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => setReviewProposal(null)}
+                                className="flex-1 py-2.5 text-sm font-bold text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={() => handleApply(reviewProposal)}
+                                disabled={applyingId === reviewProposal.id}
+                                className="flex-1 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                                {applyingId === reviewProposal.id && <Loader2 className="w-4 h-4 animate-spin" />}
+                                Confirm & Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
+    );
+};
+
+// export default EnvoyDrawer;
+
 // MAIN PAGE COMPONENT
 
 export default function RoadmapPage() {
@@ -957,6 +1180,19 @@ export default function RoadmapPage() {
                             <Plus className="w-15 h-6" />
                         </button>
                     </div>
+
+                    {/* --- ENVOY DRAWER --- */}
+                    <EnvoyDrawer 
+                        taskId={state.envoyActive || ''} 
+                        isOpen={state.envoyActive !== null} 
+                        onClose={() => dispatch({ type: 'TRIGGER_ENVOY', payload: null })}
+                        onUpdateSuccess={async () => {
+                            // Refresh data after AI apply
+                            const data = await MockAPI.fetchData();
+                            dispatch({ type: 'INIT_DATA', payload: data });
+                        }}
+                    />
+
                     {/* Open the AddTaskModal window */}
                     {addVisible && ( <AddTaskModal 
                     onClose={() => {
