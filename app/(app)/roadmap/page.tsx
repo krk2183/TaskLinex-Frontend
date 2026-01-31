@@ -565,6 +565,30 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     const [status, setStatus] = useState<TaskStatus>(taskToEdit?.status || 'On Track');
     const [priority, setPriority] = useState<Priority>(taskToEdit?.priority || 'Medium');
 
+    const handleDelete = async (e: React.FormEvent) => {
+        e.preventDefault();
+                if (!taskToEdit) return;
+
+        if (window.confirm("Are you sure you want to delete this task?")) {
+            try {
+                const response = await fetch(`http://192.168.0.114:8000/deleteTask`, { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: taskToEdit.id })
+                });
+
+                if (!response.ok) throw new Error('Failed to delete task');
+                const remainingTasks = state.tasks.filter(t => t.id !== taskToEdit.id);
+                dispatch({ type: 'UPDATE_TASKS', payload: remainingTasks });
+
+                onClose();
+            } catch (error) {
+                console.error("Delete failed:", error);
+                alert("Could not delete task. Please check your connection.");
+            }
+        }
+    };
+    
     // handleSubmit decides between adding tasks and updating tasks
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -583,10 +607,11 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
             tags: taskToEdit ? taskToEdit.tags : []
         };
         
+
         try {
                 const endpoint = taskToEdit ? '/updateTask' : '/createTask';
                 // Use the dynamic IP or localhost consistently
-                const response = await fetch(`http://192.168.0.113:8000${endpoint}`, { 
+                const response = await fetch(`http://192.168.0.114:8000${endpoint}`, { 
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(taskPayload)
@@ -606,8 +631,10 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
                 onClose();
             } catch (error) {
                 console.error("Failed to save task:", error);
-            }
+          }
         };
+
+
     return (
         // Creates the background blur
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -710,20 +737,34 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
                         </div>
                     </div>
 
-                    <div className="pt-4 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800 mt-6">
-                        <button 
-                            type="button"
-                            onClick={onClose}
-                            className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                    <div className="pt-4 flex justify-between items-center border-t border-gray-100 mt-6">
+                        {/* Left Side: Delete */}
+                        <button
+                            type='button'
+                            onClick={(e) => handleDelete(e)}
+                            className='px-4 py-2 text-sm font-bold text-white bg-red-800 hover:bg-red-600 rounded-lg transition-all transform hover:scale-105 active:scale-95'
                         >
-                            Cancel
+                            Delete
                         </button>
-                        <button 
-                            type="submit"
-                            className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-lg shadow-indigo-500/20 transition-all transform hover:scale-105 active:scale-95"
-                        >
-                            {buttontitle}
-                        </button>
+
+                        {/* Right Side: Grouped Actions */}
+                        <div className="flex items-center gap-3">
+                            <button 
+                                type="button"
+                                onClick={onClose}
+                                className="mr-2 text-sm font-medium text-gray-500 hover:text-red-600 hover:scale-102 rounded-lg transition-colors"
+                            >
+                                Cancel
+                            </button>
+
+                            <button 
+                                type="submit"
+                                onClick={(e)=>handleSubmit(e)}
+                                className="px-4 py-2 text-sm font-bold text-white bg-violet-700 hover:bg-violet-800 rounded-lg shadow-[5px_5px_0px_0px_rgba(109,40,217,0.3)] hover:shadow-[8px_8px_0px_0px_rgba(109,40,217,0.4)] transition-all transform hover:-translate-y-1 active:translate-y-0"
+                            >
+                                {buttontitle}
+                            </button>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -771,7 +812,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
     const handleApply = async (proposal: Proposal) => {
         setApplyingId(proposal.id);
         try {
-            const response = await fetch('http://192.168.0.113:8000/envoy/apply', {
+            const response = await fetch('http://192.168.0.114:8000/envoy/apply', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -816,10 +857,9 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
                             <X className="w-5 h-5 text-slate-500" />
                         </button>
                     </div>
-
                     {loading ? (
-                        <div className="flex flex-col items-center justify-center flex-1 text-slate-500">
-                            <Loader2 className="w-8 h-8 animate-spin mb-2" />
+                        <div className="flex flex-col items-center justify-center flex-1 text-gray-500">
+                            <Loader2 className="w-8 h-8 animate-spin mb-2 text-violet-700" />
                             <p>Analyzing project context...</p>
                         </div>
                     ) : error ? (
@@ -831,55 +871,56 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
                         <div className="flex-1 overflow-y-auto space-y-8 pr-2">
                             {/* Section: Auto-Apply */}
                             <section>
-                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Direct Optimization</h3>
-                                {autoProposals.length === 0 && <p className="text-sm text-slate-400 italic">No immediate field updates suggested.</p>}
-                                {autoProposals.map(p => (
-                                    <div key={p.id||i} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-3">
+                                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4">Direct Optimization</h3>
+                                {autoProposals.length === 0 && <p className="text-sm text-gray-400 italic">No immediate field updates suggested.</p>}
+                                {autoProposals.map((p, i) => (
+                                    <div key={p.id || i} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-3">
                                         <div className="flex justify-between items-start mb-2">
-                                            <span className="text-xs font-medium px-2 py-0.5 bg-slate-100 rounded text-slate-600 capitalize">{p.field}</span>
+                                            <span className="text-xs font-medium px-2 py-0.5 bg-gray-100 rounded text-gray-600 capitalize">{p.field}</span>
                                             <button 
                                                 onClick={() => handleApply(p)}
                                                 disabled={applyingId === p.id}
-                                                className="flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
+                                                className="flex items-center gap-1 text-xs font-bold text-violet-700 hover:text-violet-800 disabled:opacity-50"
                                             >
                                                 {applyingId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
                                                 Apply
                                             </button>
                                         </div>
-                                        <p className="text-sm font-semibold text-slate-800">Change to: <span className="text-indigo-600">{p.suggested}</span></p>
-                                        {p.reason && <p className="text-xs text-slate-500 mt-2 leading-relaxed italic">"{p.reason}"</p>}
+                                        <p className="text-sm font-semibold text-gray-700">Change to: <span className="text-violet-700">{p.suggested}</span></p>
+                                        {p.reason && <p className="text-xs text-gray-500 mt-2 leading-relaxed italic">"{p.reason}"</p>}
                                     </div>
                                 ))}
                             </section>
 
                             {/* Section: Optional/Review */}
                             <section>
-                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Strategic Timeline Adjustments</h3>
-                                {optionalProposals.length === 0 && <p className="text-sm text-slate-400 italic">No timeline changes suggested.</p>}
+                                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4">Strategic Timeline Adjustments</h3>
+                                {optionalProposals.length === 0 && <p className="text-sm text-gray-400 italic">No timeline changes suggested.</p>}
                                 {optionalProposals.map(p => (
-                                    <div key={p.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-3">
+                                    <div key={p.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-3">
                                         <div className="flex justify-between items-start mb-2">
-                                            <span className="text-xs font-medium px-2 py-0.5 bg-indigo-50 rounded text-indigo-600 capitalize">{p.field.replace('Ids', '')}</span>
+                                            <span className="text-xs font-medium px-2 py-0.5 bg-violet-50 rounded text-violet-700 capitalize">{p.field.replace('Ids', '')}</span>
                                             <button 
                                                 onClick={() => setReviewProposal(p)}
-                                                className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700"
+                                                className="flex items-center gap-1 text-xs font-bold text-violet-600 hover:text-violet-700"
                                             >
                                                 <Eye className="w-3 h-3" />
                                                 Review
                                             </button>
                                         </div>
-                                        <p className="text-sm text-slate-600">Suggested: <span className="font-mono font-bold text-slate-900">{JSON.stringify(p.suggested)}</span></p>
+                                        <p className="text-sm text-gray-600">Suggested: <span className="font-mono font-bold text-gray-700">{JSON.stringify(p.suggested)}</span></p>
                                     </div>
                                 ))}
                             </section>
                         </div>
                     )}
-                    
+
+                    {/* Main Action Button */}
                     <button 
                         onClick={fetchSuggestions}
-                        className="mt-4 w-full py-3 bg-gray-700 border-[4px] border-violet-700  text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors shadow-sm"
+                        className="mt-4 w-full py-3 bg-gray-700 border-[3px] border-violet-700 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-gray-800 transition-all shadow-md active:scale-[0.98]"
                     >
-                        <Sparkles className="w-4 h-4 text-indigo-500" />
+                        <Sparkles className="w-4 h-4 text-violet-300" />
                         Refresh Suggestions
                     </button>
                 </div>
@@ -888,28 +929,31 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
             {/* Review Modal */}
             {reviewProposal && (
                 <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setReviewProposal(null)} />
-                    <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 overflow-hidden">
+                    <div className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm" onClick={() => setReviewProposal(null)} />
+                    
+                    <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 overflow-hidden border border-gray-100">
                         <div className="flex items-center gap-3 mb-4">
-                            <div className="p-2 bg-indigo-100 rounded-lg">
-                                <Eye className="w-5 h-5 text-indigo-600" />
+                            <div className="p-2 bg-violet-100 rounded-lg">
+                                <Eye className="w-5 h-5 text-violet-700" />
                             </div>
-                            <h3 className="text-lg font-bold text-slate-900">Review AI Suggestion</h3>
+                            <h3 className="text-lg font-bold text-gray-700">Review AI Suggestion</h3>
                         </div>
                         
                         <div className="space-y-4 mb-6">
-                            <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                                <p className="text-xs font-bold text-slate-400 uppercase mb-1">Field</p>
-                                <p className="text-sm font-semibold capitalize">{reviewProposal.field}</p>
+                            <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                <p className="text-xs font-bold text-gray-400 uppercase mb-1">Field</p>
+                                <p className="text-sm font-semibold capitalize text-gray-700">{reviewProposal.field}</p>
                             </div>
-                            <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                                <p className="text-xs font-bold text-slate-400 uppercase mb-1">Proposed Value</p>
-                                <code className="text-sm font-bold text-indigo-600">{JSON.stringify(reviewProposal.suggested)}</code>
+                            
+                            <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                <p className="text-xs font-bold text-gray-400 uppercase mb-1">Proposed Value</p>
+                                <code className="text-sm font-bold text-violet-700">{JSON.stringify(reviewProposal.suggested)}</code>
                             </div>
+
                             {reviewProposal.reason && (
-                                <div className="p-3 bg-indigo-50/50 rounded-lg border border-indigo-100">
-                                    <p className="text-xs font-bold text-indigo-400 uppercase mb-1">AI Reasoning</p>
-                                    <p className="text-sm text-slate-700 italic">"{reviewProposal.reason}"</p>
+                                <div className="p-3 bg-violet-50/50 rounded-lg border border-violet-100">
+                                    <p className="text-xs font-bold text-violet-400 uppercase mb-1">AI Reasoning</p>
+                                    <p className="text-sm text-gray-700 italic">"{reviewProposal.reason}"</p>
                                 </div>
                             )}
                         </div>
@@ -917,14 +961,14 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
                         <div className="flex gap-3">
                             <button 
                                 onClick={() => setReviewProposal(null)}
-                                className="flex-1 py-2.5 text-sm font-bold text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
+                                className="flex-1 py-2.5 text-sm font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors"
                             >
                                 Cancel
                             </button>
                             <button 
                                 onClick={() => handleApply(reviewProposal)}
                                 disabled={applyingId === reviewProposal.id}
-                                className="flex-1 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 flex items-center justify-center gap-2 disabled:opacity-50"
+                                className="flex-1 py-2.5 bg-violet-700 text-white text-sm font-bold rounded-xl hover:bg-violet-800 shadow-lg shadow-violet-200 flex items-center justify-center gap-2 disabled:opacity-50 transition-all active:scale-[0.98]"
                             >
                                 {applyingId === reviewProposal.id && <Loader2 className="w-4 h-4 animate-spin" />}
                                 Confirm & Apply
@@ -932,7 +976,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
                         </div>
                     </div>
                 </div>
-            )}
+)}
         </>
     );
 };

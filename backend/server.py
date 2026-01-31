@@ -215,6 +215,9 @@ class EnvoyRequest(BaseModel):
     context_text: Optional[str]=None
     proposals:Optional[List[Proposal]] = None
 
+class DeleteRequest(BaseModel):
+    id:str
+
 # Endpoints
 @app.get('/')
 async def root():
@@ -372,20 +375,25 @@ async def updateTask(task: Task):
         conn.close()
 
 
-@app.route('/deleteTask')
-def deleteTask(task_id):
+@app.post('/deleteTask')
+async def delete_task(request_data: DeleteRequest): # FastAPI automatically parses the JSON body here
+    task_id = request_data.id
     conn = sqlite3.connect(DB_PATH)
-    cursor = con.cursor()
+    cursor = conn.cursor()
     try:
         cursor.execute('DELETE FROM tasks WHERE id=?', (task_id,)) 
+        
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Task not found")
+            
         conn.commit()
-        return {'message': 'Task deleted successfully'}
-
+        return {"message": "Task deleted successfully"}
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=600,detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
+
 '''
 INPUT EXAMPLE
 {
