@@ -481,6 +481,7 @@ const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit }: { task: Task,
 // HUD
 const WorkloadHUD = () => {
     const { state, dispatch } = useContext(AppContext)!;
+    const personas = ['P1','P2'];
 
     if (state.isLoading) {
         return (
@@ -531,13 +532,13 @@ const WorkloadHUD = () => {
                         {/* Persona Pills */}
                         {isCurrentUser && (
                             <div className="flex gap-1 mt-1">
-                                {user.personas.map(p => (
+                                {personas.map((item,index) => (
                                     <button
-                                        key={p.id}
-                                        onClick={() => dispatch({ type: 'TOGGLE_PERSONA', payload: p.id })}
-                                        className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${state.activePersonaId === p.id ? 'bg-indigo-100 border-indigo-300 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-700 dark:text-indigo-300' : 'bg-transparent border-slate-200 text-slate-500'}`}
+                                        key={item}
+                                        onClick={() => dispatch({ type: 'TOGGLE_PERSONA', payload: item })}
+                                        className={`grid-cols-4 gap-x-4 text-[9px] px-1.5 py-0.5 rounded border transition-colors ${state.activePersonaId === index.toString() ? 'bg-indigo-100 border-indigo-300 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-700 dark:text-indigo-300' : 'bg-transparent border-slate-200 text-slate-500'}`}
                                     >
-                                        {p.role}
+                                        {item}
                                     </button>
                                 ))}
                             </div>
@@ -551,7 +552,6 @@ const WorkloadHUD = () => {
 
 // Add Task Modal
 const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
-    // Save the variables in memory
     const { state, dispatch } = useContext(AppContext)!;
     const headline = taskToEdit?  'Update Task Details': "Add New Task";
     const buttontitle = taskToEdit? 'Edit Task':'Create Task';
@@ -992,7 +992,7 @@ export default function RoadmapPage() {
     // Initial Data Fetch
     useEffect(() => {
         const loadData = async () => {
-            const data = await MockAPI.fetchData(); // This now calls your /renderTask
+            const data = await MockAPI.fetchData(); // This now calls /renderTask
             dispatch({ type: 'INIT_DATA', payload: data });
         };
         loadData();
@@ -1078,9 +1078,9 @@ export default function RoadmapPage() {
                                 {/* <UserCog className="w-4 h-4" /> */}
                                 <option value={'all'}>All Tasks</option>
                                 <option value={'personas'}>Personas</option>
-                                {state.personas.map((item,index)=>(
-
-                                        <option value={item}>{item}</option>
+                                {/* {states.personas.map((item,index)=>( */}
+                                {personas.map((item,index)=>(
+                                    <option key={index} value={item}>{item}</option>
                                 ))}
                             </select>
 

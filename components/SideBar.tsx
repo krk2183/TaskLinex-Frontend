@@ -1,6 +1,6 @@
 "use client";
 
-import { Home, Settings, ChevronLeft, LayoutDashboard, BarChart3, Sun, Moon, BadgePlus, MapPinCheck } from 'lucide-react';
+import { Home, Settings,FolderKanban, ChevronLeft, LayoutDashboard, BarChart3, Sun, Moon, BadgePlus, MapPinCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useLayout } from './LayoutContext'; 
 const navItems = [
@@ -8,6 +8,7 @@ const navItems = [
     { name: 'Roadmap', href: '/roadmap', icon: MapPinCheck },
     { name: 'Analytics', href: '/analytics', icon: BarChart3 },
     { name: 'Settings', href: '/settings', icon: Settings },
+    { name: 'Envoy', href: '/envoy', icon: FolderKanban },
 ];
 
 export default function Sidebar() {

@@ -171,6 +171,11 @@ class Task(BaseModel):
     dependencyIds: List[str] = []
     tags: List[str] = []
 
+class PersonaCreate(BaseModel):
+    name: str
+    weekly_capacity_hours: float = 40.0
+    user_id: str = "default_user"
+
 class Dependency(BaseModel):
     task_id: str
     depends_on_id: str
@@ -542,9 +547,38 @@ def apply(req: EnvoyRequest):
         conn.close()
 
 
-@app.route('/renderPersona')
-def renderPersona():
-    pass
+@app.get('/renderPersona')
+async def renderPersona():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM personas")
+        rows = cursor.fetchall()
+        personas = []
+        for row in rows:
+            persona_dict = dict(row)
+            if 'pk' in persona_dict:
+                del persona_dict['pk']
+            personas.append(persona_dict)
+        return personas
+    finally:
+        conn.close()
+
+@app.post('/createPersona')
+async def createPersona(p: PersonaCreate):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        new_id = str(uuid.uuid4())
+        cursor.execute("INSERT INTO personas (id, user_id, name, weekly_capacity_hours) VALUES (?, ?, ?, ?)", 
+                       (new_id, p.user_id, p.name, p.weekly_capacity_hours))
+        conn.commit()
+        return {**p.dict(), "id": new_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     uvicorn.run("server:app", host="0.0.0.0", port=SERVER_PORT, reload=True)
