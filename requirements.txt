@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+bcrypt
+pyjwt
+pydantic[email]
+google-genai

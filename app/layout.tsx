@@ -1,35 +1,27 @@
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
 
-import './globals.css';
-import { Inter } from 'next/font/google';
-import Sidebar from '@/components/SideBar';
-import { LayoutProvider } from '@/components/LayoutContext';
+const inter = Inter({ 
+  subsets: ["latin"], 
+  variable: "--font-inter",
+  display: "swap",
+});
 
-const inter = Inter({ subsets: ['latin'] });
+export const metadata: Metadata = {
+  title: "TaskLinex | Workflow Orchestration",
+  description: "Advanced dependency tracking and workflow intelligence.",
+};
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
+}>) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
-        <LayoutProvider>
-          {/* -- CHANGE HERE --
-            1. Removed the fixed 'bg-[#EBF4DD]'.
-            2. Added standard light mode background 'bg-gray-100'.
-            3. Added dark mode background 'dark:bg-gray-950'.
-            
-            These classes now correctly respond to the 'dark' class 
-            toggled on the <html> element by the LayoutContext.
-          */}
-          <div className="flex h-screen bg-gray-100 dark:bg-gray-950">
-            <Sidebar />
-            <main className="flex-1 overflow-y-auto">
-              {children}
-            </main>
-          </div>
-        </LayoutProvider>
+    <html lang="en" className="scroll-smooth">
+      <body className={`${inter.variable} bg-[#F4F4F5] text-[#18181B] antialiased selection:bg-[#18181B] selection:text-white [overscroll-behavior-y:contain]`}>
+        {children}
       </body>
     </html>
   );
