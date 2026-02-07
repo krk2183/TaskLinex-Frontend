@@ -140,18 +140,37 @@ const MockAPI = {
     // Newly added: Fetchdata to replace MOCK data
     fetchData: async () => {
         try {
-            const response = await fetch(`http://localhost:${process.env.NEXT_PUBLIC_SERVER_PORT}/renderTask`, { cache: 'no-store' });
-            if (!response.ok) throw new Error('Failed to fetch tasks');
-            const tasks = await response.json();
-            return { tasks: Array.isArray(tasks) ? tasks : [], users: MOCK_USERS, projects: MOCK_PROJECTS };
+            const [tasksRes, personasRes] = await Promise.all([
+                fetch(`http://192.168.0.113:8000/renderTask`, { cache: 'no-store' }),
+                fetch(`http://192.168.0.113:8000/renderPersona`, { cache: 'no-store' })
+            ]);
+            
+            const tasks = await tasksRes.json();
+            const personasData = await personasRes.json();
+
+            // Map backend personas to frontend structure
+            const mappedPersonas = Array.isArray(personasData) ? personasData.map((p: any) => ({
+                id: p.id,
+                name: p.name,
+                role: 'Member',
+                capacity: 100,
+                color: 'bg-indigo-500'
+            })) : [];
+
+            return { 
+                tasks: Array.isArray(tasks) ? tasks : [], 
+                users: MOCK_USERS, 
+                projects: MOCK_PROJECTS,
+                personas: mappedPersonas
+            };
         } catch (error) {
             console.error("Error fetching tasks:", error);
-            return { tasks: [], users: MOCK_USERS, projects: MOCK_PROJECTS };
+            return { tasks: [], users: MOCK_USERS, projects: MOCK_PROJECTS, personas: [] };
         }
     },
     // Newly added: CreateTask to replace MOCK data
     createTask: async (task: Task) => {
-        const response = await fetch(`http://localhost:${process.env.NEXT_PUBLIC_SERVER_PORT}/createTask`, {
+        const response = await fetch(`http://192.168.0.113:8000/createTask`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(task)
@@ -160,6 +179,15 @@ const MockAPI = {
             console.log(response);
             throw new Error('Failed to create task')
         }
+        return response.json();
+    },
+    completeTask: async (taskId: string, userId: string) => {
+        const response = await fetch(`http://192.168.0.113:8000/completeTask`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ taskId, userId })
+        });
+        if (!response.ok) throw new Error('Failed to complete task');
         return response.json();
     },
     autoBalance: async (tasks: Task[]) => {
@@ -187,6 +215,7 @@ interface AppState {
     tasks: Task[];
     users: User[];
     projects: Project[];
+    personas: Persona[];
     currentUser: User | null; // The logged in user
     activePersonaId: string | null; // Which "Hat" they are wearing
     isLoading: boolean;
@@ -207,7 +236,7 @@ type Action =
     | { type: 'TRIGGER_ENVOY', payload: string | null };
 
 const initialState: AppState = {
-    tasks: [], users: [], projects: [],
+    tasks: [], users: [], projects: [], personas: [],
     currentUser: MOCK_USERS[0], // Simulating logged in as Matthew
     activePersonaId: 'p_u1_1',
     isLoading: true,
@@ -403,11 +432,12 @@ const DependencyLayer = ({ tasks, projects, viewMode, collapsedProjects }: { tas
 // };
 
 // Task Item
-const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit }: { task: Task, user: User | undefined, dispatch: any, isEnvoyActive: boolean,onEdit: (t: Task) => void}) => {
+const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit, personas }: { task: Task, user: User | undefined, dispatch: any, isEnvoyActive: boolean,onEdit: (t: Task) => void, personas: Persona[]}) => {
     const triggerRef = useRef<HTMLButtonElement>(null);
     const statusColor = {
         'On Track': 'bg-indigo-500', 'At Risk': 'bg-amber-500', 'Blocked': 'bg-rose-500', 'Completed': 'bg-emerald-500'
     };
+    const assignedPersona = personas?.find(p => p.id === task.personaId);
 
     // Calculate slippage
     const isSlipping = task.duration > task.plannedDuration;
@@ -465,6 +495,13 @@ const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit }: { task: Task,
                         className="relative z-10 w-6 h-6 rounded-full border border-white/30 flex-shrink-0"
                         alt="Owner"
                     />
+                )}
+
+                {/* Persona Indicator */}
+                {assignedPersona && (
+                    <div className="absolute bottom-0.5 right-0.5 z-20 w-4 h-4 rounded-full bg-violet-600 text-[8px] flex items-center justify-center text-white border border-white font-bold" title={assignedPersona.name}>
+                        {assignedPersona.name.charAt(0).toUpperCase()}
+                    </div>
                 )}
             </div>
 
@@ -571,7 +608,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
 
         if (window.confirm("Are you sure you want to delete this task?")) {
             try {
-                const response = await fetch(`http://192.168.0.114:8000/deleteTask`, {
+                const response = await fetch(`http://192.168.0.113:8000/deleteTask`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id: taskToEdit.id })
@@ -586,6 +623,19 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
                 console.error("Delete failed:", error);
                 alert("Could not delete task. Please check your connection.");
             }
+        }
+    };
+
+    const handleComplete = async () => {
+        if (!taskToEdit) return;
+        try {
+            await MockAPI.completeTask(taskToEdit.id, state.currentUser?.id || 'u1');
+            // Refresh data
+            const data = await MockAPI.fetchData();
+            dispatch({ type: 'INIT_DATA', payload: data });
+            onClose();
+        } catch (e) {
+            console.error("Failed to complete task", e);
         }
     };
 
@@ -611,7 +661,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
         try {
                 const endpoint = taskToEdit ? '/updateTask' : '/createTask';
                 // Use the dynamic IP or localhost consistently
-                const response = await fetch(`http://192.168.0.114:8000${endpoint}`, {
+                const response = await fetch(`http://192.168.0.113:8000${endpoint}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(taskPayload)
@@ -737,6 +787,16 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
                         </div>
                     </div>
 
+                    {taskToEdit && (
+                        <button
+                            type="button"
+                            onClick={handleComplete}
+                            className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg flex items-center justify-center gap-2 transition-colors"
+                        >
+                            <CheckCircle className="w-4 h-4" /> Mark as Complete
+                        </button>
+                    )}
+
                     <div className="pt-4 flex justify-between items-center border-t border-gray-100 mt-6">
                         {/* Left Side: Delete */}
                         <button
@@ -788,7 +848,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
         setError(null);
         try {
             // const response = await fetch('http://192.168.0.113:8000/envoy/suggest', {
-            const response = await fetch(`http://localhost:${process.env.NEXT_PUBLIC_SERVER_PORT || 8000}/envoy/suggest`, {
+            const response = await fetch(`http://192.168.0.113:8000/envoy/suggest`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ task_id: taskId, all: true })
@@ -812,7 +872,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
     const handleApply = async (proposal: Proposal) => {
         setApplyingId(proposal.id);
         try {
-            const response = await fetch('http://192.168.0.114:8000/envoy/apply', {
+            const response = await fetch('http://192.168.0.113:8000/envoy/apply', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1012,9 +1072,16 @@ export default function RoadmapPage() {
 
     const handleAutoBalance = async () => {
         dispatch({ type: 'SET_LOADING', payload: true });
-        const optimizedTasks = await MockAPI.autoBalance(state.tasks);
-        dispatch({ type: 'UPDATE_TASKS', payload: optimizedTasks });
-        dispatch({ type: 'SET_LOADING', payload: false });
+        try {
+            await fetch(`http://192.168.0.113:8000/envoy/auto-balance`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: state.currentUser?.id || 'u1' }) // Backend now handles role-based logic
+            });
+            const data = await MockAPI.fetchData();
+            dispatch({ type: 'INIT_DATA', payload: data });
+        } catch (e) { console.error(e); }
+        dispatch({ type: 'SET_LOADING', payload: false }); 
     };
 
     const [collapsedProjects, setCollapsedProjects] = useState<string[]>([]);
@@ -1213,6 +1280,7 @@ export default function RoadmapPage() {
                                                                                 setTaskToEdit(t); // Set the task data
                                                                                 setAVisible(true); // Opens the Modal
                                                                             }}
+                                                                            personas={state.personas}
                                                                         />
                                                                     )}
 

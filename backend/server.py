@@ -54,13 +54,15 @@ origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     f"http://{local_ip}:3000", # Grab the IP
-    'http://192.168.0.113:8000',
+    "http://192.168.0.113:3000",
+    "http://192.168.0.  :3000",
     "https://bushlike-nonvibrating-velma.ngrok-free.dev"
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=['*'],
+    allow_origin_regex=r"http://192\.168\.\d+\.\d+:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -93,6 +95,20 @@ def init_db():
             companyName TEXT
         )
     ''')
+    
+    # Migrations for existing users table
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN avg_task_completion_time REAL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN completed_tasks_count INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
 
     # Tasks table
     cursor.execute('''
@@ -113,6 +129,11 @@ def init_db():
             tags TEXT
         )
     ''')
+    
+    try:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN completedAt INTEGER")
+    except sqlite3.OperationalError:
+        pass
 
     # Dependencies table
     cursor.execute('''
@@ -151,6 +172,34 @@ def init_db():
         )
     ''')
 
+    # Interventions table (Envoy System Warnings)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS interventions (
+            pk INTEGER PRIMARY KEY AUTOINCREMENT,
+            id TEXT NOT NULL UNIQUE,
+            team_id TEXT,
+            user_id TEXT,
+            type TEXT,
+            message TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at INTEGER
+        )
+    ''')
+
+        # Interventions table (Envoy System Warnings)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS interventions (
+            pk INTEGER PRIMARY KEY AUTOINCREMENT,
+            id TEXT NOT NULL UNIQUE,
+            team_id TEXT,
+            user_id TEXT,
+            type TEXT,
+            message TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at INTEGER
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -175,6 +224,16 @@ class PersonaCreate(BaseModel):
     name: str
     weekly_capacity_hours: float = 40.0
     user_id: str = "default_user"
+
+class PersonaDelete(BaseModel):
+    id: str
+
+# To be Implemented 
+class DependencyCreate(BaseModel):
+    task_id: str
+    depends_on_id: str
+    type: str = "blocks"
+
 
 class Dependency(BaseModel):
     task_id: str
@@ -204,6 +263,7 @@ class UserCreate(BaseModel):
     password: str
     companyName: Optional[str] = None
     rememberMe: bool = False
+    role: str = "user"
 
 class UserLogin(BaseModel):
     email: str
@@ -222,6 +282,14 @@ class EnvoyRequest(BaseModel):
 
 class DeleteRequest(BaseModel):
     id:str
+
+class AutoBalanceRequest(BaseModel):
+    userId: str
+
+class CompleteTaskRequest(BaseModel):
+    taskId: str
+    userId: str
+
 
 # Endpoints
 @app.get('/')
@@ -243,8 +311,8 @@ async def signup(user: UserCreate, response: Response):
     user_id = str(uuid.uuid4())
 
     cursor.execute(
-        'INSERT INTO users (id, firstName, lastName, email, password, companyName) VALUES (?, ?, ?, ?, ?, ?)',
-        (user_id, user.firstName, user.lastName, user.email, hashed_pass.decode('utf-8'), user.companyName)
+        'INSERT INTO users (id, firstName, lastName, email, password, companyName, role) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        (user_id, user.firstName, user.lastName, user.email, hashed_pass.decode('utf-8'), user.companyName, user.role)
     )
     conn.commit()
     conn.close()
@@ -272,7 +340,7 @@ async def login(form_data: UserLogin, response: Response):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT password, id FROM users WHERE email = ?", (form_data.email,))
+    cursor.execute("SELECT password, id, role, companyName FROM users WHERE email = ?", (form_data.email,))
     result = cursor.fetchone()
     conn.close()
 
@@ -285,6 +353,8 @@ async def login(form_data: UserLogin, response: Response):
 
     stored_hash_str = result[0]
     user_id = result[1]
+    role = result[2]
+    company = result[3]
 
     input_password_bytes = form_data.password.encode('utf-8')
     stored_hash_bytes = stored_hash_str.encode('utf-8')
@@ -298,7 +368,7 @@ async def login(form_data: UserLogin, response: Response):
 
     token_span = timedelta(days=15) if form_data.rememberMe else timedelta(minutes=30)
     expire = datetime.now(timezone.utc) + token_span
-    payload = {'sub': form_data.email, 'id': user_id, 'exp': expire}
+    payload = {'sub': form_data.email, 'id': user_id, 'role': role, 'company': company, 'exp': expire}
     token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
     response.set_cookie(
@@ -379,6 +449,85 @@ async def updateTask(task: Task):
     finally:
         conn.close()
 
+@app.post('/completeTask')
+async def complete_task(req: CompleteTaskRequest):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        # 1. Get Task to calculate duration
+        cursor.execute("SELECT startDate, created_at FROM tasks WHERE id = ?", (req.taskId,)) # Assuming created_at exists or we use startDate
+        # Note: Schema doesn't have created_at explicitly in CREATE, but startDate is there.
+        # We will use startDate.
+        task = cursor.fetchone()
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        start_time = task['startDate'] if task['startDate'] else int(datetime.now().timestamp())
+        end_time = int(datetime.now().timestamp())
+        duration_seconds = end_time - start_time
+        
+        # 2. Update Task
+        cursor.execute("UPDATE tasks SET status = 'Done', progress = 100, completedAt = ? WHERE id = ?", (end_time, req.taskId))
+        
+        # 3. Update User Stats
+        cursor.execute("SELECT avg_task_completion_time, completed_tasks_count FROM users WHERE id = ?", (req.userId,))
+        user = cursor.fetchone()
+        if user:
+            old_avg = user['avg_task_completion_time'] or 0
+            old_count = user['completed_tasks_count'] or 0
+            new_count = old_count + 1
+            new_avg = ((old_avg * old_count) + duration_seconds) / new_count
+            cursor.execute("UPDATE users SET avg_task_completion_time = ?, completed_tasks_count = ? WHERE id = ?", (new_avg, new_count, req.userId))
+        
+        conn.commit()
+        return {"message": "Task completed", "new_avg_time": new_avg}
+    except Exception as e:
+        conn.rollback()
+        print(f"Error completing task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.post('/completeTask')
+async def complete_task(req: CompleteTaskRequest):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        # 1. Get Task to calculate duration
+        cursor.execute("SELECT startDate, created_at FROM tasks WHERE id = ?", (req.taskId,)) # Assuming created_at exists or we use startDate
+        # Note: Schema doesn't have created_at explicitly in CREATE, but startDate is there.
+        # We will use startDate.
+        task = cursor.fetchone()
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        start_time = task['startDate'] if task['startDate'] else int(datetime.now().timestamp())
+        end_time = int(datetime.now().timestamp())
+        duration_seconds = end_time - start_time
+        
+        # 2. Update Task
+        cursor.execute("UPDATE tasks SET status = 'Done', progress = 100, completedAt = ? WHERE id = ?", (end_time, req.taskId))
+        
+        # 3. Update User Stats
+        cursor.execute("SELECT avg_task_completion_time, completed_tasks_count FROM users WHERE id = ?", (req.userId,))
+        user = cursor.fetchone()
+        if user:
+            old_avg = user['avg_task_completion_time'] or 0
+            old_count = user['completed_tasks_count'] or 0
+            new_count = old_count + 1
+            new_avg = ((old_avg * old_count) + duration_seconds) / new_count
+            cursor.execute("UPDATE users SET avg_task_completion_time = ?, completed_tasks_count = ? WHERE id = ?", (new_avg, new_count, req.userId))
+        
+        conn.commit()
+        return {"message": "Task completed", "new_avg_time": new_avg}
+    except Exception as e:
+        conn.rollback()
+        print(f"Error completing task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
 
 @app.post('/deleteTask')
 async def delete_task(request_data: DeleteRequest): # FastAPI automatically parses the JSON body here
@@ -576,6 +725,331 @@ async def createPersona(p: PersonaCreate):
         conn.commit()
         return {**p.dict(), "id": new_id}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.post('/deletePersona')
+async def deletePersona(data: PersonaDelete): 
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM personas WHERE id = ?", (data.id,))
+        conn.commit()        
+        if cursor.rowcount == 0:
+            return {"message": "Persona not found, nothing deleted"}
+        return {"message": "Persona deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.get('/team/overview')
+async def team_overview(userId: str):
+    # Mock metrics for now, in production calculate from tasks/interventions
+    return {
+        "coordinationDebt": "Medium",
+        "leakageScore": 12,
+        "dependencyRisk": "High"
+    }
+
+@app.get('/team/members')
+async def team_members(userId: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        # Get user's company
+        cursor.execute("SELECT companyName FROM users WHERE id = ?", (userId,))
+        user = cursor.fetchone()
+        if not user or not user['companyName']:
+            return []
+        
+        company = user['companyName']
+        cursor.execute("SELECT id, firstName, lastName, role, avg_task_completion_time, completed_tasks_count FROM users WHERE companyName = ?", (company,))
+        rows = cursor.fetchall()
+        
+        members = []
+        for row in rows:
+            # Calculate mock scores based on real data if available
+            members.append({
+                "id": row['id'],
+                "name": f"{row['firstName']} {row['lastName']}",
+                "role": row['role'],
+                "avgTime": row['avg_task_completion_time'],
+                "completedCount": row['completed_tasks_count'],
+                "attentionScore": 85, # Placeholder
+                "dependencyLoad": 3   # Placeholder
+            })
+        return members
+    finally:
+        conn.close()
+
+@app.get('/envoy/interventions')
+async def get_interventions(userId: str):
+    # Return mock interventions for UI demo
+    return [
+        {"id": "1", "type": "warning", "message": "Ownership ambiguous for Feature X", "scope": "team"},
+        {"id": "2", "type": "critical", "message": "Person A is a dependency bottleneck", "scope": "team"},
+        {"id": "3", "type": "info", "message": "You are context-switching across 5 workstreams", "scope": "personal"}
+    ]
+
+@app.post('/envoy/auto-balance')
+async def auto_balance(req: AutoBalanceRequest):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    try:
+        # 1. Determine User Role and Context
+        cursor.execute("SELECT role, companyName FROM users WHERE id = ?", (req.userId,))
+        user_info = cursor.fetchone()
+        role = user_info['role'] if user_info else 'user'
+        company = user_info['companyName'] if user_info else None
+
+        if role == 'admin' and company:
+            # --- ADMIN LOGIC: Team Balance ---
+            # Fetch all team members
+            cursor.execute("SELECT id, firstName, avg_task_completion_time, completed_tasks_count FROM users WHERE companyName = ?", (company,))
+            team_members = [dict(row) for row in cursor.fetchall()]
+            
+            # Fetch all tasks for the team (tasks owned by any team member)
+            member_ids = [m['id'] for m in team_members]
+            placeholders = ','.join('?' * len(member_ids))
+            cursor.execute(f"SELECT * FROM tasks WHERE ownerId IN ({placeholders}) AND status != 'Done'", tuple(member_ids))
+            tasks = [dict(row) for row in cursor.fetchall()]
+
+            prompt = f"""
+            You are an expert Project Manager AI.
+            Goal: Redistribute tasks among team members to balance load and optimize for speed.
+            
+            Team Stats (Avg Time is in seconds):
+            {json.dumps(team_members)}
+            
+            Tasks:
+            {json.dumps([{k: v for k, v in t.items() if k in ['id', 'title', 'priority', 'ownerId', 'plannedDuration']} for t in tasks])}
+            
+            Instructions:
+            1. Assign tasks to members based on their 'avg_task_completion_time' and current load.
+            2. Faster members can take more/harder tasks.
+            3. Return JSON: {{ "assignments": [ {{ "task_id": "...", "new_owner_id": "..." }} ] }}
+            """
+            
+        else:
+            # --- WORKER LOGIC: Persona Balance (Existing) ---
+            cursor.execute("SELECT * FROM tasks WHERE ownerId = ?", (req.userId,))
+            tasks = [dict(row) for row in cursor.fetchall()]
+            
+            cursor.execute("SELECT * FROM personas WHERE user_id = ?", (req.userId,))
+            personas = [dict(row) for row in cursor.fetchall()]
+            
+            prompt = f"""
+            You are an intelligent task manager. User ID: {req.userId}
+            Current Personas: {json.dumps([{k: v for k, v in p.items() if k != 'pk'} for p in personas])}
+            Tasks: {json.dumps([{k: v for k, v in t.items() if k != 'pk'} for t in tasks])}
+            
+            Goal: Organize tasks into personas to balance workload.
+            1. Create new personas if needed.
+            2. Assign every task to a persona.
+            3. Suggest deleting unused personas.
+            
+            Return JSON:
+            {{
+                "new_personas": [{{"name": "Name", "weekly_capacity_hours": 40}}],
+                "assignments": [{{"task_id": "tid", "persona_name": "Name"}}],
+                "delete_persona_ids": ["pid"]
+            }}
+            """
+        
+        client = genai.Client(api_key=GEMINI_API)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(response_mime_type="application/json")
+        )
+        result = json.loads(response.text)
+        
+        # 3. Apply Changes based on Role
+        if role == 'admin' and company:
+            for assign in result.get("assignments", []):
+                cursor.execute("UPDATE tasks SET ownerId = ? WHERE id = ?", (assign.get("new_owner_id"), assign.get("task_id")))
+        else:
+            # Worker Logic Application
+            persona_map = {p['name']: p['id'] for p in personas}
+            
+            for np in result.get("new_personas", []):
+                if np['name'] not in persona_map:
+                    new_id = str(uuid.uuid4())
+                    cursor.execute("INSERT INTO personas (id, user_id, name, weekly_capacity_hours) VALUES (?, ?, ?, ?)", 
+                                   (new_id, req.userId, np['name'], np.get('weekly_capacity_hours', 40)))
+                    persona_map[np['name']] = new_id
+
+            for del_id in result.get("delete_persona_ids", []):
+                cursor.execute("DELETE FROM personas WHERE id = ?", (del_id,))
+
+            for assign in result.get("assignments", []):
+                if pid := persona_map.get(assign.get("persona_name")):
+                    cursor.execute("UPDATE tasks SET personaId = ? WHERE id = ?", (pid, assign.get("task_id")))
+
+        conn.commit()
+        return {"status": "success", "changes": result}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.get('/team/overview')
+async def team_overview(userId: str):
+    # Mock metrics for now, in production calculate from tasks/interventions
+    return {
+        "coordinationDebt": "Medium",
+        "leakageScore": 12,
+        "dependencyRisk": "High"
+    }
+
+@app.get('/team/members')
+async def team_members(userId: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        # Get user's company
+        cursor.execute("SELECT companyName FROM users WHERE id = ?", (userId,))
+        user = cursor.fetchone()
+        if not user or not user['companyName']:
+            return []
+        
+        company = user['companyName']
+        cursor.execute("SELECT id, firstName, lastName, role, avg_task_completion_time, completed_tasks_count FROM users WHERE companyName = ?", (company,))
+        rows = cursor.fetchall()
+        
+        members = []
+        for row in rows:
+            # Calculate mock scores based on real data if available
+            members.append({
+                "id": row['id'],
+                "name": f"{row['firstName']} {row['lastName']}",
+                "role": row['role'],
+                "avgTime": row['avg_task_completion_time'],
+                "completedCount": row['completed_tasks_count'],
+                "attentionScore": 85, # Placeholder
+                "dependencyLoad": 3   # Placeholder
+            })
+        return members
+    finally:
+        conn.close()
+
+@app.get('/envoy/interventions')
+async def get_interventions(userId: str):
+    # Return mock interventions for UI demo
+    return [
+        {"id": "1", "type": "warning", "message": "Ownership ambiguous for Feature X", "scope": "team"},
+        {"id": "2", "type": "critical", "message": "Person A is a dependency bottleneck", "scope": "team"},
+        {"id": "3", "type": "info", "message": "You are context-switching across 5 workstreams", "scope": "personal"}
+    ]
+
+@app.post('/envoy/auto-balance')
+async def auto_balance(req: AutoBalanceRequest):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    try:
+        # 1. Determine User Role and Context
+        cursor.execute("SELECT role, companyName FROM users WHERE id = ?", (req.userId,))
+        user_info = cursor.fetchone()
+        role = user_info['role'] if user_info else 'user'
+        company = user_info['companyName'] if user_info else None
+
+        if role == 'admin' and company:
+            # --- ADMIN LOGIC: Team Balance ---
+            # Fetch all team members
+            cursor.execute("SELECT id, firstName, avg_task_completion_time, completed_tasks_count FROM users WHERE companyName = ?", (company,))
+            team_members = [dict(row) for row in cursor.fetchall()]
+            
+            # Fetch all tasks for the team (tasks owned by any team member)
+            member_ids = [m['id'] for m in team_members]
+            placeholders = ','.join('?' * len(member_ids))
+            cursor.execute(f"SELECT * FROM tasks WHERE ownerId IN ({placeholders}) AND status != 'Done'", tuple(member_ids))
+            tasks = [dict(row) for row in cursor.fetchall()]
+
+            prompt = f"""
+            You are an expert Project Manager AI.
+            Goal: Redistribute tasks among team members to balance load and optimize for speed.
+            
+            Team Stats (Avg Time is in seconds):
+            {json.dumps(team_members)}
+            
+            Tasks:
+            {json.dumps([{k: v for k, v in t.items() if k in ['id', 'title', 'priority', 'ownerId', 'plannedDuration']} for t in tasks])}
+            
+            Instructions:
+            1. Assign tasks to members based on their 'avg_task_completion_time' and current load.
+            2. Faster members can take more/harder tasks.
+            3. Return JSON: {{ "assignments": [ {{ "task_id": "...", "new_owner_id": "..." }} ] }}
+            """
+            
+        else:
+            # --- WORKER LOGIC: Persona Balance (Existing) ---
+            cursor.execute("SELECT * FROM tasks WHERE ownerId = ?", (req.userId,))
+            tasks = [dict(row) for row in cursor.fetchall()]
+            
+            cursor.execute("SELECT * FROM personas WHERE user_id = ?", (req.userId,))
+            personas = [dict(row) for row in cursor.fetchall()]
+            
+            prompt = f"""
+            You are an intelligent task manager. User ID: {req.userId}
+            Current Personas: {json.dumps([{k: v for k, v in p.items() if k != 'pk'} for p in personas])}
+            Tasks: {json.dumps([{k: v for k, v in t.items() if k != 'pk'} for t in tasks])}
+            
+            Goal: Organize tasks into personas to balance workload.
+            1. Create new personas if needed.
+            2. Assign every task to a persona.
+            3. Suggest deleting unused personas.
+            
+            Return JSON:
+            {{
+                "new_personas": [{{"name": "Name", "weekly_capacity_hours": 40}}],
+                "assignments": [{{"task_id": "tid", "persona_name": "Name"}}],
+                "delete_persona_ids": ["pid"]
+            }}
+            """
+        
+        client = genai.Client(api_key=GEMINI_API)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(response_mime_type="application/json")
+        )
+        result = json.loads(response.text)
+        
+        # 3. Apply Changes based on Role
+        if role == 'admin' and company:
+            for assign in result.get("assignments", []):
+                cursor.execute("UPDATE tasks SET ownerId = ? WHERE id = ?", (assign.get("new_owner_id"), assign.get("task_id")))
+        else:
+            # Worker Logic Application
+            persona_map = {p['name']: p['id'] for p in personas}
+            
+            for np in result.get("new_personas", []):
+                if np['name'] not in persona_map:
+                    new_id = str(uuid.uuid4())
+                    cursor.execute("INSERT INTO personas (id, user_id, name, weekly_capacity_hours) VALUES (?, ?, ?, ?)", 
+                                   (new_id, req.userId, np['name'], np.get('weekly_capacity_hours', 40)))
+                    persona_map[np['name']] = new_id
+
+            for del_id in result.get("delete_persona_ids", []):
+                cursor.execute("DELETE FROM personas WHERE id = ?", (del_id,))
+
+            for assign in result.get("assignments", []):
+                if pid := persona_map.get(assign.get("persona_name")):
+                    cursor.execute("UPDATE tasks SET personaId = ? WHERE id = ?", (pid, assign.get("task_id")))
+
+        conn.commit()
+        return {"status": "success", "changes": result}
+    except Exception as e:
+        conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()

@@ -1,11 +1,12 @@
 "use client";
 
-import { Home, Settings,FolderKanban, ChevronLeft, LayoutDashboard, BarChart3, Sun, Moon, BadgePlus, MapPinCheck } from 'lucide-react';
+import { Home, Settings,FolderKanban,UsersRound, ChevronLeft, LayoutDashboard, BarChart3, Sun, Moon, BadgePlus, MapPinCheck, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { useLayout } from './LayoutContext'; 
 const navItems = [
     { name: 'Pulse', href: '/pulse', icon: BadgePlus },
     { name: 'Roadmap', href: '/roadmap', icon: MapPinCheck },
+    { name: 'Team', href: '/team', icon: UsersRound },
     { name: 'Analytics', href: '/analytics', icon: BarChart3 },
     { name: 'Settings', href: '/settings', icon: Settings },
     { name: 'Envoy', href: '/envoy', icon: FolderKanban },
