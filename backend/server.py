@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, status, Response, Request
+from fastapi import FastAPI, HTTPException, status, Response, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List
@@ -34,7 +34,7 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'data', 'tasklinex.db')
-SERVER_PORT = int(os.getenv("NEXT_PUBLIC_SERVER_PORT", 8000))
+SERVER_PORT = int(os.getenv("BACKEND_PORT", 8000))
 
 # --- CORS Middleware ---
 def get_local_ip():
@@ -61,7 +61,7 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
+    allow_origins=origins,
     allow_origin_regex=r"http://192\.168\.\d+\.\d+:\d+",
     allow_credentials=True,
     allow_methods=["*"],
@@ -123,6 +123,36 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN isNew BOOLEAN DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'UTC'")
+    except sqlite3.OperationalError:
+        pass
+
+    # Settings column in users (stores JSON for envoy, visuals, experimental)
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN settings TEXT DEFAULT '{}'")
+    except sqlite3.OperationalError:
+        pass
+
+    # Persona extended fields
+    try:
+        cursor.execute("ALTER TABLE personas ADD COLUMN role TEXT DEFAULT 'Member'")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE personas ADD COLUMN color TEXT DEFAULT '#6366f1'")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE personas ADD COLUMN allow_overload BOOLEAN DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
     # Tasks table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS tasks (
@@ -147,6 +177,14 @@ def init_db():
         cursor.execute("ALTER TABLE tasks ADD COLUMN completedAt INTEGER")
     except sqlite3.OperationalError:
         pass
+
+    # Migration: Always run this check to ensure users with tasks are NOT marked as new
+    # This fixes the issue where existing users might be stuck with isNew=1
+    cursor.execute('''
+        UPDATE users 
+        SET isNew = 0 
+        WHERE id IN (SELECT DISTINCT ownerId FROM tasks)
+    ''')
 
     # Dependencies table
     cursor.execute('''
@@ -213,6 +251,36 @@ def init_db():
         )
     ''')
 
+    # Activity Log table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS activity_log (
+            pk INTEGER PRIMARY KEY AUTOINCREMENT,
+            id TEXT NOT NULL UNIQUE,
+            userId TEXT NOT NULL,
+            type TEXT NOT NULL,
+            targetTask TEXT,
+            targetLink TEXT DEFAULT '#',
+            details TEXT,
+            timestamp INTEGER
+        )
+    ''')
+
+    # Projects table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS projects (
+            pk INTEGER PRIMARY KEY AUTOINCREMENT,
+            id TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            visible BOOLEAN DEFAULT 1
+        )
+    ''')
+    
+    # Seed default projects if empty
+    cursor.execute("SELECT count(*) FROM projects")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("INSERT INTO projects (id, name) VALUES ('proj1', 'Forge.AI Core')")
+        cursor.execute("INSERT INTO projects (id, name) VALUES ('proj2', 'Web Dashboard V2')")
+
     conn.commit()
     conn.close()
 
@@ -232,6 +300,8 @@ class Task(BaseModel):
     personaId: Optional[str] = None
     dependencyIds: List[str] = []
     tags: List[str] = []
+    userId: Optional[str] = None
+
 
 class PersonaCreate(BaseModel):
     name: str
@@ -240,6 +310,14 @@ class PersonaCreate(BaseModel):
 
 class PersonaDelete(BaseModel):
     id: str
+
+class ProjectCreate(BaseModel):
+    name: str
+    userId: Optional[str] = None
+
+class ProjectDelete(BaseModel):
+    id: str
+    userId: Optional[str] = None
 
 # To be Implemented 
 class DependencyCreate(BaseModel):
@@ -296,6 +374,7 @@ class EnvoyRequest(BaseModel):
 
 class DeleteRequest(BaseModel):
     id:str
+    userId: Optional[str] = None
 
 class AutoBalanceRequest(BaseModel):
     userId: str
@@ -317,11 +396,43 @@ class SetFocusRequest(BaseModel):
     taskId: str
     userId: str
 
+class UpdateAccountRequest(BaseModel):
+    userId: str
+    displayName: Optional[str] = None
+    username: Optional[str] = None
+    email: Optional[str] = None
+    timezone: Optional[str] = None
+
+class ChangePasswordRequest(BaseModel):
+    userId: str
+    currentPassword: str
+    newPassword: str
+
+class DeleteAccountRequest(BaseModel):
+    userId: str
+    password: str
+
 
 # Endpoints
 @app.get('/')
 async def root():
     return {"status":'ok',"message": "TaskLinex API is active"}
+
+def log_event(cursor, userId, type, targetTask, details):
+    event_id = str(uuid.uuid4())
+    timestamp = int(datetime.now(timezone.utc).timestamp())
+    cursor.execute('''
+        INSERT INTO activity_log (id, userId, type, targetTask, details, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (event_id, userId, type, targetTask, details, timestamp))
+
+def time_ago(timestamp):
+    now = datetime.now(timezone.utc).timestamp()
+    diff = now - timestamp
+    if diff < 60: return "Just now"
+    elif diff < 3600: return f"{int(diff/60)}m ago"
+    elif diff < 86400: return f"{int(diff/3600)}h ago"
+    else: return f"{int(diff/86400)}d ago"
 
 @app.post('/signup')
 async def signup(user: UserCreate, response: Response):
@@ -422,11 +533,280 @@ async def get_user_info(user_id: str):
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT id, firstName, lastName, username, email, role, companyName FROM users WHERE id = ?", (user_id,))
+        cursor.execute("SELECT id, firstName, lastName, username, email, role, companyName, timezone FROM users WHERE id = ?", (user_id,))
         user = cursor.fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         return dict(user)
+    finally:
+        conn.close()
+
+@app.post('/updateAccount')
+async def update_account(req: UpdateAccountRequest):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        # Check if user exists
+        cursor.execute("SELECT id FROM users WHERE id = ?", (req.userId,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Check uniqueness for username and email if provided
+        if req.username:
+            cursor.execute("SELECT id FROM users WHERE username = ? AND id != ?", (req.username, req.userId))
+            if cursor.fetchone():
+                raise HTTPException(status_code=409, detail="Username already taken")
+        
+        if req.email:
+            cursor.execute("SELECT id FROM users WHERE email = ? AND id != ?", (req.email, req.userId))
+            if cursor.fetchone():
+                raise HTTPException(status_code=409, detail="Email already taken")
+
+        # Update fields
+        if req.displayName:
+            parts = req.displayName.strip().split(' ', 1)
+            first_name = parts[0]
+            last_name = parts[1] if len(parts) > 1 else ""
+            cursor.execute("UPDATE users SET firstName = ?, lastName = ? WHERE id = ?", (first_name, last_name, req.userId))
+        
+        if req.username:
+            cursor.execute("UPDATE users SET username = ? WHERE id = ?", (req.username, req.userId))
+        
+        if req.email:
+            cursor.execute("UPDATE users SET email = ? WHERE id = ?", (req.email, req.userId))
+            
+        if req.timezone:
+            cursor.execute("UPDATE users SET timezone = ? WHERE id = ?", (req.timezone, req.userId))
+
+        conn.commit()
+        return {"message": "Account updated successfully"}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.post('/changePassword')
+async def change_password(req: ChangePasswordRequest):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT password FROM users WHERE id = ?", (req.userId,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        stored_hash = row[0]
+        if not bcrypt.checkpw(req.currentPassword.encode('utf-8'), stored_hash.encode('utf-8')):
+            raise HTTPException(status_code=401, detail="Invalid current password")
+            
+        new_hashed = bcrypt.hashpw(req.newPassword.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        cursor.execute("UPDATE users SET password = ? WHERE id = ?", (new_hashed, req.userId))
+        conn.commit()
+        return {"message": "Password changed successfully"}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.post('/deleteAccount')
+async def delete_account(req: DeleteAccountRequest):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT password FROM users WHERE id = ?", (req.userId,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        stored_hash = row[0]
+        if not bcrypt.checkpw(req.password.encode('utf-8'), stored_hash.encode('utf-8')):
+            raise HTTPException(status_code=401, detail="Invalid password")
+
+        # Delete related data
+        cursor.execute("DELETE FROM dependencyIds WHERE task_id IN (SELECT id FROM tasks WHERE ownerId = ?)", (req.userId,))
+        cursor.execute("DELETE FROM task_persona_assignments WHERE task_id IN (SELECT id FROM tasks WHERE ownerId = ?)", (req.userId,))
+        cursor.execute("DELETE FROM tasks WHERE ownerId = ?", (req.userId,))
+        cursor.execute("DELETE FROM personas WHERE user_id = ?", (req.userId,))
+        cursor.execute("DELETE FROM activity_log WHERE userId = ?", (req.userId,))
+        cursor.execute("DELETE FROM interventions WHERE user_id = ?", (req.userId,))
+        # Finally delete user
+        cursor.execute("DELETE FROM users WHERE id = ?", (req.userId,))
+        
+        conn.commit()
+        return {"message": "Account deleted successfully"}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.get('/settings/{user_id}')
+async def get_user_settings(user_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        # 1. Get User & JSON Settings
+        cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        saved_settings = json.loads(user['settings']) if user['settings'] else {}
+        
+        # 2. Get Personas
+        cursor.execute("SELECT * FROM personas WHERE user_id = ?", (user_id,))
+        personas_rows = cursor.fetchall()
+        active_personas = []
+        for row in personas_rows:
+            active_personas.append({
+                "id": row['id'],
+                "name": row['name'],
+                "role": row['role'],
+                "color": row['color'],
+                "capacityLimit": row['weekly_capacity_hours'],
+                "allowOverload": bool(row['allow_overload'])
+            })
+
+        # 3. Construct Response (Merge DB data with defaults)
+        response = {
+            "account": {
+                "displayName": f"{user['firstName'] or ''} {user['lastName'] or ''}".strip(),
+                "email": user['email'],
+                "avatarUrl": f"https://ui-avatars.com/api/?name={user['firstName']}+{user['lastName']}&background=random",
+                "accountType": user['role'] if user['role'] else 'Individual',
+                "language": "en-US",
+                "twoFactorEnabled": False
+            },
+            "personas": {
+                "enableVirtualTeammates": saved_settings.get('personas', {}).get('enableVirtualTeammates', True),
+                "activePersonas": active_personas
+            },
+            "envoy": saved_settings.get('envoy', {
+                "suggestionsEnabled": True,
+                "autoDetectDependencies": True,
+                "communicationStyle": 'Concise',
+                "sensitivityLevel": 7,
+                "permissions": { "canDraftNotes": True, "canProposeHandoffs": True, "canModifyDates": False }
+            }),
+            "visuals": saved_settings.get('visuals', {
+                "defaultTimelineScale": 'Week',
+                "showGhostBars": True,
+                "showDependencyLines": True,
+                "uiDensity": 'Comfortable'
+            }),
+            "experimental": saved_settings.get('experimental', {
+                "enableJQL": False,
+                "usegpuAcceleration": True
+            })
+        }
+        return response
+    finally:
+        conn.close()
+
+@app.post('/settings/{user_id}/{section}')
+async def update_user_settings_section(user_id: str, section: str, payload: dict = Body(...)):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT settings FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        current_settings = json.loads(row['settings']) if row['settings'] else {}
+        
+        if section == 'personas':
+            # Update boolean setting
+            if 'personas' not in current_settings: current_settings['personas'] = {}
+            current_settings['personas']['enableVirtualTeammates'] = payload.get('enableVirtualTeammates', True)
+            
+            # Sync Personas Table
+            incoming_personas = payload.get('activePersonas', [])
+            incoming_ids = [p['id'] for p in incoming_personas if 'id' in p]
+            
+            # Delete removed
+            cursor.execute("DELETE FROM personas WHERE user_id = ? AND id NOT IN ({})".format(','.join(['?']*len(incoming_ids))), (user_id, *incoming_ids))
+            
+            # Upsert incoming
+            for p in incoming_personas:
+                cursor.execute("""
+                    INSERT OR REPLACE INTO personas (id, user_id, name, role, color, weekly_capacity_hours, allow_overload)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (p.get('id') or str(uuid.uuid4()), user_id, p['name'], p.get('role', 'Member'), p.get('color', '#6366f1'), p.get('capacityLimit', 40), p.get('allowOverload', False)))
+            
+        elif section in ['envoy', 'visuals', 'experimental']:
+            current_settings[section] = payload
+        
+        cursor.execute("UPDATE users SET settings = ? WHERE id = ?", (json.dumps(current_settings), user_id))
+        conn.commit()
+        return {"status": "success"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.get('/projects')
+async def get_projects():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM projects")
+        rows = cursor.fetchall()
+        projects = []
+        for row in rows:
+            p = dict(row)
+            if 'pk' in p: del p['pk']
+            p['visible'] = bool(p['visible'])
+            projects.append(p)
+        return projects
+    finally:
+        conn.close()
+
+@app.post('/createProject')
+async def create_project(project: ProjectCreate):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        project_id = str(uuid.uuid4())
+        cursor.execute("INSERT INTO projects (id, name) VALUES (?, ?)", (project_id, project.name))
+        conn.commit()
+        if project.userId:
+            log_event(cursor, project.userId, 'status_change', project.name, 'created project')
+        return {"id": project_id, "name": project.name, "visible": True}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.post('/deleteProject')
+async def delete_project(project: ProjectDelete):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM tasks WHERE projectId = ?", (project.id,))
+        cursor.execute("SELECT name FROM projects WHERE id = ?", (project.id,))
+        row = cursor.fetchone()
+        if row and project.userId:
+            log_event(cursor, project.userId, 'status_change', row[0], 'deleted project')
+        cursor.execute("DELETE FROM projects WHERE id = ?", (project.id,))
+        conn.commit()
+        return {"message": "Project deleted successfully"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
 
@@ -436,7 +816,12 @@ async def renderTask():
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM tasks")
+        # Join with users to get owner details
+        cursor.execute("""
+            SELECT t.*, u.firstName, u.lastName 
+            FROM tasks t 
+            LEFT JOIN users u ON t.ownerId = u.id
+        """)
         rows = cursor.fetchall()
         tasks = []
         for row in rows:
@@ -451,6 +836,15 @@ async def renderTask():
 
             if 'pk' in task_dict:
                 del task_dict['pk']
+            
+            # Add ownerName
+            fname = task_dict.pop('firstName', None)
+            lname = task_dict.pop('lastName', None)
+            if fname or lname:
+                task_dict['ownerName'] = f"{fname or ''} {lname or ''}".strip()
+            else:
+                task_dict['ownerName'] = "Unknown"
+
             tasks.append(task_dict)
         return tasks
     except Exception as e:
@@ -464,14 +858,32 @@ async def createTask(task: Task):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     try:
+        cursor.execute("SELECT id FROM tasks WHERE id = ?", (task.id,))
+        exists = cursor.fetchone()
+        action_desc = "updated task" if exists else "created a new task"
+
         cursor.execute('''
-            INSERT INTO tasks (id, projectId, title, startDate, duration, plannedDuration, progress, status, priority, ownerId, personaId, dependencyIds, tags)
+            INSERT OR REPLACE INTO tasks (
+                id, projectId, title, startDate, duration, 
+                plannedDuration, progress, status, priority, 
+                ownerId, personaId, dependencyIds, tags
+            )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (task.id, task.projectId, task.title, task.startDate, task.duration, task.plannedDuration, task.progress, task.status, task.priority, task.ownerId, task.personaId, json.dumps(task.dependencyIds), json.dumps(task.tags)))
+        ''', (
+            task.id, task.projectId, task.title, task.startDate, 
+            task.duration, task.plannedDuration, task.progress, 
+            task.status, task.priority, task.ownerId, task.personaId, 
+            json.dumps(task.dependencyIds), json.dumps(task.tags)
+        ))
+        
+        cursor.execute("UPDATE users SET isNew = 0 WHERE id = ?", (task.ownerId,))
+        
+        log_event(cursor, task.ownerId, 'status_change', task.title, action_desc)
+        
         conn.commit()
         return task
     except Exception as e:
-        print(f"Error creating task: {e}")
+        print(f"Error saving task: {e}")
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -482,11 +894,25 @@ async def updateTask(task: Task):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     try:
+        # Fetch old task state for better logging
+        cursor.execute("SELECT status, priority, ownerId FROM tasks WHERE id = ?", (task.id,))
+        old_task = cursor.fetchone()
+        
         cursor.execute('''
         UPDATE tasks SET projectId=?, title=?, startDate=?, duration=?, plannedDuration=?, progress=?, status=?, priority=?, ownerId=?, personaId=?, dependencyIds=?, tags=?
         WHERE id=?
         ''',(task.projectId,task.title,task.startDate,task.duration,task.plannedDuration,task.progress,task.status,task.priority,task.ownerId,task.personaId,json.dumps(task.dependencyIds),json.dumps(task.tags),task.id))
         conn.commit()
+        
+        details = 'updated task'
+        if old_task:
+            if old_task[0] != task.status:
+                details = f"moved to {task.status}"
+            elif old_task[1] != task.priority:
+                details = f"changed priority to {task.priority}"
+        
+        actor_id = task.userId if task.userId else task.ownerId
+        log_event(cursor, actor_id, 'status_change', task.title, details)
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Task not found")
         return task
@@ -503,7 +929,7 @@ async def complete_task(req: CompleteTaskRequest):
     cursor = conn.cursor()
     try:
         # 1. Get Task to calculate duration
-        cursor.execute("SELECT startDate FROM tasks WHERE id = ?", (req.taskId,))
+        cursor.execute("SELECT startDate, title FROM tasks WHERE id = ?", (req.taskId,))
         task = cursor.fetchone()
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
@@ -526,6 +952,7 @@ async def complete_task(req: CompleteTaskRequest):
             new_avg = ((old_avg * old_count) + duration_seconds) / new_count
             cursor.execute("UPDATE users SET avg_task_completion_time = ?, completed_tasks_count = ? WHERE id = ?", (new_avg, new_count, req.userId))
         
+        log_event(cursor, req.userId, 'status_change', task['title'], 'completed task')
         conn.commit()
         return {"message": "Task completed", "new_avg_time": new_avg}
     except Exception as e:
@@ -534,26 +961,28 @@ async def complete_task(req: CompleteTaskRequest):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
-
 @app.post('/deleteTask')
-async def delete_task(request_data: DeleteRequest): # FastAPI automatically parses the JSON body here
-    task_id = request_data.id
+async def delete_task(req: DeleteRequest):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     try:
-        cursor.execute('DELETE FROM tasks WHERE id=?', (task_id,))
+        cursor.execute("SELECT title FROM tasks WHERE id = ?", (req.id,))
+        row = cursor.fetchone()
+        task_title = row[0] if row else "Unknown Task"
 
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Task not found")
-
+        cursor.execute("DELETE FROM tasks WHERE id = ?", (req.id,))
+        
+        # Logging the events
+        if req.userId:
+            log_event(cursor, req.userId, 'status_change', task_title, 'Task Deleted')
+        
         conn.commit()
-        return {"message": "Task deleted successfully"}
+        return {"message": "Task was successfully deleted"}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
-
 '''
 INPUT EXAMPLE
 {
@@ -671,6 +1100,12 @@ def apply(req: EnvoyRequest):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
+    # Fetch task details for logging
+    cursor.execute("SELECT title, ownerId FROM tasks WHERE id = ?", (req.task_id,))
+    task_row = cursor.fetchone()
+    task_title = task_row[0] if task_row else "Unknown Task"
+    owner_id = task_row[1] if task_row else "unknown"
+
     applied = []
     skipped_immutable = []
 
@@ -686,6 +1121,10 @@ def apply(req: EnvoyRequest):
                 applied.append(field)
             else:
                 skipped_immutable.append(field)
+
+        if applied:
+             details = f"applied AI updates: {', '.join(applied)}"
+             log_event(cursor, owner_id, 'status_change', task_title, details)
 
         conn.commit()
         return {
@@ -775,6 +1214,7 @@ async def add_team_member(req: AddMemberRequest):
             raise HTTPException(status_code=404, detail="User with this username not found")
             
         conn.commit()
+        log_event(cursor, req.userId, 'status_change', 'Team', f"added {req.username}")
         return {"message": f"User {req.username} added to {admin['companyName']}"}
     except Exception as e:
         conn.rollback()
@@ -856,6 +1296,34 @@ async def team_members(userId: str):
     finally:
         conn.close()
 
+@app.get('/pulse/events')
+async def get_pulse_events():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        # Fetch latest 20 events with user info
+        cursor.execute('''
+            SELECT a.id, a.userId, u.username, a.type, a.targetTask, a.details, a.timestamp 
+            FROM activity_log a
+            JOIN users u ON a.userId = u.id
+            ORDER BY a.timestamp DESC LIMIT 20
+        ''')
+        rows = cursor.fetchall()
+        
+        events = []
+        for row in rows:
+            events.append({
+                "id": row[0],
+                "actor": {"name": row[2], "avatar": f"https://ui-avatars.com/api/?name={row[2]}"},
+                "type": row[3],
+                "targetTask": row[4],
+                "details": row[5],
+                "timestamp": time_ago(row[6]) 
+            })
+        return events
+    finally:
+        conn.close()
+
 @app.get('/envoy/interventions')
 async def get_interventions(userId: str):
     # Return mock interventions for UI demo
@@ -925,12 +1393,13 @@ async def auto_balance(req: AutoBalanceRequest):
             
             prompt = f"""
             You are an intelligent task manager. User ID: {req.userId}
-            Current Personas: {json.dumps([{k: v for k, v in p.items() if k != 'pk'} for p in personas])}
+            Current Personas (with capacity limits in hours and overload permission): 
+            {json.dumps([{k: v for k, v in p.items() if k != 'pk'} for p in personas])}
             Tasks: {json.dumps([{k: v for k, v in t.items() if k != 'pk'} for t in tasks])}
             
             Goal: Organize tasks into personas to balance workload.
             1. Create new personas if needed.
-            2. Assign every task to a persona.
+            2. Assign every task to a persona. Respect 'weekly_capacity_hours' unless 'allow_overload' is true.
             3. Suggest deleting unused personas.
             
             Return JSON:
@@ -1196,33 +1665,40 @@ async def get_pulse_activity(userId: str):
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     try:
-        # Fetch recent tasks to generate synthetic activity
-        # In a real app, you would have an 'events' table. Here we derive it from task state.
-        cursor.execute("""
-            SELECT t.*, u.firstName, u.lastName, u.role 
-            FROM tasks t 
-            JOIN users u ON t.ownerId = u.id 
-            ORDER BY t.startDate DESC LIMIT 10
-        """)
+        # Get user's company to show team activity
+        cursor.execute("SELECT companyName FROM users WHERE id = ?", (userId,))
+        user_row = cursor.fetchone()
+        company = user_row['companyName'] if user_row else None
+        
+        if company:
+             cursor.execute("""
+                SELECT a.*, u.firstName, u.lastName, u.role 
+                FROM activity_log a
+                JOIN users u ON a.userId = u.id
+                WHERE u.companyName = ?
+                ORDER BY a.timestamp DESC LIMIT 50
+             """, (company,))
+        else:
+             cursor.execute("""
+                SELECT a.*, u.firstName, u.lastName, u.role 
+                FROM activity_log a
+                JOIN users u ON a.userId = u.id
+                WHERE a.userId = ?
+                ORDER BY a.timestamp DESC LIMIT 50
+             """, (userId,))
+             
         rows = cursor.fetchall()
         
         events = []
         for row in rows:
             t = dict(row)
-            # Determine event type based on status/priority
-            evt_type = 'status_change'
-            details = f"updated {t['title']}"
+            evt_type = t['type']
+            details = t['details']
             
-            if t['status'] == 'Done':
-                details = "completed task"
-            elif t['status'] == 'In Progress':
-                details = "started working on"
-            elif t['priority'] == 'High':
-                evt_type = 'blocker'
-                details = "flagged high priority"
+            timestamp = time_ago(t['timestamp'])
             
-            # Mock timestamp based on startDate (just for demo feel)
-            timestamp = "Recently"
+            # Fallback for avatar
+            avatar = f"https://ui-avatars.com/api/?name={t['firstName']}+{t['lastName']}&background=random"
             
             events.append({
                 "id": f"evt_{t['id']}",
@@ -1231,14 +1707,22 @@ async def get_pulse_activity(userId: str):
                     "id": t['ownerId'],
                     "name": f"{t['firstName']} {t['lastName']}",
                     "role": t['role'] or 'Member',
-                    "avatar": f"https://ui-avatars.com/api/?name={t['firstName']}+{t['lastName']}&background=random"
+                    "avatar": avatar
                 },
-                "targetTask": t['title'],
-                "targetLink": "#",
+                "targetTask": t['targetTask'],
+                "targetLink": t['targetLink'] if t['targetLink'] else "#",
                 "details": details,
                 "timestamp": timestamp,
-                "actionRequired": t['priority'] == 'High' and t['status'] != 'Done'
+                "actionRequired": False
             })
+            
+        # Append System Message at the end (oldest)
+        events.append({
+            "id": 'se1', "type": 'status_change',
+            "actor": { "id": 'sys', "name": 'System', "role": 'Bot', "avatar": 'https://ui-avatars.com/api/?name=System&background=000&color=fff', "status": 'online', "workload": 0 },
+            "targetTask": 'Welcome to TaskLinex', "targetLink": '#',
+            "details": 'Your TaskLinex account has been created.', "timestamp": 'Joined'
+        })
             
         return events
     finally:
@@ -1251,10 +1735,11 @@ async def get_pulse_stats(userId: str):
     cursor = conn.cursor()
     try:
         # Calculate Velocity (Avg completion time of user)
-        cursor.execute("SELECT avg_task_completion_time FROM users WHERE id = ?", (userId,))
+        cursor.execute("SELECT avg_task_completion_time, isNew FROM users WHERE id = ?", (userId,))
         user = cursor.fetchone()
         avg_time = user['avg_task_completion_time'] if user else 0
-        
+        is_new_user = bool(user['isNew']) if user and user['isNew'] is not None else True
+
         velocity = "Medium"
         if avg_time > 0 and avg_time < 3600: velocity = "High" # Less than hour avg
         elif avg_time > 14400: velocity = "Low" # More than 4 hours avg
@@ -1274,7 +1759,8 @@ async def get_pulse_stats(userId: str):
         return {
             "velocity": velocity,
             "blockers": { "count": blocker_count, "type": "blocker" },
-            "sprint": { "daysLeft": 5, "completed": completed, "remaining": remaining }
+            "sprint": { "daysLeft": 5, "completed": completed, "remaining": remaining },
+            "isNewUser": is_new_user
         }
     finally:
         conn.close()
@@ -1384,10 +1870,17 @@ async def set_focus(req: SetFocusRequest):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     try:
+        # Fetch task title
+        cursor.execute("SELECT title FROM tasks WHERE id = ?", (req.taskId,))
+        row = cursor.fetchone()
+        task_title = row[0] if row else "Task"
+
         # 1. Pause other tasks
         cursor.execute("UPDATE tasks SET status = 'Todo' WHERE ownerId = ? AND status = 'In Progress'", (req.userId,))
         # 2. Set new focus
         cursor.execute("UPDATE tasks SET status = 'In Progress' WHERE id = ?", (req.taskId,))
+        
+        log_event(cursor, req.userId, 'status_change', task_title, 'started working on')
         conn.commit()
         return {"message": "Focus updated"}
     except Exception as e:

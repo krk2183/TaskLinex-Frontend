@@ -4,16 +4,14 @@ import React, {
     createContext, useContext, useReducer, useEffect, useState, useMemo, useRef
 } from 'react';
 import { createPortal } from 'react-dom';
-import {  Check, Eye, Loader2, AlertCircle, Sparkles } from 'lucide-react';
 import {
-    Info, ChevronRight,
-     CheckCircle, ArrowRight, XCircle,
+    Check, Eye, Loader2, AlertCircle, Sparkles, Info, ChevronRight,
+    CheckCircle, ArrowRight, XCircle, FolderPlus, Trash2,
     GitCommit, Layers, Zap, BrainCircuit, UserCog, LayoutGrid, List, Calendar, RefreshCw, Plus, Search, X
 } from 'lucide-react';
 import { useAuth } from '../../(auth)/register/AuthContext';
 
 // 1. BACKEND-READY TYPES & INTERFACES
-
 type TaskStatus = 'On Track' | 'At Risk' | 'Blocked' | 'Completed';
 type Priority = 'High' | 'Medium' | 'Low';
 type ViewMode = 'Week' | 'Month';
@@ -57,6 +55,7 @@ interface Task {
     priority: Priority;
     // Relationships
     ownerId: string;
+    ownerName?: string;
     personaId?: string; // Which "hat" is the owner wearing?
     dependencyIds: string[]; // Array of IDs this task depends on
     handOffToId?: string;
@@ -143,13 +142,15 @@ const MockAPI = {
     // Newly added: Fetchdata to replace MOCK data
     fetchData: async () => {
         try {
-            const [tasksRes, personasRes] = await Promise.all([
+            const [tasksRes, personasRes, projectsRes] = await Promise.all([
                 fetch(`${API_BASE_URL}/renderTask`, { cache: 'no-store' }),
-                fetch(`${API_BASE_URL}/renderPersona`, { cache: 'no-store' })
+                fetch(`${API_BASE_URL}/renderPersona`, { cache: 'no-store' }),
+                fetch(`${API_BASE_URL}/projects`, { cache: 'no-store' })
             ]);
             
             const tasks = await tasksRes.json();
             const personasData = await personasRes.json();
+            const projects = await projectsRes.json();
 
             // Map backend personas to frontend structure
             const mappedPersonas = Array.isArray(personasData) ? personasData.map((p: any) => ({
@@ -163,7 +164,7 @@ const MockAPI = {
             return { 
                 tasks: Array.isArray(tasks) ? tasks : [], 
                 users: [], 
-                projects: MOCK_PROJECTS,
+                projects: Array.isArray(projects) ? projects : MOCK_PROJECTS,
                 personas: mappedPersonas
             };
         } catch (error) {
@@ -451,6 +452,9 @@ const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit, personas }: { t
     const isSlipping = task.duration > task.plannedDuration;
     const ghostWidth = (task.plannedDuration / task.duration) * 100;
 
+    const ownerName = user?.name || task.ownerName || 'Unknown';
+    const ownerAvatar = user?.avatar || `https://ui-avatars.com/api/?name=${ownerName}&background=random`;
+
     return (
         <div
             className="absolute top-2 h-10 group"
@@ -497,13 +501,12 @@ const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit, personas }: { t
                     {task.title}
                 </span>
 
-                {user && (
-                    <img
-                        src={user.avatar}
-                        className="relative z-10 w-6 h-6 rounded-full border border-white/30 flex-shrink-0"
-                        alt="Owner"
-                    />
-                )}
+                <img
+                    src={ownerAvatar}
+                    className="relative z-10 w-6 h-6 rounded-full border border-white/30 flex-shrink-0"
+                    alt={ownerName}
+                    title={ownerName}
+                />
 
                 {/* Persona Indicator */}
                 {assignedPersona && (
@@ -619,7 +622,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
                 const response = await fetch(`${API_BASE_URL}/deleteTask`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: taskToEdit.id })
+                    body: JSON.stringify({ id: taskToEdit.id, userId: state.currentUser?.id })
                 });
 
                 if (!response.ok) throw new Error('Failed to delete task');
@@ -656,7 +659,8 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
                 body: JSON.stringify({ 
                     ...taskToEdit, 
                     status: 'On Track', 
-                    progress: 0 
+                    progress: 0,
+                    userId: state.currentUser?.id
                 })
             });
 
@@ -685,7 +689,8 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
             priority,
             ownerId,
             dependencyIds: taskToEdit ? taskToEdit.dependencyIds : [],
-            tags: taskToEdit ? taskToEdit.tags : []
+            tags: taskToEdit ? taskToEdit.tags : [],
+            userId: state.currentUser?.id
         };
 
 
@@ -708,11 +713,10 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
                 } else {
                     dispatch({ type: 'UPDATE_TASKS', payload: [...state.tasks, savedTask] });
                 }
-
                 onClose();
             } catch (error) {
                 console.error("Failed to save task:", error);
-          }
+            }
         };
 
 
@@ -873,6 +877,83 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     );
 };
 
+const AddProjectModal = ({ onClose }: { onClose: () => void }) => {
+    const { state, dispatch } = useContext(AppContext)!;
+    const [name, setName] = useState('');
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            const response = await fetch(`${API_BASE_URL}/createProject`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, userId: state.currentUser?.id })
+            });
+            if (!response.ok) throw new Error('Failed to create project');
+            
+            // Refresh data
+            const data = await MockAPI.fetchData();
+            dispatch({ type: 'INIT_DATA', payload: data });
+            onClose();
+        } catch (error) {
+            console.error(error);
+            alert('Failed to create project');
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-[#0F172A] w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 scale-100 animate-in zoom-in-95 duration-200">
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">Add New Project</h2>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Project Name</label>
+                        <input
+                            type="text"
+                            required
+                            value={name}
+                            onChange={e => setName(e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                            placeholder="e.g. Mobile App V1"
+                        />
+                    </div>
+                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 mt-6">
+                        <button type="button" onClick={onClose} className="text-sm font-medium text-gray-500 hover:text-slate-700 transition-colors">Cancel</button>
+                        <button type="submit" className="px-4 py-2 text-sm font-bold text-white bg-violet-700 hover:bg-violet-800 rounded-lg transition-all">Create Project</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+const DeleteProjectModal = ({ project, onClose, onConfirm }: { project: Project, onClose: () => void, onConfirm: () => void }) => {
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-[#0F172A] w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 scale-100 animate-in zoom-in-95 duration-200">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">Delete Project</h2>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+                <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+                    Are you sure you want to delete <span className="font-bold text-slate-900 dark:text-white">{project.name}</span>? This action cannot be undone and will remove all associated tasks.
+                </p>
+                <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-slate-800">
+                    <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 rounded-lg transition-colors">Cancel</button>
+                    <button onClick={onConfirm} className="px-4 py-2 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-all shadow-lg shadow-red-900/20">Delete Project</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUpdateSuccess }) => {
     const [proposals, setProposals] = useState<Proposal[]>([]);
     const [loading, setLoading] = useState(false);
@@ -937,7 +1018,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
     const optionalProposals = proposals.filter(p => !autoApplyFields.includes(p.field));
 
 return (
-        <>
+        <div>
             {/* Drawer Overlay */}
             {isOpen && (
                 <div
@@ -958,6 +1039,7 @@ return (
                             <X className="w-5 h-5 text-gray-400 hover:text-white" />
                         </button>
                     </div>
+                    <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
                     {loading ? (
                         <div className="flex flex-col items-center justify-center flex-1 text-gray-400">
                             <Loader2 className="w-8 h-8 animate-spin mb-2 text-violet-500" />
@@ -969,7 +1051,7 @@ return (
                             <p className="text-sm">{error}</p>
                         </div>
                     ) : (
-                        <div className="flex-1 overflow-y-auto space-y-8 pr-2 custom-scrollbar">
+                        <div className="space-y-8">
                             {/* Section: Auto-Apply */}
                             <section>
                                 <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-4">Direct Optimization</h3>
@@ -1024,8 +1106,6 @@ return (
                         <Sparkles className="w-4 h-4 text-violet-400" />
                         Refresh Suggestions
                     </button>
-                </div>
-            </div>
 
             {/* Review Modal */}
             {reviewProposal && (
@@ -1078,7 +1158,10 @@ return (
                     </div>
                 </div>
             )}
-        </>
+                    </div>
+                </div>
+            </div>
+        </div>
     );
 };
 
@@ -1103,6 +1186,8 @@ const BoardView = ({ tasks, users }: { tasks: Task[], users: User[] }) => {
                         <div className="p-3 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
                             {tasks.filter(t => t.status === status).map(task => {
                                 const owner = users.find(u => u.id === task.ownerId);
+                                const ownerName = owner?.name || task.ownerName || 'Unknown';
+                                const ownerAvatar = owner?.avatar || `https://ui-avatars.com/api/?name=${ownerName}&background=random`;
                                 return (
                                     <div key={task.id} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:shadow-md transition-shadow cursor-pointer group">
                                         <div className="flex justify-between items-start mb-2">
@@ -1111,7 +1196,7 @@ const BoardView = ({ tasks, users }: { tasks: Task[], users: User[] }) => {
                                                 task.priority === 'Medium' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' :
                                                 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                                             }`}>{task.priority}</span>
-                                            {owner && <img src={owner.avatar} className="w-5 h-5 rounded-full" alt={owner.name} />}
+                                            <img src={ownerAvatar} className="w-5 h-5 rounded-full" alt={ownerName} title={ownerName} />
                                         </div>
                                         <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">{task.title}</h4>
                                         <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -1147,16 +1232,16 @@ const SprintView = ({ tasks, users }: { tasks: Task[], users: User[] }) => {
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
                         {tasks.map(task => {
                             const owner = users.find(u => u.id === task.ownerId);
+                            const ownerName = owner?.name || task.ownerName || 'Unknown';
+                            const ownerAvatar = owner?.avatar || `https://ui-avatars.com/api/?name=${ownerName}&background=random`;
                             return (
                                 <tr key={task.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                     <td className="p-4 font-medium text-slate-900 dark:text-slate-200">{task.title}</td>
                                     <td className="p-4">
-                                        {owner && (
-                                            <div className="flex items-center gap-2">
-                                                <img src={owner.avatar} className="w-5 h-5 rounded-full" alt={owner.name} />
-                                                <span className="text-slate-600 dark:text-slate-400">{owner.name}</span>
-                                            </div>
-                                        )}
+                                        <div className="flex items-center gap-2">
+                                            <img src={ownerAvatar} className="w-5 h-5 rounded-full" alt={ownerName} />
+                                            <span className="text-slate-600 dark:text-slate-400">{ownerName}</span>
+                                        </div>
                                     </td>
                                     <td className="p-4">
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
@@ -1192,6 +1277,11 @@ export default function RoadmapPage() {
     const { userId } = useAuth();
     const [state, dispatch] = useReducer(appReducer, initialState);
     const [taskToEdit, setTaskToEdit] = useState<Task | undefined>(undefined);
+    const [addProjectVisible, setAddProjectVisible] = useState(false);
+    const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+    const [timelineScale, setTimelineScale] = useState<'Week' | 'Month' | 'Quarter'>('Week');
+    const [error, setError] = useState<string | null>(null);
+    const loading = state.isLoading;
     const personas = ['P1', 'P2', 'P3'] // Dummy
 
     // Initial Data Fetch
@@ -1202,27 +1292,46 @@ export default function RoadmapPage() {
         const loadData = async () => {
             const data = await MockAPI.fetchData(); // This now calls /renderTask
             
-            // Try to fetch real user details to replace/augment mock data
-            let realUser = null;
+            // Fetch Team Members (Users) to populate owner fields
+            let teamMembers: User[] = [];
             try {
-                const res = await fetch(`${API_BASE_URL}/users/${userId}`);
-                if (res.ok) {
-                    const u = await res.json();
-                    realUser = {
-                        id: u.id,
-                        name: u.firstName || u.username || 'User',
-                        avatar: `https://ui-avatars.com/api/?name=${u.firstName || 'U'}&background=0D8ABC&color=fff`,
-                        baseCapacity: 100,
+                const teamRes = await fetch(`${API_BASE_URL}/team/members?userId=${userId}`);
+                if (teamRes.ok) {
+                    const members = await teamRes.json();
+                    teamMembers = members.map((m: any) => ({
+                        id: m.id,
+                        name: m.name,
+                        avatar: `https://ui-avatars.com/api/?name=${m.name}&background=random`,
+                        baseCapacity: 80, // Default
                         personas: []
-                    };
-                    // Ensure real user is in the list for dropdowns
-                    if (!data.users.find((existing: User) => existing.id === realUser.id)) {
-                        data.users.unshift(realUser);
-                    }
+                    }));
                 }
-            } catch (e) { console.error("Failed to load user", e); }
+            } catch (e) { console.error("Failed to load team", e); }
 
-            const currentUser = realUser || data.users.find((u: User) => u.id === userId) || data.users[0];
+            // Ensure current user is in the list if not returned by team endpoint (e.g. admin/isolated)
+            let currentUser = teamMembers.find(u => u.id === userId);
+            if (!currentUser) {
+                 try {
+                    const res = await fetch(`${API_BASE_URL}/users/${userId}`);
+                    if (res.ok) {
+                        const u = await res.json();
+                        currentUser = {
+                            id: u.id,
+                            name: u.firstName || u.username || 'User',
+                            avatar: `https://ui-avatars.com/api/?name=${u.firstName || 'U'}&background=0D8ABC&color=fff`,
+                            baseCapacity: 100,
+                            personas: []
+                        };
+                        teamMembers.push(currentUser);
+                    }
+                } catch (e) { console.error("Failed to load user", e); }
+            }
+
+            // Update data.users with fetched team members
+            if (teamMembers.length > 0) {
+                data.users = teamMembers;
+            }
+
             dispatch({ type: 'INIT_DATA', payload: { ...data, currentUser } });
         };
         loadData();
@@ -1263,13 +1372,36 @@ export default function RoadmapPage() {
         );
     };
 
-    const [addVisible,setAVisible] = useState(false);
-    const DropFilteredTasks = state.activePersonaId ? state.tasks.filter(task => task.personaId===state.activePersonaId): state.tasks;
+    const handleDeleteProject = (projectId: string) => {
+        const project = state.projects.find(p => p.id === projectId);
+        if (project) {
+            setProjectToDelete(project);
+        }
+    };
 
-    const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-        const selectedValue = event.target.value;
-        dispatch({ type: 'TOGGLE_PERSONA', payload: selectedValue });
-    }
+    const confirmDeleteProject = async () => {
+        if (!projectToDelete) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/deleteProject`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: projectToDelete.id, userId })
+            });
+            if (!res.ok) throw new Error("Failed");
+            
+            const newProjects = state.projects.filter(p => p.id !== projectToDelete.id);
+            const newTasks = state.tasks.filter(t => t.projectId !== projectToDelete.id);
+            
+            dispatch({ type: 'INIT_DATA', payload: { projects: newProjects, tasks: newTasks } });
+        } catch (e) {
+            console.error(e);
+            alert("Failed to delete project");
+        } finally {
+            setProjectToDelete(null);
+        }
+    };
+
+    const [addVisible,setAVisible] = useState(false);
 
     return (
         <AppContext.Provider value={{ state, dispatch }}>
@@ -1320,6 +1452,16 @@ export default function RoadmapPage() {
                                     <option key={index} value={item}>{item}</option>
                                 ))}
                             </select>
+
+                            <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
+
+                            <button
+                                onClick={() => setAddProjectVisible(true)}
+                                className="p-1.5 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-slate-800 transition-all"
+                                title="Add Project"
+                            >
+                                <FolderPlus className="w-4 h-4" />
+                            </button>
 
                             <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
 
@@ -1424,6 +1566,14 @@ export default function RoadmapPage() {
                                                         {projectTasks.length}
                                                     </span>
 
+                                                    <button 
+                                                        onClick={() => handleDeleteProject(project.id)}
+                                                        className="ml-2 p-1 text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors"
+                                                        title="Delete Project"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+
                                                     {/* Collapsed View: Show Avatars */}
                                                     <div className={`flex items-center transition-all duration-300 ease-in-out ${isCollapsed ? 'pl-2 opacity-100' : '-translate-x-4 opacity-0 h-0 w-0'}`}>
                                                         {projectUsers.map((user, index) => (
@@ -1522,6 +1672,19 @@ export default function RoadmapPage() {
                     }}
                     taskToEdit={taskToEdit} />)}
 
+                    {/* Add Project Modal */}
+                    {addProjectVisible && (
+                        <AddProjectModal onClose={() => setAddProjectVisible(false)} />
+                    )}
+
+                    {/* Delete Project Modal */}
+                    {projectToDelete && (
+                        <DeleteProjectModal 
+                            project={projectToDelete} 
+                            onClose={() => setProjectToDelete(null)} 
+                            onConfirm={confirmDeleteProject} 
+                        />
+                    )}
 
                 </div>
 

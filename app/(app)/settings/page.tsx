@@ -6,6 +6,7 @@ import {
     Save, CheckCircle, AlertCircle, Plus, Trash2, 
     Activity, Lock, RefreshCw, Smartphone, Monitor
 } from 'lucide-react';
+import { useAuth } from '../../(auth)/register/AuthContext';
 
 // ==========================================
 // 1. DATA MODELS (Backend Schema)
@@ -73,40 +74,6 @@ interface UserSettings {
 // 2. MOCK API & UTILS
 // ==========================================
 
-const INITIAL_SETTINGS: UserSettings = {
-    account: {
-        displayName: 'Matthew',
-        email: 'matthew@forge.ai',
-        avatarUrl: 'https://i.pravatar.cc/150?u=1',
-        accountType: 'Individual',
-        language: 'en-US',
-        twoFactorEnabled: false,
-    },
-    personas: {
-        enableVirtualTeammates: true,
-        activePersonas: [
-            { id: 'p1', name: 'Matt (Lead)', role: 'Strategy', color: '#8b5cf6', capacityLimit: 40, allowOverload: true },
-            { id: 'p2', name: 'Matt (Dev)', role: 'Execution', color: '#10b981', capacityLimit: 60, allowOverload: false },
-        ]
-    },
-    envoy: {
-        suggestionsEnabled: true,
-        autoDetectDependencies: true,
-        communicationStyle: 'Concise',
-        sensitivityLevel: 7,
-        permissions: { canDraftNotes: true, canProposeHandoffs: true, canModifyDates: false }
-    },
-    visuals: {
-        defaultTimelineScale: 'Week',
-        showGhostBars: true,
-        showDependencyLines: true,
-        uiDensity: 'Comfortable'
-    },
-    experimental: {
-        enableJQL: false,
-        usegpuAcceleration: true
-    }
-};
 
 const Toggle = ({ label, description, checked, onChange, disabled }: any) => (
     <div className={`flex items-start justify-between py-4 border-b border-gray-100 dark:border-gray-800 last:border-0 ${disabled ? 'opacity-50' : ''}`}>
@@ -123,20 +90,6 @@ const Toggle = ({ label, description, checked, onChange, disabled }: any) => (
     </div>
 );
 
-
-const SettingsAPI = {
-    get: async (): Promise<UserSettings> => {
-        await new Promise(r => setTimeout(r, 600)); // Simulate net lag
-        return INITIAL_SETTINGS;
-    },
-    patch: async (section: keyof UserSettings, data: any): Promise<boolean> => {
-        await new Promise(r => setTimeout(r, 400));
-        // Simulate 10% failure rate
-        if (Math.random() > 0.95) throw new Error("Failed to sync settings");
-        console.log(`[API] PATCH /settings/${section}`, data);
-        return true;
-    }
-};
 
 // ==========================================
 // 3. UI COMPONENTS (Modular Sections)
@@ -194,8 +147,15 @@ const SettingsAPI = {
 // --- Section 2: Personas (Complex List Logic) ---
 const PersonaSection = ({ data, onUpdate }: { data: PersonaSettings, onUpdate: (d: PersonaSettings) => void }) => {
     const updatePersona = (id: string, field: string, value: any) => {
-        const newPersonas = data.activePersonas.map(p => p.id === id ? { ...p, [field]: value } : p);
-        onUpdate({ ...data, activePersonas: newPersonas });
+        const updatedPersonas = data.activePersonas.map(p => p.id === id ? { ...p, [field]: value } : p);
+        onUpdate({ ...data, activePersonas: updatedPersonas });
+    };
+
+    const addPersona = () => {
+        const newPersona: PersonaDefinition = {
+            id: `temp_${Date.now()}`, name: 'New Persona', role: 'Member', color: '#6366f1', capacityLimit: 40, allowOverload: false
+        };
+        onUpdate({ ...data, activePersonas: [...data.activePersonas, newPersona] });
     };
 
     return (
@@ -213,7 +173,7 @@ const PersonaSection = ({ data, onUpdate }: { data: PersonaSettings, onUpdate: (
             </div>
 
             <Toggle 
-                label="Enable Virtual Teammates"
+                label="Enable Personas"
                 description="Treat personas as distinct rows in the Gantt chart."
                 checked={data.enableVirtualTeammates}
                 onChange={(v: boolean) => onUpdate({ ...data, enableVirtualTeammates: v })}
@@ -222,7 +182,7 @@ const PersonaSection = ({ data, onUpdate }: { data: PersonaSettings, onUpdate: (
             <div className="space-y-3">
                 <div className="flex justify-between items-end mb-2">
                     <label className="text-xs font-bold text-gray-500 uppercase">Active Personas</label>
-                    <button className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-700 font-medium">
+                    <button onClick={addPersona} className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-700 font-medium">
                         <Plus className="w-3 h-3" /> Add Persona
                     </button>
                 </div>
@@ -264,7 +224,10 @@ const PersonaSection = ({ data, onUpdate }: { data: PersonaSettings, onUpdate: (
                             />
                         </div>
 
-                        <button className="p-2 text-gray-400 hover:text-red-500 transition">
+                        <button 
+                            onClick={() => onUpdate({ ...data, activePersonas: data.activePersonas.filter(p => p.id !== persona.id) })}
+                            className="p-2 text-gray-400 hover:text-red-500 transition"
+                        >
                             <Trash2 className="w-4 h-4" />
                         </button>
                     </div>
@@ -339,6 +302,7 @@ const EnvoySection = ({ data, onUpdate }: { data: EnvoySettings, onUpdate: (d: E
 
 export default function SettingsPage() {
     // Default Page State
+    const { userId } = useAuth();
     const [activeTab, setActiveTab] = useState<'personas' | 'envoy' | 'visuals'>('personas');
     const [settings, setSettings] = useState<UserSettings | null>(null);
     const [loading, setLoading] = useState(true);
@@ -346,14 +310,21 @@ export default function SettingsPage() {
 
     // Initial Fetch
     useEffect(() => {
-        SettingsAPI.get().then(data => {
+        if (!userId) return;
+        const PORT_SUFFIX = process.env.NEXT_PUBLIC_NPM_PORT;
+        const API_URL = PORT_SUFFIX ? `http://192.168.0.${PORT_SUFFIX}:8000` : 'http://localhost:8000';
+
+        fetch(`${API_URL}/settings/${userId}`)
+        .then(res => res.json())
+        .then(data => {
             setSettings(data);
             setLoading(false);
-        });
-    }, []);
+        })
+        .catch(err => console.error("Failed to load settings", err));
+    }, [userId]);
 
     const handleUpdate = useCallback(async (section: keyof UserSettings, newData: any) => {
-        if (!settings) return;
+        if (!settings || !userId) return;
         
         const previousData = settings[section];
         
@@ -362,7 +333,15 @@ export default function SettingsPage() {
 
         try {
             // API Call
-            await SettingsAPI.patch(section, newData);
+            const PORT_SUFFIX = process.env.NEXT_PUBLIC_NPM_PORT;
+            const API_URL = PORT_SUFFIX ? `http://192.168.0.${PORT_SUFFIX}:8000` : 'http://localhost:8000';
+            
+            const res = await fetch(`${API_URL}/settings/${userId}/${section}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newData)
+            });
+            if (!res.ok) throw new Error("Failed to save");
             setSyncState('saved');
             setTimeout(() => setSyncState('idle'), 2000);
         } catch (err) {
@@ -371,7 +350,7 @@ export default function SettingsPage() {
             setSettings(prev => prev ? ({ ...prev, [section]: previousData }) : null);
             setSyncState('error');
         }
-    }, [settings]);
+    }, [settings, userId]);
 
     if (loading) return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
@@ -466,8 +445,9 @@ export default function SettingsPage() {
                                 <div className="py-4 border-b border-gray-100 dark:border-gray-800">
                                     <h4 className="text-sm font-medium mb-2">Default Timeline Scale</h4>
                                     <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg w-fit">
-                                        {['Week', 'Month', 'Quarter'].map((scale) => (
+                                        {(['Week', 'Month', 'Quarter'] as const).map((scale) => (
                                             <button 
+                                                type="button"
                                                 key={scale}
                                                 onClick={() => handleUpdate('visuals', { ...settings.visuals, defaultTimelineScale: scale })}
                                                 className={`px-3 py-1 text-xs rounded-md transition-all ${settings.visuals.defaultTimelineScale === scale ? 'bg-white dark:bg-gray-700 shadow-sm font-bold' : 'text-gray-500'}`}

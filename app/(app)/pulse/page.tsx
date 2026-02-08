@@ -42,26 +42,27 @@ interface PulseEvent {
 // Upper Element - Blockers & Dependencies, Sprint Health and Team Velocity
 interface ProjectHealth {
     velocity: 'High' | 'Medium' | 'Low';
-    blockers: {
+    blockers?: {
         count: number;
         type: 'blocker' | 'dependency';
     };
-    sprint: {
+    sprint?: {
         daysLeft: number;
         completed: number;
         remaining: number;
     };
+    isNewUser?: boolean;
 }
 
 // --- SAMPLE DATA FOR NEW USERS ---
 
 const SAMPLE_MEMBERS: TeamMember[] = [
-    { id: 's1', name: 'Sample User', role: 'Frontend', avatar: 'https://ui-avatars.com/api/?name=Sample+User&background=random', status: 'online', workload: 45 },
-    { id: 's2', name: 'Sample User', role: 'Backend', avatar: 'https://ui-avatars.com/api/?name=Sample+User&background=random', status: 'busy', workload: 70 },
-    { id: 's3', name: 'Sample User', role: 'Design', avatar: 'https://ui-avatars.com/api/?name=Sample+User&background=random', status: 'offline', workload: 20 },
+    { id: 's1', name: 'Bob', role: 'Frontend', avatar: 'https://ui-avatars.com/api/?name=B+O&background=random', status: 'online', workload: 45 },
+    { id: 's2', name: 'Jane', role: 'Backend', avatar: 'https://ui-avatars.com/api/?name=J+A&background=random', status: 'busy', workload: 70 },
+    { id: 's3', name: 'Denise', role: 'Design', avatar: 'https://ui-avatars.com/api/?name=D+E&background=random', status: 'offline', workload: 20 },
 ];
 
-const SAMPLE_EVENTS: PulseEvent[] = [
+const SYSTEM_EVENTS: PulseEvent[] = [
     {
         id: 'se1', type: 'status_change',
         actor: { id: 'sys', name: 'System', role: 'Bot', avatar: 'https://ui-avatars.com/api/?name=System&background=000&color=fff', status: 'online', workload: 0 },
@@ -90,13 +91,13 @@ const SprintHealthCard  = ({ data, isNewUser }: { data: ProjectHealth, isNewUser
                 <p className="text-xs text-slate-400 uppercase tracking-widest font-bold mb-2">Sprint Health</p>
                 <div className="flex items-center gap-4 text-sm font-medium">
                     <span className="flex items-center gap-1.5 text-slate-300">
-                        <CheckCircle className="w-4 h-4 text-emerald-500" /> {data.sprint.completed} Done
+                        <CheckCircle className="w-4 h-4 text-emerald-500" /> {data.sprint?.completed ?? 0} Done
                     </span>
                     <span className="flex items-center gap-1.5 text-slate-300">
-                        <Clock className="w-4 h-4 text-indigo-500" /> {data.sprint.daysLeft}d left
+                        <Clock className="w-4 h-4 text-indigo-500" /> {data.sprint?.daysLeft ?? 0}d left
                     </span>
                     <span className="flex items-center gap-1.5 text-slate-300">
-                        <Layers className="w-4 h-4 text-amber-500" /> {data.sprint.remaining} Remaining
+                        <Layers className="w-4 h-4 text-amber-500" /> {data.sprint?.remaining ?? 0} Remaining
                     </span>
                 </div>
             </div>
@@ -108,10 +109,11 @@ const SprintHealthCard  = ({ data, isNewUser }: { data: ProjectHealth, isNewUser
                     const isCurrent = i === currentDayIndex;
                     
                     let barHeight = 0;
+                    const completed = data.sprint?.completed ?? 0;
                     if (isPast) {
-                        barHeight = (i / currentDayIndex) * (data.sprint.completed / (totalTasks || 1)) * 100;
+                        barHeight = (i / currentDayIndex) * (completed / (totalTasks || 1)) * 100;
                     } else if (isCurrent) {
-                        barHeight = (data.sprint.completed / (totalTasks || 1)) * 100;
+                        barHeight = (completed / (totalTasks || 1)) * 100;
                     } else {
                         barHeight = 5; // Placeholder for future days
                     }
@@ -207,7 +209,7 @@ const PulseInsights = ({ data, isNewUser }: { data: ProjectHealth, isNewUser: bo
                 </div>
             </div>
             
-            {(data.blockers?.count > 0 || isNewUser) && (
+            {((data.blockers?.count ?? 0) > 0 || isNewUser) && (
                 <div className={`bg-slate-900 border ${isBlocker ? 'border-rose-200 dark:border-rose-900/50' : 'border-amber-200 dark:border-amber-900/50'} p-4 rounded-xl shadow-sm flex items-center justify-between relative overflow-hidden`}>
                     <div className={`absolute left-0 top-0 bottom-0 w-1 ${isBlocker ? 'bg-rose-500' : 'bg-amber-500'}`} />
                     <div>
@@ -216,7 +218,7 @@ const PulseInsights = ({ data, isNewUser }: { data: ProjectHealth, isNewUser: bo
                         </p>
                         <div className="flex items-center gap-2 mt-1">
                             <span className={`text-2xl font-black ${isBlocker ? 'text-rose-600' : 'text-amber-600'}`}>
-                                {isNewUser ? '0 (sample)' : `${data.blockers.count} ${data.blockers.count === 1 ? 'Issue' : 'Issues'}`}
+                                {isNewUser ? '0 (sample)' : `${data.blockers?.count ?? 0} ${(data.blockers?.count ?? 0) === 1 ? 'Issue' : 'Issues'}`}
                             </span>
                         </div>
                     </div>
@@ -244,7 +246,7 @@ const PulseInsights = ({ data, isNewUser }: { data: ProjectHealth, isNewUser: bo
 
             {/* SPRINT HEALTH FIELD */}
 
-            {(data.sprint?.daysLeft > 0 || isNewUser) && (
+            {((data.sprint?.daysLeft ?? 0) > 0 || isNewUser) && (
                 <SprintHealthCard data={data} isNewUser={isNewUser} />
             )}
         </div>
@@ -390,8 +392,8 @@ const FeedItem = ({ event, isSample }: { event: PulseEvent, isSample?: boolean }
 const ActivityStream = ({ events, isNewUser }: { events: PulseEvent[], isNewUser: boolean }) => {
     const safeEvents = Array.isArray(events) ? events : [];
     return (
-        <div className="bg-slate-950 rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-800 min-h-[600px]">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 sm:mb-8 gap-4 sm:gap-0">
+        <div className="bg-slate-950 rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-800 h-[600px] flex flex-col">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 sm:mb-8 gap-4 sm:gap-0 shrink-0">
                 <h2 className="text-xl sm:text-2xl font-bold text-slate-200 flex items-center gap-2">
                     Activity Stream
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -414,26 +416,26 @@ const ActivityStream = ({ events, isNewUser }: { events: PulseEvent[], isNewUser
             </div>
 
             {/* EVENT FIELD */}
-            <div className="pl-2">
+            <div className="pl-2 flex-1 overflow-y-auto pr-2">
                 {safeEvents.map(event => (
                     <FeedItem key={event.id} event={event} isSample={isNewUser} />
                 ))}
-            </div>
 
-            {isNewUser ? (
-                <div className="mt-8 p-4 bg-slate-900/50 border border-dashed border-slate-800 rounded-xl text-center">
-                    <p className="text-sm text-slate-400 mb-2">Try creating a task, commenting, or changing a status to see how activity appears here.</p>
-                    <button className="text-xs text-indigo-400 font-semibold hover:text-indigo-300">
-                        Create your first task &rarr;
-                    </button>
-                </div>
-            ) : (
-                <div className="mt-8 text-center">
-                    <button className="text-sm text-slate-400 hover:text-indigo-400 transition-colors flex items-center justify-center w-full gap-2">
-                        <Clock className="w-3 h-3" /> Load previous updates
-                    </button>
-                </div>
-            )}
+                {isNewUser ? (
+                    <div className="mt-8 p-4 bg-slate-900/50 border border-dashed border-slate-800 rounded-xl text-center">
+                        <p className="text-sm text-slate-400 mb-2">Try creating a task, commenting, or changing a status to see how activity appears here.</p>
+                        <button className="text-xs text-indigo-400 font-semibold hover:text-indigo-300">
+                            Create your first task &rarr;
+                        </button>
+                    </div>
+                ) : (
+                    <div className="mt-8 text-center pb-4">
+                        <button className="text-sm text-slate-400 hover:text-indigo-400 transition-colors flex items-center justify-center w-full gap-2">
+                            <Clock className="w-3 h-3" /> Load previous updates
+                        </button>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
@@ -454,7 +456,7 @@ const PulseFocusComponent = ({ currentTask, nextTask, rationale, isNewUser }: { 
             <div className="bg-slate-950 text-white p-6 rounded-2xl shadow-2xl border border-slate-800 relative lg:sticky lg:top-6 flex flex-col items-center justify-center text-center min-h-[300px]">
                 <h2 className="text-xl font-bold mb-2 text-violet-200">Your Focus will appear here</h2>
                 <p className="text-slate-400 text-sm mb-6">When you create tasks, TaskLinex highlights what matters most.</p>
-                <button className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg font-bold text-sm mb-3 w-full transition-colors">Create your first task</button>
+                <a href='/roadmap' className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg font-bold text-sm mb-3 w-full transition-colors">Create your first task</a>
                 <button className="text-violet-400 hover:text-violet-300 text-xs font-medium">Let Envoy generate a demo task</button>
             </div>
             ) : (
@@ -541,19 +543,66 @@ export default function PulsePage() {
         sprint: { daysLeft: 0, completed: 0, remaining: 0 }
     });
     const [loading, setLoading] = useState(true);
+    const [hasSeenActivity, setHasSeenActivity] = useState(false);
+    const [inviteStatus, setInviteStatus] = useState<'idle' | 'animating'>('idle');
 
-    const isNewUser = !loading && teamMembers.length === 0 && activityEvents.length === 0;
+    // STRICT CHECK: Only show placeholders if backend explicitly says isNewUser is true.
+    // If stats.isNewUser is undefined (e.g. API error/429), default to FALSE to prevent placeholders from reappearing.
+    const isNewUser = !loading && stats.isNewUser === true;
+
+    function copyToClipboard() {
+        setInviteStatus('animating');
+        setTimeout(() => setInviteStatus('idle'), 2000);
+
+        const textToCopy = 'http://192.168.0.117:3000';
+
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                alert("Invite link copied!");
+            }).catch(err => {
+                console.error("Fehler: ", err);
+            });
+        } else {
+            const textArea = document.createElement("textarea");
+            textArea.value = textToCopy;            
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            textArea.style.top = "0";
+            document.body.appendChild(textArea);
+            
+            textArea.focus();
+            textArea.select();
+            
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    alert("Invite link copied!");
+                }
+            } catch (err) {
+                console.error("Error while generating invite link!", err);
+            }
+            
+            document.body.removeChild(textArea);
+        }
+    }
 
     useEffect(() => {
         if (!userId) return;
 
         const fetchData = async () => {
             try {
-                const port = process.env.NEXT_PUBLIC_SERVER_PORT || 8000;
-                const baseUrl = `http://localhost:${port}`;
+                const PORT_SUFFIX = process.env.NEXT_PUBLIC_NPM_PORT;
+                const baseUrl = PORT_SUFFIX ? `http://192.168.0.${PORT_SUFFIX}:8000` : 'http://localhost:8000';
 
-                // Fetch Team
-                const teamRes = await fetch(`${baseUrl}/team/members?userId=${userId}`);
+                // Fetch all data in parallel to reduce loading time
+                const [teamRes, activityRes, focusRes, statsRes] = await Promise.all([
+                    fetch(`${baseUrl}/team/members?userId=${userId}`),
+                    fetch(`${baseUrl}/pulse/events`),
+                    fetch(`${baseUrl}/pulse/${userId}`),
+                    fetch(`${baseUrl}/pulse/stats?userId=${userId}`)
+                ]);
+
+                // Process Team Data
                 if (teamRes.ok) {
                     const data = await teamRes.json();
                     const mappedTeam: TeamMember[] = data.map((m: any) => ({
@@ -566,24 +615,24 @@ export default function PulsePage() {
                         currentTask: m.currentTask
                     }));
                     setTeamMembers(mappedTeam);
+                    if (mappedTeam.length > 0) setHasSeenActivity(true);
                 }
 
-                // Fetch Activity
-                const activityRes = await fetch(`${baseUrl}/pulse/activity?userId=${userId}`);
+                // Process Activity Data
                 if (activityRes.ok) {
                     const data = await activityRes.json();
-                    setActivityEvents(Array.isArray(data) ? data : []);
+                    const events = Array.isArray(data) ? data : [];
+                    setActivityEvents(events);
+                    if (events.length > 0) setHasSeenActivity(true);
                 }
 
-                // Fetch Focus Data
-                const focusRes = await fetch(`${baseUrl}/pulse/${userId}`);
+                // Process Focus Data
                 if (focusRes.ok) {
                     const data = await focusRes.json();
                     setFocusData(data);
                 }
 
-                // Fetch Stats
-                const statsRes = await fetch(`${baseUrl}/pulse/stats?userId=${userId}`);
+                // Process Stats Data
                 if (statsRes.ok) {
                     const data = await statsRes.json();
                     setStats(data);
@@ -597,6 +646,9 @@ export default function PulsePage() {
         };
 
         fetchData();
+        // Poll for updates every 5 seconds (increased from 3s to reduce load)
+        const interval = setInterval(fetchData, 5000);
+        return () => clearInterval(interval);
     }, [userId]);
 
     return (
@@ -618,8 +670,11 @@ export default function PulsePage() {
                          ))}
                          <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold border-2 border-slate-950">+2</div>
                     </div>
-                    <button className="bg-slate-900 text-sm font-semibold px-4 py-2 rounded-lg border border-slate-700 hover:bg-slate-800 transition">
-                        Invite
+                    <button 
+                        onClick={copyToClipboard} 
+                        className={`bg-slate-900 text-sm font-semibold py-2 rounded-lg border border-slate-700 hover:bg-slate-800 transition-all duration-500 ease-out ${inviteStatus === 'animating' ? 'px-12 bg-indigo-900/30 border-indigo-500/50 text-indigo-300' : 'px-4'}`}
+                    >
+                        {inviteStatus === 'animating' ? 'Link Copied!' : 'Invite'}
                     </button>
                 </div>
             </div>
@@ -636,7 +691,10 @@ export default function PulsePage() {
                         <TeamSidebar members={isNewUser ? SAMPLE_MEMBERS : teamMembers} isNewUser={isNewUser} />
                     </div>
 
-
+                    {/* Middle: Activity Feed (50%) */}
+                    <div className="lg:col-span-6">
+                        <ActivityStream events={isNewUser ? SYSTEM_EVENTS : activityEvents} isNewUser={isNewUser} />
+                    </div>
 
                     {/* Right: My Focus (30%) */}
                     <div className="lg:col-span-3">
@@ -665,11 +723,6 @@ export default function PulsePage() {
                                 </div>
                              </div>
                         </div>
-                    </div>
-                    
-                    {/* Middle: Activity Feed (50%) */}
-                    <div className="lg:col-span-6">
-                        <ActivityStream events={isNewUser ? SAMPLE_EVENTS : activityEvents} isNewUser={isNewUser} />
                     </div>
                 </div>
             </div>
