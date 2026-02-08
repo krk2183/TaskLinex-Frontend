@@ -1,8 +1,11 @@
 "use client";
 
+import { useEffect, useState } from 'react';
 import { Home, Settings,FolderKanban,UsersRound, ChevronLeft, LayoutDashboard, BarChart3, Sun, Moon, BadgePlus, MapPinCheck, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { useLayout } from './LayoutContext'; 
+import { useAuth } from '../app/(auth)/register/AuthContext';
+
 const navItems = [
     { name: 'Pulse', href: '/pulse', icon: BadgePlus },
     { name: 'Roadmap', href: '/roadmap', icon: MapPinCheck },
@@ -14,6 +17,37 @@ const navItems = [
 
 export default function Sidebar() {
     const { isExpanded, toggleSidebar } = useLayout();
+    const { userId } = useAuth();
+    const [user, setUser] = useState<{ name: string; initials: string; role: string } | null>(null);
+
+    useEffect(() => {
+        if (!userId) return;
+
+        const fetchUser = async () => {
+            try {
+                const port = process.env.NEXT_PUBLIC_NPM_PORT;
+                const baseUrl = port ? `http://192.168.0.${port}:8000` : 'http://localhost:8000';
+                const response = await fetch(`${baseUrl}/users/${userId}`);
+                
+                if (response.ok) {
+                    const userData = await response.json();
+                    const firstName = userData.firstName || '';
+                    const lastName = userData.lastName || '';
+                    const initials = (firstName.charAt(0) + lastName.charAt(0)).toUpperCase();
+                    
+                    setUser({
+                        name: `${firstName} ${lastName}`.trim() || userData.username,
+                        initials: initials || userData.username?.charAt(0).toUpperCase() || 'U',
+                        role: userData.role || 'User'
+                    });
+                }
+            } catch (error) {
+                console.error("Failed to fetch user info for sidebar", error);
+            }
+        };
+
+        fetchUser();
+    }, [userId]);
     
     const sidebarWidth = isExpanded ? 'md:w-64' : 'md:w-20';
     const transitionClass = 'transition-all duration-300 ease-in-out';    
@@ -62,11 +96,13 @@ export default function Sidebar() {
 
                 <div className="mt-0 md:mt-auto mb-0 md:mb-5 border-t-0 md:border-t border-gray-200 dark:border-slate-800 pt-0 md:pt-4 ml-4 md:ml-0">
                     <div className={`flex items-center gap-3 ${isExpanded ? 'px-2' : 'justify-center'}`}>
-                        <Link href="/account" className="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">JD</Link>
+                        <Link href="/account" className="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                            {user?.initials || '...'}
+                        </Link>
                         <div className={`hidden md:block overflow-hidden transition-all duration-200 ${isExpanded ? "w-full" : "w-0"}`}>
                             <Link href="/account" className="text-xs">
-                                <div className="text-gray-800 dark:text-white font-medium whitespace-nowrap">John Doe</div>
-                                <div className="text-slate-500 whitespace-nowrap">Workspace Admin</div>
+                                <div className="text-gray-800 dark:text-white font-medium whitespace-nowrap">{user?.name || 'Loading...'}</div>
+                                <div className="text-slate-500 whitespace-nowrap capitalize">{user?.role || 'Member'}</div>
                             </Link>
                         </div>
                     </div>

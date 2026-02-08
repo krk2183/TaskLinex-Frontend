@@ -1,19 +1,25 @@
-import Sidebar from '@/components/SideBar';
-import { LayoutProvider } from '@/components/LayoutContext';
+"use client";
 
-export default function RootLayout({
+import React from 'react';
+import { AuthProvider } from '../(auth)/register/AuthContext';
+import SideBar from '../../components/SideBar';
+import { LayoutProvider } from '../../components/LayoutContext';
+
+export default function AppLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
     <LayoutProvider>
-      <div className="flex flex-col md:flex-row h-screen bg-gray-100 dark:bg-gray-950">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto">
-          {children}
-        </main>
-      </div>
+      <AuthProvider>
+        <div className="flex h-screen bg-slate-50 dark:bg-[#0B1120]">
+          <SideBar />
+          <main className="flex-1 flex flex-col overflow-hidden">
+            {children}
+          </main>
+        </div>
+      </AuthProvider>
     </LayoutProvider>
   );
 }

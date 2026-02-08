@@ -4,9 +4,10 @@ import React, { useState, useEffect } from 'react';
 import { 
     Zap, Clock, AlertTriangle, CheckCircle, XCircle, ArrowRight, 
     CornerDownRight, BarChart3, TrendingUp, TrendingDown, 
-    MessageSquare, Users, User, Calendar, Flag, Activity, Layers, 
+    MessageSquare, Users, User, Calendar, Flag, Activity, Layers, Info,
     MoreHorizontal, Filter, Search 
 } from 'lucide-react';
+import { useAuth } from '../../(auth)/register/AuthContext';
 
 // --- TYPES & INTERFACES ---
 
@@ -38,145 +39,6 @@ interface PulseEvent {
     actionRequired?: boolean;
 }
 
-// --- MOCK DATA ---
-
-const Team: TeamMember[] = [
-    { id: '1', name: 'Matthew', role: 'Director', avatar: 'https://i.pravatar.cc/150?u=1', status: 'online', workload: 85, currentTask: 'Financial Review' },
-    { id: '2', name: 'Sarah', role: 'Lead Eng', avatar: 'https://i.pravatar.cc/150?u=2', status: 'busy', workload: 95, currentTask: 'API Migration' },
-    { id: '3', name: 'David', role: 'Designer', avatar: 'https://i.pravatar.cc/150?u=3', status: 'offline', workload: 40 },
-    { id: '4', name: 'Elena', role: 'Product', avatar: 'https://i.pravatar.cc/150?u=4', status: 'online', workload: 60, currentTask: 'User Flows' },
-    { id: '5', name: 'Jake', role: 'Developer', avatar: 'https://i.pravatar.cc/150?u=5', status: 'busy', workload: 35, currentTask: 'Scalability Adaptation' },
-];
-
-
-// class addMember implements TeamMember{
-//     constructor(
-//         public id: string,
-//         public name: string,
-//         public role: string,
-//         public avatar: string,
-//         public status: TeamMember['status'],
-//         public workload: number,
-//         public currentTask?: string
-//     ) {}
-// }
-
-// // Make this read from a dataset and then create these roles
-// const getMembers = ()=> {
-
-//     // ILLUSTRATIVE PURPOSES ONLY
-//     const id:number = Team.length + 1;
-//     const name:string = 'Jake';
-//     const role:string = 'Developer';
-//     const avatar:string = 'https://i.pravatar.cc/150?u=5';
-//     const status: TeamMember['status'] = 'busy';
-//     const workload:number = 35;
-//     const currentTask:string = 'Scalability Adaptation';
-//     const newMember:TeamMember = new addMember(id.toString(),name,role,avatar,status,workload,currentTask);
-//     Team.push(newMember)
-//     };
-// getMembers();
-
-// EVENTS FOR THE ACTIVITY STREAM
-const mockEvents: PulseEvent[] = [
-    {
-        id: 'e1',
-        type: 'blocker',
-        actor: Team[1], // Sarah
-        targetTask: 'Payment Gateway Integration',
-        targetLink: '#',
-        details: 'flagged a critical blocker',
-        timestamp: 'Just now',
-        metadata: { blockerReason: 'Waiting on Stripe API keys from Ops.' },
-        actionRequired: true,
-    },
-    {
-        id: 'e2',
-        type: 'handoff',
-        actor: Team[3], // Elena
-        targetTask: 'Onboarding UI ups',
-        targetLink: '#',
-        details: 'handed off to David',
-        timestamp: '12m ago',
-        metadata: { from: 'Product Review', to: 'Design Implementation' }
-    },
-    {
-        id: 'e3',
-        type: 'status_change',
-        actor: Team[0], // Matthew
-        targetTask: 'Q4 Strategy Deck',
-        targetLink: '#',
-        details: 'marked as Complete',
-        timestamp: '45m ago',
-        metadata: { from: 'In Review', to: 'Done' }
-    },
-    {
-        id: 'e4',
-        type: 'comment',
-        actor: Team[2], // David
-        targetTask: 'Mobile Nav Component',
-        targetLink: '#',
-        details: 'commented',
-        timestamp: '1h ago',
-        metadata: { blockerReason: 'I uploaded the new assets to Figma.' }
-    },
-    {
-        id: 'e7',
-        type: 'milestone',
-        actor: Team[4],
-        targetTask: 'Memory Optimization',
-        targetLink: 'Link',
-        details: 'has been picked up',
-        timestamp: '15m ago',
-        metadata: {blockerReason:'Customer Disagreement.'}
-    }
-];
-
-class addEvent implements PulseEvent {
-    constructor(
-        public id:string,
-        public type: EventType,
-        public actor: TeamMember,
-        public targetTask:string,
-        public targetLink:string,
-        public details:string,
-        public timestamp:string,
-        public metadata?: {
-            from?:string,
-            to?:string,
-            blockerReason?:string}
-    ) {}
-}
-
-const getEvents = ()=>{
-    const id = 'e8';
-    const type = 'milestone';
-    // use the last team member to avoid out-of-bounds undefined access
-    const actor = Team[Team.length-1];
-    const targetTask = 'Memory Optimization';
-    const targetLink = 'Link';
-    const details = 'has been picked up';
-    const timestamp= '15m ago';
-    const metadata= {blockerReason:'Customer Disagreement.'}
-    const newAction = new addEvent(id,type,actor,targetTask,targetLink,details,timestamp,metadata);
-    mockEvents.push(newAction)
-
-}
-getEvents();
-
-// Upcoming Elements
-interface Upcoming{
-    id:string,
-    step:string,
-    isHighPriority?:boolean
-}
-
-const upcomingTasks: Upcoming[] = [
-    { id: 'u1', step: 'Enhance Clarity of model outputs', isHighPriority: true },
-    { id: 'u2', step: 'Final Validation', isHighPriority: false },
-    { id: 'u3', step: 'Documentation Sweep', isHighPriority: false },
-];
-
 // Upper Element - Blockers & Dependencies, Sprint Health and Team Velocity
 interface ProjectHealth {
     velocity: 'High' | 'Medium' | 'Low';
@@ -191,20 +53,39 @@ interface ProjectHealth {
     };
 }
 
-const currentStats: ProjectHealth = {
-    velocity: 'Medium', //'High' | 'Medium' | 'Low'
-    blockers: { count: 2, type: 'blocker' }, // 'blocker' | 'dependency'
-    sprint: { daysLeft: 3, completed: 12, remaining: 5 }
-};
+// --- SAMPLE DATA FOR NEW USERS ---
+
+const SAMPLE_MEMBERS: TeamMember[] = [
+    { id: 's1', name: 'Sample User', role: 'Frontend', avatar: 'https://ui-avatars.com/api/?name=Sample+User&background=random', status: 'online', workload: 45 },
+    { id: 's2', name: 'Sample User', role: 'Backend', avatar: 'https://ui-avatars.com/api/?name=Sample+User&background=random', status: 'busy', workload: 70 },
+    { id: 's3', name: 'Sample User', role: 'Design', avatar: 'https://ui-avatars.com/api/?name=Sample+User&background=random', status: 'offline', workload: 20 },
+];
+
+const SAMPLE_EVENTS: PulseEvent[] = [
+    {
+        id: 'se1', type: 'status_change',
+        actor: { id: 'sys', name: 'System', role: 'Bot', avatar: 'https://ui-avatars.com/api/?name=System&background=000&color=fff', status: 'online', workload: 0 },
+        targetTask: 'Welcome to TaskLinex', targetLink: '#',
+        details: 'Your TaskLinex account has been created.', timestamp: 'Just now'
+    },
+    {
+        id: 'se2', type: 'comment',
+        actor: { id: 'sys', name: 'System', role: 'Bot', avatar: 'https://ui-avatars.com/api/?name=System&background=000&color=fff', status: 'online', workload: 0 },
+        targetTask: 'First Steps', targetLink: '#',
+        details: 'This is a sample Pulse feed. Create your first task to see real activity here.', timestamp: 'Just now'
+    },
+];
 
 // Sprint Health Graph
-const SprintHealthCard  = ({ data }: { data: ProjectHealth }) => {
+const SprintHealthCard  = ({ data, isNewUser }: { data: ProjectHealth, isNewUser?: boolean }) => {
     const totalSlots = 25;
-    const totalTasks = data.sprint.completed + data.sprint.remaining;
+    var totalTasks = (data?.sprint?.completed ?? 0) + (data?.sprint?.remaining ?? 0);
+
     const currentDayIndex = 15; // Example: we are at bar 15 of 25
+    const hasData = totalTasks > 0;
 
     return (
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl shadow-sm md:col-span-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-0 group">
+        <div className={`bg-slate-900 border border-slate-800 p-4 rounded-xl shadow-sm md:col-span-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-0 group ${isNewUser ? 'opacity-75' : ''}`}>
             <div className="flex-1 w-full sm:w-auto">
                 <p className="text-xs text-slate-400 uppercase tracking-widest font-bold mb-2">Sprint Health</p>
                 <div className="flex items-center gap-4 text-sm font-medium">
@@ -221,16 +102,16 @@ const SprintHealthCard  = ({ data }: { data: ProjectHealth }) => {
             </div>
 
             <div className="w-full sm:w-52 h-14 flex items-end gap-[2px]">
-                {Array.from({ length: totalSlots }).map((_, i) => {
+                {hasData ? Array.from({ length: totalSlots }).map((_, i) => {
                     // 2. Logic: Is this bar in the past, present, or future?
                     const isPast = i < currentDayIndex;
                     const isCurrent = i === currentDayIndex;
                     
                     let barHeight = 0;
                     if (isPast) {
-                        barHeight = (i / currentDayIndex) * (data.sprint.completed / totalTasks) * 100;
+                        barHeight = (i / currentDayIndex) * (data.sprint.completed / (totalTasks || 1)) * 100;
                     } else if (isCurrent) {
-                        barHeight = (data.sprint.completed / totalTasks) * 100;
+                        barHeight = (data.sprint.completed / (totalTasks || 1)) * 100;
                     } else {
                         barHeight = 5; // Placeholder for future days
                     }
@@ -248,8 +129,12 @@ const SprintHealthCard  = ({ data }: { data: ProjectHealth }) => {
                                 }}
                             />
                         </div>
-                    );
-                })}
+                    ); 
+                }) : (
+                    <div className="w-full h-full flex items-center justify-center bg-slate-800/30 rounded-lg border border-dashed border-slate-700">
+                        <span className="text-xs text-slate-500">No sprint data yet</span>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -288,7 +173,7 @@ const WorkloadIndicator = ({ level }: { level: number }) => {
 
 // --- CORE COMPONENTS ---
 
-const PulseInsights = ({ data }: { data: ProjectHealth }) => {
+const PulseInsights = ({ data, isNewUser }: { data: ProjectHealth, isNewUser: boolean }) => {
     const isBlocker = data.blockers?.type === 'blocker';
     const velocityStyles = {
         High: { color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/20', iconColor: 'text-emerald-600', textSize: 'text-xl' },
@@ -296,15 +181,24 @@ const PulseInsights = ({ data }: { data: ProjectHealth }) => {
         Low: { color: 'text-rose-500', bg: 'bg-rose-100 dark:bg-rose-900/20', iconColor: 'text-rose-600', textSize: 'text-xl' }
     };
 
-    const status = velocityStyles[data.velocity];
+    const status = velocityStyles[data.velocity] || velocityStyles.Medium;
 
     return (
+        <>
+        {isNewUser && (
+            <div className="mb-6 bg-violet-900/20 border border-violet-500/30 p-3 rounded-lg flex items-center gap-3 text-sm text-violet-200">
+                <Info className="w-4 h-4 text-violet-400" />
+                Insights populate as your team starts working.
+            </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl shadow-sm flex items-center justify-between">
+            <div className={`bg-slate-900 border border-slate-800 p-4 rounded-xl shadow-sm flex items-center justify-between ${isNewUser ? 'opacity-75' : ''}`}>
                 <div>
                     <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold">Team Velocity</p>
                     <div className="flex items-center gap-2 mt-1">
-                        <span className={`${status.textSize} font-black text-slate-200`}>{data.velocity}</span>
+                        <span className={`${status.textSize} font-black text-slate-200`}>
+                            {isNewUser ? '—' : data.velocity}
+                        </span>
                         <TrendingUp className={`w-5 h-5 ${status.color}`} />
                     </div>
                 </div>
@@ -312,7 +206,8 @@ const PulseInsights = ({ data }: { data: ProjectHealth }) => {
                     <Zap className={`w-5 h-5 ${status.iconColor}`} />
                 </div>
             </div>
-            {data.blockers.count > 0 && (
+            
+            {(data.blockers?.count > 0 || isNewUser) && (
                 <div className={`bg-slate-900 border ${isBlocker ? 'border-rose-200 dark:border-rose-900/50' : 'border-amber-200 dark:border-amber-900/50'} p-4 rounded-xl shadow-sm flex items-center justify-between relative overflow-hidden`}>
                     <div className={`absolute left-0 top-0 bottom-0 w-1 ${isBlocker ? 'bg-rose-500' : 'bg-amber-500'}`} />
                     <div>
@@ -321,7 +216,7 @@ const PulseInsights = ({ data }: { data: ProjectHealth }) => {
                         </p>
                         <div className="flex items-center gap-2 mt-1">
                             <span className={`text-2xl font-black ${isBlocker ? 'text-rose-600' : 'text-amber-600'}`}>
-                                {data.blockers.count} {data.blockers.count === 1 ? 'Issue' : 'Issues'}
+                                {isNewUser ? '0 (sample)' : `${data.blockers.count} ${data.blockers.count === 1 ? 'Issue' : 'Issues'}`}
                             </span>
                         </div>
                     </div>
@@ -348,25 +243,27 @@ const PulseInsights = ({ data }: { data: ProjectHealth }) => {
             )}
 
             {/* SPRINT HEALTH FIELD */}
-            {data.sprint.daysLeft > 0 && (
-                <SprintHealthCard data={data} />
+
+            {(data.sprint?.daysLeft > 0 || isNewUser) && (
+                <SprintHealthCard data={data} isNewUser={isNewUser} />
             )}
         </div>
+        </>
     );
 };
 
 
-const TeamSidebar = ({ members }: { members: TeamMember[] }) => {
+const TeamSidebar = ({ members, isNewUser }: { members: TeamMember[], isNewUser: boolean }) => {
     return (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 h-fit sticky top-6 shadow-lg">
             <div className="flex items-center justify-between mb-6">
                 <h3 className="font-bold text-slate-200 flex items-center gap-2">
                     <Users className="w-4 h-4 text-indigo-500" /> Team Pulse
                 </h3>
-                <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-400">{Team.filter(member => member.status === 'online').length} Online</span>
+                <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-400">{members.filter(member => member.status === 'online').length} Online</span>
             </div>
 
-            <div className="space-y-5">
+            <div className={`space-y-5 ${isNewUser ? 'opacity-60' : ''}`}>
                 {members.map((member) => (
                     <div key={member.id} className="group relative">
                         <div className="flex items-start gap-3">
@@ -379,7 +276,10 @@ const TeamSidebar = ({ members }: { members: TeamMember[] }) => {
                             <div className="flex-1 min-w-0">
                                 <div className="flex justify-between items-center mb-0.5">
                                     <h4 className="text-sm font-bold text-slate-200">{member.name}</h4>
-                                    <span className="text-[10px] text-slate-500">{member.role}</span>
+                                    <div className="flex items-center gap-1">
+                                        {isNewUser && <span className="text-[9px] bg-slate-800 px-1 rounded text-slate-500">Sample</span>}
+                                        <span className="text-[10px] text-slate-500">{member.role}</span>
+                                    </div>
                                 </div>
                                 <WorkloadIndicator level={member.workload} />
                                 {member.currentTask && (
@@ -395,14 +295,18 @@ const TeamSidebar = ({ members }: { members: TeamMember[] }) => {
             </div>
             
             <div className="mt-6 pt-6 border-t border-slate-800 text-center">
-                <button className="text-sm text-indigo-400 font-semibold hover:underline">View Schedule</button>
+                {isNewUser ? (
+                    <button className="text-sm text-violet-400 font-semibold hover:underline">Invite teammates to replace these placeholders</button>
+                ) : (
+                    <button className="text-sm text-indigo-400 font-semibold hover:underline">View Schedule</button>
+                )}
             </div>
         </div>
     );
 };
 
 // Feed Sections Main Content
-const FeedItem = ({ event }: { event: PulseEvent }) => {
+const FeedItem = ({ event, isSample }: { event: PulseEvent, isSample?: boolean }) => {
     // COLOR SCHEME AND ICONOGRAPHY
     const getStyles = (type: EventType) => {
         switch(type) {
@@ -423,7 +327,7 @@ const FeedItem = ({ event }: { event: PulseEvent }) => {
     return (
         <div className="flex gap-3 sm:gap-4 relative pb-8 last:pb-0">
             {/* Timeline Line */}
-            <div className="absolute left-[19px] top-10 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-800 last:hidden" />
+            <div className={`absolute left-[19px] top-10 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-800 last:hidden ${isSample ? 'opacity-50' : ''}`} />
 
             {/* Avatar */}
             <div className="relative z-10">
@@ -438,10 +342,11 @@ const FeedItem = ({ event }: { event: PulseEvent }) => {
             </div>
 
             {/* Content Card */}
-            <div className={`flex-1 p-3 sm:p-4 rounded-xl border ${style.border} ${style.bg} relative group transition-all hover:shadow-md`}>
+            <div className={`flex-1 p-3 sm:p-4 rounded-xl border ${style.border} ${style.bg} relative group transition-all hover:shadow-md ${isSample ? 'opacity-80' : ''}`}>
                 <div className="flex flex-col sm:flex-row sm:justify-between items-start mb-1 gap-1 sm:gap-0">
                     <p className="text-sm text-slate-200">
                         <span className="font-bold">{event.actor.name}</span> <span className="text-slate-400 font-normal">{event.details}</span> <span className="font-semibold text-indigo-400 hover:underline cursor-pointer">"{event.targetTask}"</span>
+                        {isSample && <span className="ml-2 text-[10px] bg-slate-800/50 px-1.5 py-0.5 rounded text-slate-400 border border-slate-700">Sample</span>}
                     </p>
                     <span className="text-xs text-slate-500 whitespace-nowrap ml-0 sm:ml-2">{event.timestamp}</span>
                 </div>
@@ -482,7 +387,8 @@ const FeedItem = ({ event }: { event: PulseEvent }) => {
     );
 };
 
-const ActivityStream = ({ events }: { events: PulseEvent[] }) => {
+const ActivityStream = ({ events, isNewUser }: { events: PulseEvent[], isNewUser: boolean }) => {
+    const safeEvents = Array.isArray(events) ? events : [];
     return (
         <div className="bg-slate-950 rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-800 min-h-[600px]">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 sm:mb-8 gap-4 sm:gap-0">
@@ -509,58 +415,108 @@ const ActivityStream = ({ events }: { events: PulseEvent[] }) => {
 
             {/* EVENT FIELD */}
             <div className="pl-2">
-                {events.map(event => (
-                    <FeedItem key={event.id} event={event} />
+                {safeEvents.map(event => (
+                    <FeedItem key={event.id} event={event} isSample={isNewUser} />
                 ))}
             </div>
 
-             <div className="mt-8 text-center">
-                <button className="text-sm text-slate-400 hover:text-indigo-400 transition-colors flex items-center justify-center w-full gap-2">
-                    <Clock className="w-3 h-3" /> Load previous updates
-                </button>
-            </div>
+            {isNewUser ? (
+                <div className="mt-8 p-4 bg-slate-900/50 border border-dashed border-slate-800 rounded-xl text-center">
+                    <p className="text-sm text-slate-400 mb-2">Try creating a task, commenting, or changing a status to see how activity appears here.</p>
+                    <button className="text-xs text-indigo-400 font-semibold hover:text-indigo-300">
+                        Create your first task &rarr;
+                    </button>
+                </div>
+            ) : (
+                <div className="mt-8 text-center">
+                    <button className="text-sm text-slate-400 hover:text-indigo-400 transition-colors flex items-center justify-center w-full gap-2">
+                        <Clock className="w-3 h-3" /> Load previous updates
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
 
 // --- Pulse Focus ---
 
-const PulseFocus = () => {
+const PulseFocus = ({ currentTask, nextTask, rationale }: { currentTask: any, nextTask: any, rationale: string }) => {
+    // We'll handle the "New User" empty state in the parent or by checking props here if needed, 
+    // but for now let's assume if no tasks are passed, we check if it's a new user state via a prop or context.
+    // However, since we don't pass isNewUser here yet, let's update the signature.
+    return null; // Placeholder to be overridden by the actual component below
+};
+
+const PulseFocusComponent = ({ currentTask, nextTask, rationale, isNewUser }: { currentTask: any, nextTask: any, rationale: string, isNewUser: boolean }) => {
+    if (!currentTask && !nextTask) {
+        return (
+            isNewUser ? (
+            <div className="bg-slate-950 text-white p-6 rounded-2xl shadow-2xl border border-slate-800 relative lg:sticky lg:top-6 flex flex-col items-center justify-center text-center min-h-[300px]">
+                <h2 className="text-xl font-bold mb-2 text-violet-200">Your Focus will appear here</h2>
+                <p className="text-slate-400 text-sm mb-6">When you create tasks, TaskLinex highlights what matters most.</p>
+                <button className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg font-bold text-sm mb-3 w-full transition-colors">Create your first task</button>
+                <button className="text-violet-400 hover:text-violet-300 text-xs font-medium">Let Envoy generate a demo task</button>
+            </div>
+            ) : (
+            <div className="bg-slate-950 text-white p-6 rounded-2xl shadow-2xl border border-slate-800 relative lg:sticky lg:top-6 flex flex-col items-center justify-center text-center min-h-[300px]">
+                <div className="bg-slate-900 p-4 rounded-full mb-4">
+                    <CheckCircle className="w-8 h-8 text-emerald-500" />
+                </div>
+                <h2 className="text-xl font-bold mb-2">All Caught Up!</h2>
+                <p className="text-slate-400 text-sm">You have no active tasks. Take a breather or pick something from the backlog.</p>
+            </div>
+            )
+        );
+    }
+
     return (
         <div className="bg-slate-950 text-white p-6 rounded-2xl shadow-2xl border border-indigo-500/30 relative lg:sticky lg:top-6">
             <div className="flex justify-between items-start mb-6">
                 <div>
                     <h3 className="text-sm text-slate-400 uppercase tracking-widest font-bold mb-1">My Focus</h3>
-                    <h2 className="text-xl font-bold">Forge.AI - V1</h2>
+                    <h2 className="text-xl font-bold truncate max-w-[200px]">{currentTask ? currentTask.title : "Ready for next"}</h2>
                 </div>
-                <div className="bg-red-600 animate-pulse px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
-                    <Clock className="w-3 h-3" /> Deadline
-                </div>
+                {currentTask && (
+                    <div className="bg-indigo-600 animate-pulse px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                        <Activity className="w-3 h-3" /> Active
+                    </div>
+                )}
             </div>
 
             <div className="space-y-4">
-                <div className="bg-slate-800/50 p-4 rounded-xl border-l-4 border-indigo-500">
-                    <div className="flex justify-between text-xs text-slate-400 mb-2">
-                        <span>Current Step</span>
-                        <span>53%</span>
+                {currentTask ? (
+                    <div className="bg-slate-800/50 p-4 rounded-xl border-l-4 border-indigo-500">
+                        <div className="flex justify-between text-xs text-slate-400 mb-2">
+                            <span>Progress</span>
+                            <span>{currentTask.progress}%</span>
+                        </div>
+                        <p className="font-medium text-sm">{currentTask.title}</p>
+                        <div className="w-full bg-slate-700 h-1.5 rounded-full mt-3 overflow-hidden">
+                            <div className="bg-indigo-500 h-full transition-all duration-1000" style={{ width: `${currentTask.progress}%` }} />
+                        </div>
                     </div>
-                    <p className="font-medium text-sm">Enhance Clarity of model outputs</p>
-                    <div className="w-full bg-slate-700 h-1.5 rounded-full mt-3 overflow-hidden">
-                        <div className="bg-indigo-500 h-full w-[53%]" />
+                ) : (
+                    <div className="bg-slate-800/30 p-4 rounded-xl border border-dashed border-slate-700 text-center">
+                        <p className="text-sm text-slate-400">No active task selected.</p>
                     </div>
-                </div>
+                )}
 
                 <div className="space-y-2">
                     <p className="text-xs font-bold text-slate-400 uppercase">Up Next</p>
-                    {upcomingTasks.map((task)=>(
-                    <div key={task.id || task.step} className={`flex items-center justify-between p-3 ${task.isHighPriority? 'bg-rose-900/30' :'bg-slate-800/30'} rounded-lg hover:bg-slate-800 transition cursor-pointer group`}>
+                    {nextTask && (
+                        <div className={`flex items-center justify-between p-3 ${nextTask.priority === 'High' ? 'bg-rose-900/30' : 'bg-slate-800/30'} rounded-lg hover:bg-slate-800 transition cursor-pointer group`}>
                             <div className="flex items-center gap-3">
                                 <CheckCircle className="w-4 h-4 text-slate-500 group-hover:text-indigo-400" />
-                                <span className="text-sm text-slate-300">{task.step}</span>
+                                <span className="text-sm text-slate-300">{nextTask.title}</span>
                             </div>
-                            {task.isHighPriority&&<Zap className="w-3 h-3 text-red-400" />}
+                            {nextTask.priority === 'High' && <Zap className="w-3 h-3 text-red-400" />}
                         </div>
-                    ))}
+                    )}
+                    {rationale && (
+                        <div className="p-3 bg-indigo-900/20 rounded-lg border border-indigo-500/20">
+                            <p className="text-xs text-indigo-300 italic">"{rationale}"</p>
+                        </div>
+                    )}
                 </div>
 
             </div>
@@ -575,6 +531,74 @@ const PulseFocus = () => {
 // --- MAIN PAGE LAYOUT ---
 
 export default function PulsePage() {
+    const { userId } = useAuth();
+    const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+    const [activityEvents, setActivityEvents] = useState<PulseEvent[]>([]);
+    const [focusData, setFocusData] = useState<any>({ currentTask: null, nextTask: null, rationale: null });
+    const [stats, setStats] = useState<ProjectHealth>({
+        velocity: 'Medium',
+        blockers: { count: 0, type: 'blocker' },
+        sprint: { daysLeft: 0, completed: 0, remaining: 0 }
+    });
+    const [loading, setLoading] = useState(true);
+
+    const isNewUser = !loading && teamMembers.length === 0 && activityEvents.length === 0;
+
+    useEffect(() => {
+        if (!userId) return;
+
+        const fetchData = async () => {
+            try {
+                const port = process.env.NEXT_PUBLIC_SERVER_PORT || 8000;
+                const baseUrl = `http://localhost:${port}`;
+
+                // Fetch Team
+                const teamRes = await fetch(`${baseUrl}/team/members?userId=${userId}`);
+                if (teamRes.ok) {
+                    const data = await teamRes.json();
+                    const mappedTeam: TeamMember[] = data.map((m: any) => ({
+                        id: m.id,
+                        name: m.name,
+                        role: m.role,
+                        avatar: `https://ui-avatars.com/api/?name=${m.name}&background=random`,
+                        status: m.status || 'offline',
+                        workload: m.workload || Math.floor(Math.random() * 100), // Fallback for demo if not in DB
+                        currentTask: m.currentTask
+                    }));
+                    setTeamMembers(mappedTeam);
+                }
+
+                // Fetch Activity
+                const activityRes = await fetch(`${baseUrl}/pulse/activity?userId=${userId}`);
+                if (activityRes.ok) {
+                    const data = await activityRes.json();
+                    setActivityEvents(Array.isArray(data) ? data : []);
+                }
+
+                // Fetch Focus Data
+                const focusRes = await fetch(`${baseUrl}/pulse/${userId}`);
+                if (focusRes.ok) {
+                    const data = await focusRes.json();
+                    setFocusData(data);
+                }
+
+                // Fetch Stats
+                const statsRes = await fetch(`${baseUrl}/pulse/stats?userId=${userId}`);
+                if (statsRes.ok) {
+                    const data = await statsRes.json();
+                    setStats(data);
+                }
+
+            } catch (error) {
+                console.error("Failed to fetch pulse data", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+    }, [userId]);
+
     return (
         <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans selection:bg-indigo-500/30">
             {/* Header Area */}
@@ -589,7 +613,7 @@ export default function PulsePage() {
                 </div>
                 <div className="flex items-center gap-3">
                     <div className="flex -space-x-3">
-                         {Team.map(m => (
+                         {teamMembers.slice(0, 5).map(m => (
                              <img key={m.id} src={m.avatar} className="w-8 h-8 rounded-full border-2 border-slate-950" />
                          ))}
                          <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold border-2 border-slate-950">+2</div>
@@ -602,21 +626,26 @@ export default function PulsePage() {
 
             <div className="max-w-7xl mx-auto">
                 {/* 1. Top Level Insights */}
-                <PulseInsights data={currentStats}/>
+                <PulseInsights data={stats} isNewUser={isNewUser} />
 
                 {/* 2. Main Grid Layout */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                     
                     {/* Left: Team Sidebar (20%) */}
                     <div className="hidden lg:block lg:col-span-3">
-                        <TeamSidebar members={Team} />
+                        <TeamSidebar members={isNewUser ? SAMPLE_MEMBERS : teamMembers} isNewUser={isNewUser} />
                     </div>
 
 
 
                     {/* Right: My Focus (30%) */}
                     <div className="lg:col-span-3">
-                        <PulseFocus />
+                        <PulseFocusComponent 
+                            currentTask={focusData.currentTask} 
+                            nextTask={focusData.nextTask} 
+                            rationale={focusData.rationale} 
+                            isNewUser={isNewUser}
+                        />
                         
                         {/* Mini Widget: Upcoming Deadlines */}
                         <div className="mt-6 bg-slate-900 p-5 rounded-2xl border border-slate-800">
@@ -640,7 +669,7 @@ export default function PulsePage() {
                     
                     {/* Middle: Activity Feed (50%) */}
                     <div className="lg:col-span-6">
-                        <ActivityStream events={mockEvents} />
+                        <ActivityStream events={isNewUser ? SAMPLE_EVENTS : activityEvents} isNewUser={isNewUser} />
                     </div>
                 </div>
             </div>

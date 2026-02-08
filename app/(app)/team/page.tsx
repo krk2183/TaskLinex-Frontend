@@ -3,8 +3,9 @@
 import React, { useEffect, useState } from 'react';
 import { 
     Users, AlertTriangle, Shield, Activity, 
-    CheckCircle, XCircle, Zap, BarChart3, Plus, UserPlus
+    CheckCircle, XCircle, Zap, BarChart3, Plus, UserPlus, Edit3, Search, X
 } from 'lucide-react';
+import { useAuth } from '../../(auth)/register/AuthContext';
 
 interface TeamOverview {
     coordinationDebt: string;
@@ -16,6 +17,7 @@ interface Member {
     id: string;
     name: string;
     role: string;
+    skills: string[];
     attentionScore: number;
     dependencyLoad: number;
 }
@@ -27,7 +29,15 @@ interface Intervention {
     scope: string;
 }
 
+const AVAILABLE_SKILLS = [
+    "React", "Node.js", "Python", "SQL", "DevOps", "UI/UX Design", 
+    "Project Management", "QA Testing", "Data Analysis", "Machine Learning",
+    "AWS", "Docker", "Kubernetes", "TypeScript", "Go", "Rust", "Java",
+    "C++", "Mobile Dev", "Security", "Marketing", "Sales", "Content Writing", "Finance", "Legal"
+];
+
 export default function TeamPage() {
+    const { userId } = useAuth();
     const [overview, setOverview] = useState<TeamOverview | null>(null);
     const [members, setMembers] = useState<Member[]>([]);
     const [interventions, setInterventions] = useState<Intervention[]>([]);
@@ -36,17 +46,21 @@ export default function TeamPage() {
     const [newUsername, setNewUsername] = useState("");
     const [userRole, setUserRole] = useState("user");
 
-    // Mock User ID - in real app get from context/auth
-    const userId = "u1"; 
+    // Skills Modal State
+    const [editingMember, setEditingMember] = useState<Member | null>(null);
+    const [skillSearch, setSkillSearch] = useState("");
 
     useEffect(() => {
+        // Wait for the AuthContext to provide the userId.
+        if (!userId) return;
+
         const fetchData = async () => {
             try {
                 const [ovRes, memRes, intRes, userRes] = await Promise.all([
-                    fetch(`http://192.168.0.113:8000/team/overview?userId=${userId}`),
-                    fetch(`http://192.168.0.113:8000/team/members?userId=${userId}`),
-                    fetch(`http://192.168.0.113:8000/envoy/interventions?userId=${userId}`),
-                    fetch(`http://192.168.0.113:8000/users/${userId}`)
+                    fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/team/overview?userId=${userId}`),
+                    fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/team/members?userId=${userId}`),
+                    fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/envoy/interventions?userId=${userId}`),
+                    fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/users/${userId}`)
                 ]);
 
                 setOverview(await ovRes.json());
@@ -61,18 +75,18 @@ export default function TeamPage() {
             }
         };
         fetchData();
-    }, []);
+    }, [userId]);
 
     const handleAddMember = async () => {
-        if (!newUsername) return;
+        if (!newUsername || !userId) return;
         try {
-            const res = await fetch(`http://192.168.0.113:8000/team/add_member`, {
+            const res = await fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/team/add_member`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId, username: newUsername })
             });
             if (res.ok) {
-                const memRes = await fetch(`http://192.168.0.113:8000/team/members?userId=${userId}`);
+                const memRes = await fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/team/members?userId=${userId}`);
                 setMembers(await memRes.json());
                 setIsAdding(false);
                 setNewUsername("");
@@ -80,6 +94,35 @@ export default function TeamPage() {
         } catch (e) {
             console.error("Failed to add member", e);
         }
+    };
+
+    const handleUpdateSkills = async (memberId: string, newSkills: string[]) => {
+        if (!userId) return;
+        try {
+            const res = await fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/team/update_skills`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requesterId: userId, targetUserId: memberId, skills: newSkills })
+            });
+            if (res.ok) {
+                // Update local state
+                setMembers(prev => prev.map(m => m.id === memberId ? { ...m, skills: newSkills } : m));
+                if (editingMember && editingMember.id === memberId) {
+                    setEditingMember(prev => prev ? { ...prev, skills: newSkills } : null);
+                }
+            }
+        } catch (e) {
+            console.error("Failed to update skills", e);
+        }
+    };
+
+    const toggleSkill = (skill: string) => {
+        if (!editingMember) return;
+        const currentSkills = editingMember.skills || [];
+        const newSkills = currentSkills.includes(skill)
+            ? currentSkills.filter(s => s !== skill)
+            : [...currentSkills, skill];
+        handleUpdateSkills(editingMember.id, newSkills);
     };
 
     if (loading) return <div className="p-8 text-slate-400">Loading Team Intelligence...</div>;
@@ -94,6 +137,48 @@ export default function TeamPage() {
                 <p className="text-slate-400 mt-2">Operational intelligence and coordination health.</p>
             </header>
 
+            {/* SKILLS MODAL */}
+            {editingMember && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                    <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-xl shadow-2xl overflow-hidden">
+                        <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-950">
+                            <h3 className="font-bold text-white">Manage Skills: {editingMember.name}</h3>
+                            <button onClick={() => setEditingMember(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-6">
+                            <div className="relative mb-4">
+                                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
+                                <input 
+                                    type="text" 
+                                    placeholder="Search skills..." 
+                                    value={skillSearch}
+                                    onChange={(e) => setSkillSearch(e.target.value)}
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:ring-2 focus:ring-violet-500 outline-none"
+                                />
+                            </div>
+                            <div className="flex flex-wrap gap-2 max-h-60 overflow-y-auto custom-scrollbar">
+                                {AVAILABLE_SKILLS.filter(s => s.toLowerCase().includes(skillSearch.toLowerCase())).map(skill => {
+                                    const isActive = editingMember.skills?.includes(skill);
+                                    return (
+                                        <button
+                                            key={skill}
+                                            onClick={() => toggleSkill(skill)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                                                isActive 
+                                                ? 'bg-violet-600 border-violet-500 text-white' 
+                                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
+                                            }`}
+                                        >
+                                            {skill}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 
                 {/* LEFT: Member List */}
@@ -106,6 +191,12 @@ export default function TeamPage() {
                                     <div>
                                         <div className="font-bold text-slate-200">{m.name}</div>
                                         <div className="text-xs text-slate-500">{m.role}</div>
+                                        <div className="flex flex-wrap gap-1 mt-1">
+                                            {m.skills?.slice(0, 3).map(s => (
+                                                <span key={s} className="text-[9px] bg-slate-800 px-1 rounded text-slate-400">{s}</span>
+                                            ))}
+                                            {m.skills?.length > 3 && <span className="text-[9px] text-slate-500">+{m.skills.length - 3}</span>}
+                                        </div>
                                     </div>
                                     <div className="text-right">
                                         <div className={`text-xs font-bold ${m.attentionScore < 50 ? 'text-rose-500' : 'text-emerald-500'}`}>
@@ -113,6 +204,13 @@ export default function TeamPage() {
                                         </div>
                                         <div className="text-[10px] text-slate-500">{m.dependencyLoad} deps</div>
                                     </div>
+                                    
+                                    {/* Edit Button for Admin or Self */}
+                                    {(userRole === 'admin' || m.id === userId) && (
+                                        <button onClick={() => setEditingMember(m)} className="ml-2 p-1.5 text-slate-500 hover:text-violet-400 hover:bg-slate-800 rounded transition-colors">
+                                            <Edit3 className="w-3 h-3" />
+                                        </button>
+                                    )}
                                 </div>
                             ))}
                         </div>

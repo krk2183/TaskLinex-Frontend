@@ -1,17 +1,16 @@
 "use client";
 
 import React, {
-    createContext, useContext, useReducer,
-    useEffect, useState, useMemo, useRef
+    createContext, useContext, useReducer, useEffect, useState, useMemo, useRef
 } from 'react';
 import { createPortal } from 'react-dom';
 import {  Check, Eye, Loader2, AlertCircle, Sparkles } from 'lucide-react';
 import {
     Info, ChevronRight,
-     CheckCircle, ArrowRight,
-    GitCommit, Layers, Zap, BrainCircuit, UserCog, LayoutGrid, List, Calendar,
-    RefreshCw, Plus, Search, X
+     CheckCircle, ArrowRight, XCircle,
+    GitCommit, Layers, Zap, BrainCircuit, UserCog, LayoutGrid, List, Calendar, RefreshCw, Plus, Search, X
 } from 'lucide-react';
+import { useAuth } from '../../(auth)/register/AuthContext';
 
 // 1. BACKEND-READY TYPES & INTERFACES
 
@@ -21,7 +20,7 @@ type ViewMode = 'Week' | 'Month';
 type LayoutMode = 'Roadmap' | 'Board' | 'Sprint';
 
 // The "Persona" allows one user to wear multiple hats (e.g., Lead vs Contributor)
-interface Persona {
+interface Persona { 
     id: string;
     name: string;
     role: string;
@@ -135,6 +134,9 @@ const MOCK_TASKS: Task[] = [
     }
 ];
 
+const PORT_SUFFIX = process.env.NEXT_PUBLIC_NPM_PORT;
+const API_BASE_URL = PORT_SUFFIX ? `http://192.168.0.${PORT_SUFFIX}:8000` : 'http://localhost:8000';
+
 // Async Placeholder
 const MockAPI = {
     sleep: (ms: number) => new Promise(r => setTimeout(r, ms)),
@@ -142,8 +144,8 @@ const MockAPI = {
     fetchData: async () => {
         try {
             const [tasksRes, personasRes] = await Promise.all([
-                fetch(`http://192.168.0.113:8000/renderTask`, { cache: 'no-store' }),
-                fetch(`http://192.168.0.113:8000/renderPersona`, { cache: 'no-store' })
+                fetch(`${API_BASE_URL}/renderTask`, { cache: 'no-store' }),
+                fetch(`${API_BASE_URL}/renderPersona`, { cache: 'no-store' })
             ]);
             
             const tasks = await tasksRes.json();
@@ -160,18 +162,18 @@ const MockAPI = {
 
             return { 
                 tasks: Array.isArray(tasks) ? tasks : [], 
-                users: MOCK_USERS, 
+                users: [], 
                 projects: MOCK_PROJECTS,
                 personas: mappedPersonas
             };
         } catch (error) {
             console.error("Error fetching tasks:", error);
-            return { tasks: [], users: MOCK_USERS, projects: MOCK_PROJECTS, personas: [] };
+            return { tasks: [], users: [], projects: MOCK_PROJECTS, personas: [] };
         }
     },
     // Newly added: CreateTask to replace MOCK data
     createTask: async (task: Task) => {
-        const response = await fetch(`http://192.168.0.113:8000/createTask`, {
+        const response = await fetch(`${API_BASE_URL}/createTask`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(task)
@@ -183,7 +185,7 @@ const MockAPI = {
         return response.json();
     },
     completeTask: async (taskId: string, userId: string) => {
-        const response = await fetch(`http://192.168.0.113:8000/completeTask`, {
+        const response = await fetch(`${API_BASE_URL}/completeTask`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ taskId, userId })
@@ -240,7 +242,7 @@ type Action =
 
 const initialState: AppState = {
     tasks: [], users: [], projects: [], personas: [],
-    currentUser: MOCK_USERS[0], // Simulating logged in as Matthew
+    currentUser: null, // Simulating logged in as Matthew
     activePersonaId: 'p_u1_1',
     isLoading: true,
     layoutMode: 'Roadmap',
@@ -602,7 +604,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     // Fallback defaults
     const [title, setTitle] = useState(taskToEdit?.title || '');
     const [projectId, setProjectId] = useState(taskToEdit?.projectId || state.projects[0]?.id || '');
-    const [ownerId, setOwnerId] = useState(taskToEdit?.ownerId || state.users[0]?.id || '');
+    const [ownerId, setOwnerId] = useState(taskToEdit?.ownerId || state.currentUser?.id || state.users[0]?.id || '');
     const [startDate, setStartDate] = useState(taskToEdit?.startDate || 1);
     const [duration, setDuration] = useState(taskToEdit?.duration || 1);
     const [status, setStatus] = useState<TaskStatus>(taskToEdit?.status || 'On Track');
@@ -614,7 +616,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
 
         if (window.confirm("Are you sure you want to delete this task?")) {
             try {
-                const response = await fetch(`http://192.168.0.113:8000/deleteTask`, {
+                const response = await fetch(`${API_BASE_URL}/deleteTask`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id: taskToEdit.id })
@@ -645,6 +647,29 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
         }
     };
 
+    const handleUncomplete = async () => {
+        if (!taskToEdit) return;
+        try {
+            const response = await fetch(`${API_BASE_URL}/updateTask`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    ...taskToEdit, 
+                    status: 'On Track', 
+                    progress: 0 
+                })
+            });
+
+            if (!response.ok) throw new Error('Failed to uncomplete task');
+
+            const data = await MockAPI.fetchData();
+            dispatch({ type: 'INIT_DATA', payload: data });
+            onClose();
+        } catch (e) {
+            console.error("Failed to uncomplete task", e);
+        }
+    };
+
     // handleSubmit decides between adding tasks and updating tasks
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -667,7 +692,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
         try {
                 const endpoint = taskToEdit ? '/updateTask' : '/createTask';
                 // Use the dynamic IP or localhost consistently
-                const response = await fetch(`http://192.168.0.113:8000${endpoint}`, {
+                const response = await fetch(`${API_BASE_URL}${endpoint}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(taskPayload)
@@ -794,13 +819,23 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
                     </div>
 
                     {taskToEdit && (
-                        <button
-                            type="button"
-                            onClick={handleComplete}
-                            className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg flex items-center justify-center gap-2 transition-colors"
-                        >
-                            <CheckCircle className="w-4 h-4" /> Mark as Complete
-                        </button>
+                        (taskToEdit.status === 'Completed' || (taskToEdit.status as string) === 'Done') ? (
+                            <button
+                                type="button"
+                                onClick={handleUncomplete}
+                                className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg flex items-center justify-center gap-2 transition-colors"
+                            >
+                                <XCircle className="w-4 h-4" /> Mark as Incomplete
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={handleComplete}
+                                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg flex items-center justify-center gap-2 transition-colors"
+                            >
+                                <CheckCircle className="w-4 h-4" /> Mark as Complete
+                            </button>
+                        )
                     )}
 
                     <div className="pt-4 flex justify-between items-center border-t border-gray-100 mt-6">
@@ -853,8 +888,8 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
         setLoading(true);
         setError(null);
         try {
-            // const response = await fetch('http://192.168.0.113:8000/envoy/suggest', {
-            const response = await fetch(`http://192.168.0.113:8000/envoy/suggest`, {
+            // const response = await fetch('http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/envoy/suggest', {
+            const response = await fetch(`${API_BASE_URL}/envoy/suggest`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ task_id: taskId, all: true })
@@ -878,7 +913,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
     const handleApply = async (proposal: Proposal) => {
         setApplyingId(proposal.id);
         try {
-            const response = await fetch('http://192.168.0.113:8000/envoy/apply', {
+            const response = await fetch(`${API_BASE_URL}/envoy/apply`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1154,17 +1189,44 @@ const SprintView = ({ tasks, users }: { tasks: Task[], users: User[] }) => {
 };
 
 export default function RoadmapPage() {
+    const { userId } = useAuth();
     const [state, dispatch] = useReducer(appReducer, initialState);
     const [taskToEdit, setTaskToEdit] = useState<Task | undefined>(undefined);
     const personas = ['P1', 'P2', 'P3'] // Dummy
+
     // Initial Data Fetch
     useEffect(() => {
+        // Wait for the AuthContext to provide the userId.
+        if (!userId) return;
+
         const loadData = async () => {
             const data = await MockAPI.fetchData(); // This now calls /renderTask
-            dispatch({ type: 'INIT_DATA', payload: data });
+            
+            // Try to fetch real user details to replace/augment mock data
+            let realUser = null;
+            try {
+                const res = await fetch(`${API_BASE_URL}/users/${userId}`);
+                if (res.ok) {
+                    const u = await res.json();
+                    realUser = {
+                        id: u.id,
+                        name: u.firstName || u.username || 'User',
+                        avatar: `https://ui-avatars.com/api/?name=${u.firstName || 'U'}&background=0D8ABC&color=fff`,
+                        baseCapacity: 100,
+                        personas: []
+                    };
+                    // Ensure real user is in the list for dropdowns
+                    if (!data.users.find((existing: User) => existing.id === realUser.id)) {
+                        data.users.unshift(realUser);
+                    }
+                }
+            } catch (e) { console.error("Failed to load user", e); }
+
+            const currentUser = realUser || data.users.find((u: User) => u.id === userId) || data.users[0];
+            dispatch({ type: 'INIT_DATA', payload: { ...data, currentUser } });
         };
         loadData();
-    }, []);
+    }, [userId]);
 
     // Filter Logic
     const filteredTasks = useMemo(() => {
@@ -1181,7 +1243,7 @@ export default function RoadmapPage() {
     const handleAutoBalance = async () => {
         dispatch({ type: 'SET_LOADING', payload: true });
         try {
-            await fetch(`http://192.168.0.113:8000/envoy/auto-balance`, {
+            await fetch(`${API_BASE_URL}/envoy/auto-balance`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: state.currentUser?.id || 'u1' }) // Backend now handles role-based logic

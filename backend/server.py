@@ -118,6 +118,11 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN skills TEXT DEFAULT '[]'")
+    except sqlite3.OperationalError:
+        pass
+
     # Tasks table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS tasks (
@@ -303,6 +308,15 @@ class AddMemberRequest(BaseModel):
     userId: str
     username: str
 
+class UpdateSkillsRequest(BaseModel):
+    requesterId: str
+    targetUserId: str
+    skills: List[str]
+
+class SetFocusRequest(BaseModel):
+    taskId: str
+    userId: str
+
 
 # Endpoints
 @app.get('/')
@@ -352,7 +366,7 @@ async def signup(user: UserCreate, response: Response):
         secure=False
     )
 
-    return {"access_token": token, "token_type": "bearer"}
+    return {"access_token": token, "token_type": "bearer", "id": user_id, "role": user.role}
 
 @app.post('/login')
 async def login(form_data: UserLogin, response: Response):
@@ -400,7 +414,7 @@ async def login(form_data: UserLogin, response: Response):
         secure=False
     )
 
-    return {"access_token": token, "token_type": "bearer"}
+    return {"access_token": token, "token_type": "bearer", "id": user_id, "role": role}
 
 @app.get('/users/{user_id}')
 async def get_user_info(user_id: str):
@@ -489,9 +503,7 @@ async def complete_task(req: CompleteTaskRequest):
     cursor = conn.cursor()
     try:
         # 1. Get Task to calculate duration
-        cursor.execute("SELECT startDate, created_at FROM tasks WHERE id = ?", (req.taskId,)) # Assuming created_at exists or we use startDate
-        # Note: Schema doesn't have created_at explicitly in CREATE, but startDate is there.
-        # We will use startDate.
+        cursor.execute("SELECT startDate FROM tasks WHERE id = ?", (req.taskId,))
         task = cursor.fetchone()
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
@@ -506,46 +518,7 @@ async def complete_task(req: CompleteTaskRequest):
         # 3. Update User Stats
         cursor.execute("SELECT avg_task_completion_time, completed_tasks_count FROM users WHERE id = ?", (req.userId,))
         user = cursor.fetchone()
-        if user:
-            old_avg = user['avg_task_completion_time'] or 0
-            old_count = user['completed_tasks_count'] or 0
-            new_count = old_count + 1
-            new_avg = ((old_avg * old_count) + duration_seconds) / new_count
-            cursor.execute("UPDATE users SET avg_task_completion_time = ?, completed_tasks_count = ? WHERE id = ?", (new_avg, new_count, req.userId))
-        
-        conn.commit()
-        return {"message": "Task completed", "new_avg_time": new_avg}
-    except Exception as e:
-        conn.rollback()
-        print(f"Error completing task: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        conn.close()
-
-@app.post('/completeTask')
-async def complete_task(req: CompleteTaskRequest):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    try:
-        # 1. Get Task to calculate duration
-        cursor.execute("SELECT startDate, created_at FROM tasks WHERE id = ?", (req.taskId,)) # Assuming created_at exists or we use startDate
-        # Note: Schema doesn't have created_at explicitly in CREATE, but startDate is there.
-        # We will use startDate.
-        task = cursor.fetchone()
-        if not task:
-            raise HTTPException(status_code=404, detail="Task not found")
-        
-        start_time = task['startDate'] if task['startDate'] else int(datetime.now().timestamp())
-        end_time = int(datetime.now().timestamp())
-        duration_seconds = end_time - start_time
-        
-        # 2. Update Task
-        cursor.execute("UPDATE tasks SET status = 'Done', progress = 100, completedAt = ? WHERE id = ?", (end_time, req.taskId))
-        
-        # 3. Update User Stats
-        cursor.execute("SELECT avg_task_completion_time, completed_tasks_count FROM users WHERE id = ?", (req.userId,))
-        user = cursor.fetchone()
+        new_avg = 0
         if user:
             old_avg = user['avg_task_completion_time'] or 0
             old_count = user['completed_tasks_count'] or 0
@@ -809,6 +782,33 @@ async def add_team_member(req: AddMemberRequest):
     finally:
         conn.close()
 
+@app.post('/team/update_skills')
+async def update_skills(req: UpdateSkillsRequest):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        # Check requester role
+        cursor.execute("SELECT role, companyName FROM users WHERE id = ?", (req.requesterId,))
+        requester = cursor.fetchone()
+        
+        if not requester:
+            raise HTTPException(status_code=404, detail="Requester not found")
+
+        # Allow if updating self OR if requester is admin
+        if req.requesterId != req.targetUserId:
+            if requester['role'] != 'admin':
+                 raise HTTPException(status_code=403, detail="Unauthorized")
+            
+        cursor.execute("UPDATE users SET skills = ? WHERE id = ?", (json.dumps(req.skills), req.targetUserId))
+        conn.commit()
+        return {"message": "Skills updated"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
 @app.get('/team/overview')
 async def team_overview(userId: str):
     # Mock metrics for now, in production calculate from tasks/interventions
@@ -831,16 +831,22 @@ async def team_members(userId: str):
             return []
         
         company = user['companyName']
-        cursor.execute("SELECT id, firstName, lastName, role, avg_task_completion_time, completed_tasks_count FROM users WHERE companyName = ?", (company,))
+        cursor.execute("SELECT id, firstName, lastName, role, avg_task_completion_time, completed_tasks_count, skills FROM users WHERE companyName = ?", (company,))
         rows = cursor.fetchall()
         
         members = []
         for row in rows:
+            try:
+                skills = json.loads(row['skills']) if row['skills'] else []
+            except:
+                skills = []
+
             # Calculate mock scores based on real data if available
             members.append({
                 "id": row['id'],
                 "name": f"{row['firstName']} {row['lastName']}",
                 "role": row['role'],
+                "skills": skills,
                 "avgTime": row['avg_task_completion_time'],
                 "completedCount": row['completed_tasks_count'],
                 "attentionScore": 85, # Placeholder
@@ -875,8 +881,15 @@ async def auto_balance(req: AutoBalanceRequest):
         if role == 'admin' and company:
             # --- ADMIN LOGIC: Team Balance ---
             # Fetch all team members
-            cursor.execute("SELECT id, firstName, avg_task_completion_time, completed_tasks_count FROM users WHERE companyName = ?", (company,))
-            team_members = [dict(row) for row in cursor.fetchall()]
+            cursor.execute("SELECT id, firstName, avg_task_completion_time, completed_tasks_count, skills FROM users WHERE companyName = ?", (company,))
+            team_members = []
+            for row in cursor.fetchall():
+                m = dict(row)
+                try:
+                    m['skills'] = json.loads(m['skills']) if m['skills'] else []
+                except:
+                    m['skills'] = []
+                team_members.append(m)
             
             # Fetch all tasks for the team (tasks owned by any team member)
             member_ids = [m['id'] for m in team_members]
@@ -887,8 +900,9 @@ async def auto_balance(req: AutoBalanceRequest):
             prompt = f"""
             You are an expert Project Manager AI.
             Goal: Redistribute tasks among team members to balance load and optimize for speed.
+            Consider the 'skills' of each member and match them to the task title/requirements.
             
-            Team Stats (Avg Time is in seconds):
+            Team Stats (Avg Time is in seconds, Skills are listed):
             {json.dumps(team_members)}
             
             Tasks:
@@ -897,6 +911,7 @@ async def auto_balance(req: AutoBalanceRequest):
             Instructions:
             1. Assign tasks to members based on their 'avg_task_completion_time' and current load.
             2. Faster members can take more/harder tasks.
+            3. MATCH SKILLS: If a task requires a skill (e.g. 'React'), assign it to a member with that skill.
             3. Return JSON: {{ "assignments": [ {{ "task_id": "...", "new_owner_id": "..." }} ] }}
             """
             
@@ -1113,6 +1128,268 @@ async def auto_balance(req: AutoBalanceRequest):
 
         conn.commit()
         return {"status": "success", "changes": result}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.get('/pulse/{user_id}')
+async def get_pulse(user_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        # Fetch active tasks (not Done)
+        cursor.execute("SELECT * FROM tasks WHERE ownerId = ? AND status != 'Done'", (user_id,))
+        rows = cursor.fetchall()
+        
+        tasks = []
+        for row in rows:
+            t = dict(row)
+            try:
+                t['dependencyIds'] = json.loads(t['dependencyIds']) if t['dependencyIds'] else []
+                t['tags'] = json.loads(t['tags']) if t['tags'] else []
+            except:
+                t['dependencyIds'] = []
+                t['tags'] = []
+            if 'pk' in t: del t['pk']
+            tasks.append(t)
+
+        # Determine Current Focus (Status = 'In Progress')
+        current_task = next((t for t in tasks if t['status'] == 'In Progress'), None)
+
+        # Determine Up Next (Status != 'In Progress', sorted by Priority/Date)
+        candidates = [t for t in tasks if t['status'] != 'In Progress']
+        prio_map = {"High": 3, "Medium": 2, "Low": 1}
+        
+        # Sort: Priority DESC, then StartDate ASC
+        candidates.sort(key=lambda x: x.get('startDate', 0))
+        candidates.sort(key=lambda x: prio_map.get(x.get('priority', 'Low'), 1), reverse=True)
+        
+        next_task = candidates[0] if candidates else None
+        
+        rationale = None
+        if next_task and GEMINI_API:
+            try:
+                context = f"Task: {next_task['title']}, Priority: {next_task['priority']}"
+                client = genai.Client(api_key=GEMINI_API)
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=f"Explain in one short sentence why '{next_task['title']}' is the best next task given it has high priority. Context: {context}"
+                )
+                rationale = response.text.strip()
+            except Exception as e:
+                print(f"Pulse Rationale Error: {e}")
+
+        return {
+            "currentTask": current_task,
+            "nextTask": next_task,
+            "rationale": rationale
+        }
+    finally:
+        conn.close()
+
+@app.get('/pulse/activity')
+async def get_pulse_activity(userId: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        # Fetch recent tasks to generate synthetic activity
+        # In a real app, you would have an 'events' table. Here we derive it from task state.
+        cursor.execute("""
+            SELECT t.*, u.firstName, u.lastName, u.role 
+            FROM tasks t 
+            JOIN users u ON t.ownerId = u.id 
+            ORDER BY t.startDate DESC LIMIT 10
+        """)
+        rows = cursor.fetchall()
+        
+        events = []
+        for row in rows:
+            t = dict(row)
+            # Determine event type based on status/priority
+            evt_type = 'status_change'
+            details = f"updated {t['title']}"
+            
+            if t['status'] == 'Done':
+                details = "completed task"
+            elif t['status'] == 'In Progress':
+                details = "started working on"
+            elif t['priority'] == 'High':
+                evt_type = 'blocker'
+                details = "flagged high priority"
+            
+            # Mock timestamp based on startDate (just for demo feel)
+            timestamp = "Recently"
+            
+            events.append({
+                "id": f"evt_{t['id']}",
+                "type": evt_type,
+                "actor": {
+                    "id": t['ownerId'],
+                    "name": f"{t['firstName']} {t['lastName']}",
+                    "role": t['role'] or 'Member',
+                    "avatar": f"https://ui-avatars.com/api/?name={t['firstName']}+{t['lastName']}&background=random"
+                },
+                "targetTask": t['title'],
+                "targetLink": "#",
+                "details": details,
+                "timestamp": timestamp,
+                "actionRequired": t['priority'] == 'High' and t['status'] != 'Done'
+            })
+            
+        return events
+    finally:
+        conn.close()
+
+@app.get('/pulse/stats')
+async def get_pulse_stats(userId: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        # Calculate Velocity (Avg completion time of user)
+        cursor.execute("SELECT avg_task_completion_time FROM users WHERE id = ?", (userId,))
+        user = cursor.fetchone()
+        avg_time = user['avg_task_completion_time'] if user else 0
+        
+        velocity = "Medium"
+        if avg_time > 0 and avg_time < 3600: velocity = "High" # Less than hour avg
+        elif avg_time > 14400: velocity = "Low" # More than 4 hours avg
+
+        # Count Blockers (Tasks with dependencies that are not Done)
+        # Simplified: Just counting High priority tasks not done
+        cursor.execute("SELECT COUNT(*) as count FROM tasks WHERE priority = 'High' AND status != 'Done'")
+        blocker_count = cursor.fetchone()['count']
+
+        # Sprint Progress (Mocking a sprint as all tasks in DB)
+        cursor.execute("SELECT COUNT(*) as count FROM tasks WHERE status = 'Done'")
+        completed = cursor.fetchone()['count']
+        
+        cursor.execute("SELECT COUNT(*) as count FROM tasks WHERE status != 'Done'")
+        remaining = cursor.fetchone()['count']
+
+        return {
+            "velocity": velocity,
+            "blockers": { "count": blocker_count, "type": "blocker" },
+            "sprint": { "daysLeft": 5, "completed": completed, "remaining": remaining }
+        }
+    finally:
+        conn.close()
+
+@app.get('/analytics/{user_id}')
+async def get_analytics(user_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        # Fetch all tasks to resolve dependencies globally
+        cursor.execute("SELECT * FROM tasks")
+        all_rows = cursor.fetchall()
+        
+        all_tasks_map = {}
+        user_tasks = []
+        
+        for row in all_rows:
+            t = dict(row)
+            try:
+                t['dependencyIds'] = json.loads(t['dependencyIds']) if t['dependencyIds'] else []
+            except:
+                t['dependencyIds'] = []
+            
+            all_tasks_map[t['id']] = t
+            if t['ownerId'] == user_id:
+                user_tasks.append(t)
+
+        # 1. Blocked Flow: Tasks not done but blocked by incomplete dependencies
+        blocked_count = 0
+        for t in user_tasks:
+            if t['status'] == 'Done': continue
+            
+            is_blocked = False
+            for dep_id in t['dependencyIds']:
+                dep = all_tasks_map.get(dep_id)
+                if dep and dep['status'] != 'Done':
+                    is_blocked = True
+                    break
+            if is_blocked:
+                blocked_count += 1
+
+        # 2. Stalled/Idle Metric: In Progress tasks untouched for > 3 days
+        stalled_count = 0
+        now = datetime.now().timestamp()
+        STALL_THRESHOLD = 3 * 24 * 3600 # 3 days in seconds
+        
+        for t in user_tasks:
+            if t['status'] == 'In Progress':
+                # Use startDate as proxy for last activity if no updatedAt
+                start_time = t['startDate'] if t['startDate'] else now
+                if (now - start_time) > STALL_THRESHOLD:
+                    stalled_count += 1
+
+        # 3. Velocity Trend: Avg completion time (hours) per week
+        velocity_map = {}
+        completed_tasks = [t for t in user_tasks if t['status'] == 'Done' and t.get('completedAt')]
+        completed_tasks.sort(key=lambda x: x['completedAt']) # Sort chronologically
+        
+        for t in completed_tasks:
+            comp_time = t['completedAt']
+            start_time = t['startDate'] if t['startDate'] else comp_time
+            duration_hours = max(0, (comp_time - start_time) / 3600.0)
+            
+            dt = datetime.fromtimestamp(comp_time)
+            week_label = dt.strftime("%b %d") # e.g. "Oct 24"
+            
+            if week_label not in velocity_map: velocity_map[week_label] = []
+            velocity_map[week_label].append(duration_hours)
+            
+        velocity_trend = [{"name": k, "value": round(sum(v)/len(v), 1)} for k, v in velocity_map.items()]
+        velocity_trend = velocity_trend[-7:] # Last 7 data points
+
+        # 4. Capacity Heatmap: Projected load (hours) for next 14 days
+        day_map = {}
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        for i in range(14):
+            day_map[(today + timedelta(days=i)).strftime("%Y-%m-%d")] = 0
+            
+        for t in user_tasks:
+            if t['status'] == 'Done': continue
+            planned_hours = (t['plannedDuration'] or 3600) / 3600.0
+            # Distribute load: assume max 4h/day per task
+            days_needed = max(1, int(planned_hours / 4))
+            load_per_day = planned_hours / days_needed
+            
+            for i in range(days_needed):
+                d_str = (today + timedelta(days=i)).strftime("%Y-%m-%d")
+                if d_str in day_map: day_map[d_str] += load_per_day
+
+        heatmap_data = [{"date": k, "count": round(v, 1)} for k, v in day_map.items()]
+
+        return {
+            "blockedFlow": blocked_count,
+            "stalledCount": stalled_count,
+            "velocityTrend": velocity_trend,
+            "capacityHeatmap": heatmap_data
+        }
+    except Exception as e:
+        print(f"Analytics Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.post('/pulse/set_focus')
+async def set_focus(req: SetFocusRequest):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        # 1. Pause other tasks
+        cursor.execute("UPDATE tasks SET status = 'Todo' WHERE ownerId = ? AND status = 'In Progress'", (req.userId,))
+        # 2. Set new focus
+        cursor.execute("UPDATE tasks SET status = 'In Progress' WHERE id = ?", (req.taskId,))
+        conn.commit()
+        return {"message": "Focus updated"}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))

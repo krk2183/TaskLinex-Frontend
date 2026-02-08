@@ -104,7 +104,7 @@ export default function SignupPage() {
     const { confirmPassword, ...formData } = Data;
     try {
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/signup`, {
+      const response = await fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/signup`, {
         method: "POST", 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
@@ -115,7 +115,13 @@ export default function SignupPage() {
         throw new Error(errorData?.detail || "Signup failed. Please try again.");
       }
       
-      window.location.href = "/login";
+      const data = await response.json();
+      if (data && data.id) {
+        localStorage.setItem("userId", data.id);
+        window.location.href = "/roadmap";
+      } else {
+        window.location.href = "/login";
+      }
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred.");
       setLoading(false); // Only set loading to false on error

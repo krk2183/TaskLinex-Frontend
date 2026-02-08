@@ -20,9 +20,11 @@ import {
     Trash2,
     AlertTriangle
 } from 'lucide-react';
+import { useAuth } from '../../(auth)/register/AuthContext';
 
 const EnvoyConsole = () => {
     // --- STATE ---
+    const { userId } = useAuth();
     const [activePersona, setActivePersona] = useState('Builder');
     const [optimizationMode, setOptimizationMode] = useState('stability');
     
@@ -49,7 +51,7 @@ const EnvoyConsole = () => {
     // --- FETCH LOGIC ---
     const fetchPersonas = async () => {
         try {
-            const response = await fetch(`http://192.168.0.113:8000/renderPersona`);
+            const response = await fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/renderPersona`);
             if (response.ok) {
                 const data = await response.json();
                 
@@ -77,18 +79,18 @@ const EnvoyConsole = () => {
 
     const fetchTasks = async () => {
         try {
-            const response = await fetch(`http://192.168.0.113:8000/renderTask`);
+            const response = await fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/renderTask`);
             if (response.ok) {
                 const data = await response.json();
                 // Filter for current user 'u1' to match Roadmap mock user
-                setTasks(data.filter((t: any) => t.ownerId === 'u1'));
+                setTasks(data.filter((t: any) => t.ownerId === userId));
             }
         } catch (e) { console.error(e); }
     };
 
     const fetchInterventions = async () => {
         try {
-            const response = await fetch(`http://192.168.0.113:8000/envoy/interventions?userId=u1`);
+            const response = await fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/envoy/interventions?userId=${userId}`);
             if (response.ok) {
                 const data = await response.json();
                 setPersonalInterventions(data.filter((i: any) => i.scope === 'personal'));
@@ -97,10 +99,11 @@ const EnvoyConsole = () => {
     };
 
     useEffect(() => {
+        if (!userId) return;
         fetchPersonas();
         fetchTasks();
         fetchInterventions();
-    }, []);
+    }, [userId]);
 
     // --- SESSION STORAGE HELPERS ---
     const addToSession = (name: string) => {
@@ -124,14 +127,14 @@ const EnvoyConsole = () => {
     // --- ACTIONS ---
 
     const handleCreateSubmit = async () => {
-        if (!newPersonaName) return;
+        if (!newPersonaName || !userId) return;
         const nameToCreate = newPersonaName.trim();
 
                 try {
-            const response = await fetch(`http://192.168.0.113:8000/createPersona`, {
+            const response = await fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/createPersona`, {
                 method:'POST',
                 headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({ name: nameToCreate, weekly_capacity_hours: 40, user_id: 'u1' })
+                body: JSON.stringify({ name: nameToCreate, weekly_capacity_hours: 40, user_id: userId })
             });
 
             if (response.ok) {
@@ -173,7 +176,7 @@ const EnvoyConsole = () => {
 
         // 1. Backend Call
         try {
-            await fetch(`http://192.168.0.113:8000/deletePersona`, {
+            await fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/deletePersona`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: id }) 

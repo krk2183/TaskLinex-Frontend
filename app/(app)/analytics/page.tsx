@@ -7,6 +7,7 @@ import {
   ArrowRight, Search, Bell, Menu, TrendingUp, 
   MessageSquareWarning, Clock, ChevronRight, CheckCircle2 
 } from 'lucide-react';
+import { useAuth } from '../../(auth)/register/AuthContext';
 
 // --- 1. MOCK DATA & TYPES (Based on your provided Schema) ---
 
@@ -269,12 +270,37 @@ const HeatmapCell = ({ load }) => {
 // --- 3. MAIN PAGE COMPONENT ---
 
 export default function AnalyticsPage() {
+  const { userId } = useAuth();
   const [activeTab, setActiveTab] = useState("Analytics");
   const [hoveredNode, setHoveredNode] = useState(null);
   const [showEnvoy, setShowEnvoy] = useState(false);
+  const [analytics, setAnalytics] = useState<any>(null);
 
-  const blockedTasks = MOCK_TASKS.filter(t => t.status === "Blocked");
-  const stalledTasks = MOCK_TASKS.filter(t => t.status === "Stalled");
+  useEffect(() => {
+    if (!userId) return;
+    const fetchAnalytics = async () => {
+        try {
+            const port = process.env.NEXT_PUBLIC_SERVER_PORT || 8000;
+            const res = await fetch(`http://localhost:${port}/analytics/${userId}`);
+            if (res.ok) {
+                const data = await res.json();
+                setAnalytics(data);
+            }
+        } catch (error) {
+            console.error("Failed to fetch analytics", error);
+        }
+    };
+    fetchAnalytics();
+  }, [userId]);
+
+  const velocityTrendDisplay = useMemo(() => {
+      if (!analytics?.velocityTrend || analytics.velocityTrend.length < 2) return "+0%";
+      const current = analytics.velocityTrend[analytics.velocityTrend.length - 1].value;
+      const prev = analytics.velocityTrend[analytics.velocityTrend.length - 2].value;
+      if (prev === 0) return current > 0 ? "+100%" : "0%";
+      const diff = ((current - prev) / prev) * 100;
+      return `${diff > 0 ? '+' : ''}${diff.toFixed(0)}%`;
+  }, [analytics]);
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-200 font-sans selection:bg-blue-500/30 overflow-hidden">
@@ -313,9 +339,9 @@ export default function AnalyticsPage() {
             {/* A. Real-Time Task Flow Ticker */}
             <div className="col-span-12 grid grid-cols-3 gap-6 mb-4">
                {[
-                 { label: "Blocked Flow", count: blockedTasks.length, color: "red", desc: "Downstream impact detected" },
-                 { label: "Stalled / Idle", count: stalledTasks.length, color: "amber", desc: "No activity > 48h" },
-                 { label: "Velocity Trend", count: "+12%", color: "emerald", desc: "Vs last sprint" }
+                 { label: "Blocked Flow", count: analytics?.blockedFlow ?? 0, color: "red", desc: "Downstream impact detected" },
+                 { label: "Stalled / Idle", count: analytics?.stalledCount ?? 0, color: "amber", desc: "No activity > 72h" },
+                 { label: "Velocity Trend", count: velocityTrendDisplay, color: "emerald", desc: "Vs last week" }
                ].map((stat, i) => (
                  <motion.div 
                     key={i}
@@ -422,27 +448,32 @@ export default function AnalyticsPage() {
                 </div>
 
                 <div className="space-y-4">
-                    {MOCK_USERS.map((user) => (
-                        <div key={user.id} className="grid grid-cols-12 gap-4 items-center">
+                        <div className="grid grid-cols-12 gap-4 items-center">
                             {/* User Info */}
                             <div className="col-span-2 flex items-center gap-3">
                                 <div className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center text-xs font-bold text-slate-300 border border-slate-700">
-                                    {user.avatar}
+                                    ME
                                 </div>
                                 <div>
-                                    <div className="text-sm font-medium text-white">{user.name}</div>
-                                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">{user.personas[0].role}</div>
+                                    <div className="text-sm font-medium text-white">My Capacity</div>
+                                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">Developer</div>
                                 </div>
                             </div>
                             
                             {/* Heatmap Grid (Mocked for Sprints 1-10) */}
-                            <div className="col-span-10 grid grid-cols-10 gap-2">
-                                {[20, 45, 80, 60, 110, 90, 30, 0, 20, 50].map((load, idx) => (
-                                    <HeatmapCell key={idx} load={load} />
-                                ))}
+                            <div className="col-span-10 grid grid-cols-7 sm:grid-cols-14 gap-2">
+                                {analytics?.capacityHeatmap ? analytics.capacityHeatmap.map((day: any, idx: number) => {
+                                    // Assuming 6 hours is 100% capacity for visualization
+                                    const load = Math.round((day.count / 6) * 100);
+                                    return <HeatmapCell key={idx} load={load} />;
+                                }) : (
+                                    // Loading Skeleton
+                                    Array.from({ length: 14 }).map((_, i) => (
+                                        <div key={i} className="h-10 w-full bg-slate-800/30 rounded animate-pulse" />
+                                    ))
+                                )}
                             </div>
                         </div>
-                    ))}
                 </div>
             </motion.div>
 
