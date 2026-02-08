@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState,useMemo, useEffect, useRef } from "react";
 
 import {
   motion,
@@ -9,13 +9,14 @@ import {
   AnimatePresence,
 } from "framer-motion";
 import {
-    Server,Send,
+    Server,Send, Calculator,
   Zap, Layers, ArrowRight, CheckCircle,
   AlertTriangle, Clock, GitCommit, Sparkles,
   User, Search, GitPullRequest,
   Workflow, MessageSquare, BrainCircuit,
   ChevronRight, Activity
-  ,CornerDownRight
+  ,CornerDownRight,
+ X, ChevronLeft, BarChart3, Lock, RefreshCw
 } from "lucide-react";
 
 // --- UTILS & CONSTANTS ---
@@ -338,6 +339,419 @@ function Hero() {
       </motion.div>
     </section>
   );
+}
+
+// --- CALCULATOR & DASHBOARD VISUALIZATION COMPONENTS ---
+
+// Simplified Mock Data for the Visual
+const MINI_TASKS = [
+  { id: "t1", title: "Auth Migration", status: "Blocked", leakageHours: 12 },
+  { id: "t2", title: "API Gateway", status: "Stalled", leakageHours: 2 },
+  { id: "t3", title: "Dashboard UI", status: "In Progress", leakageHours: 1 },
+];
+
+const MiniRippleGraph = () => (
+    <div className="relative h-40 w-full flex items-center justify-center scale-75 origin-center">
+      <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-30">
+        <defs>
+          <marker id="head-mini" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+          </marker>
+        </defs>
+        <path d="M 100 80 C 200 80, 200 50, 300 50" stroke="#64748b" strokeWidth="1" fill="none" markerEnd="url(#head-mini)" />
+        <path d="M 100 80 C 200 80, 200 110, 300 110" stroke="#64748b" strokeWidth="1" fill="none" markerEnd="url(#head-mini)" />
+      </svg>
+      <div className="absolute left-[80px]">
+         <div className="w-8 h-8 rounded-full bg-rose-500/20 border border-rose-500 flex items-center justify-center text-rose-500 animate-pulse">
+             <AlertTriangle size={14} />
+         </div>
+      </div>
+      <div className="absolute right-[80px] top-[40px]">
+         <div className="w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500 flex items-center justify-center text-indigo-400">
+             <span className="text-[8px] font-bold">API</span>
+         </div>
+      </div>
+      <div className="absolute right-[80px] top-[100px]">
+         <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center text-slate-400">
+             <span className="text-[8px] font-bold">UI</span>
+         </div>
+      </div>
+    </div>
+);
+
+const MiniLeakage = () => (
+    <div className="space-y-2 mt-4">
+        {MINI_TASKS.map((task, i) => (
+             <div key={i} className="flex flex-col gap-1">
+                <div className="flex justify-between text-[10px] text-slate-400">
+                    <span>{task.title}</span>
+                    <span className={task.leakageHours > 5 ? "text-rose-400" : "text-slate-500"}>-{task.leakageHours}h</span>
+                </div>
+                <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden">
+                    <motion.div
+                        initial={{ width: 0 }}
+                        whileInView={{ width: `${(task.leakageHours / 15) * 100}%` }}
+                        className={`h-full ${task.leakageHours > 5 ? 'bg-rose-500' : 'bg-slate-600'}`}
+                    />
+                </div>
+             </div>
+        ))}
+    </div>
+);
+
+const MacBookFrame = ({ step }: { step: number }) => {
+    // Dynamic stats based on calculator step to simulate "Live Analysis"
+    const stats = useMemo(() => {
+        const baseBlock = 3;
+        const baseContext = "Med";
+        // Simulate changing data as user progresses
+        return {
+            blocked: step > 3 ? baseBlock + 4 : baseBlock,
+            context: step > 2 ? "High" : baseContext,
+            leakage: step > 4 ? "Critical" : "Stable"
+        }
+    }, [step]);
+
+    return (
+        <div className="relative w-full max-w-lg mx-auto transform transition-all duration-500">
+            {/* Screen Bezel */}
+            <div className="bg-[#0f0f10] rounded-t-2xl p-1.5 border border-slate-800 shadow-2xl relative">
+                {/* Camera Notch */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-15 h-3 bg-black rounded-b-lg z-20"></div>
+
+                {/* Screen Content (The Mini Dashboard) */}
+                <div className="bg-[#0B1120] rounded-lg overflow-hidden aspect-[16/10] relative flex flex-col border border-white/5">
+                    {/* Header */}
+                    <div className="h-8 border-b border-white/5 bg-[#0F172A] flex items-center px-3 justify-between">
+                         <div className="flex gap-1.5">
+                            <div className="w-2.5 h-2.5 rounded-full bg-rose-500/20 border border-rose-500/50" />
+                            <div className="w-2.5 h-2.5 rounded-full bg-amber-500/20 border border-amber-500/50" />
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-mono">analysis.tasklinex.local</span>
+                    </div>
+
+                    {/* Dashboard Content */}
+                    <div className="p-4 grid grid-cols-2 gap-4">
+                        {/* Stat Cards */}
+                        <div className="col-span-2 grid grid-cols-3 gap-2">
+                             <div className="bg-slate-900/50 border border-white/5 p-2 rounded">
+                                 <div className="text-[10px] text-slate-500 uppercase">Blocked</div>
+                                 <div className="text-lg font-bold text-white transition-all key={stats.blocked}">{stats.blocked}</div>
+                             </div>
+                             <div className="bg-slate-900/50 border border-white/5 p-2 rounded">
+                                 <div className="text-[10px] text-slate-500 uppercase">Switching</div>
+                                 <div className="text-lg font-bold text-rose-400 transition-all key={stats.context}">{stats.context}</div>
+                             </div>
+                             <div className="bg-slate-900/50 border border-white/5 p-2 rounded">
+                                 <div className="text-[10px] text-slate-500 uppercase">Leakage</div>
+                                 <div className="text-lg font-bold text-amber-400 transition-all key={stats.leakage}">{stats.leakage}</div>
+                             </div>
+                        </div>
+
+                        {/* Visuals */}
+                        <div className="col-span-2 bg-slate-900/30 border border-white/5 rounded-lg p-3">
+                            <div className="text-[10px] text-slate-400 mb-2 font-bold">DEPENDENCY GRAPH</div>
+                            <MiniRippleGraph />
+                        </div>
+
+                        <div className="col-span-2 bg-slate-900/30 border border-white/5 rounded-lg p-3">
+                             <div className="text-[10px] text-slate-400 mb-2 font-bold">COMMUNICATION OVERHEAD</div>
+                             <MiniLeakage />
+                        </div>
+                    </div>
+
+                    {/* Overlay Scan Effect when changing steps */}
+                    <AnimatePresence>
+                        {step > 0 && (
+                            <motion.div
+                                key={step}
+                                initial={{ top: "-100%" }}
+                                animate={{ top: "200%" }}
+                                transition={{ duration: 1.5, ease: "linear" }}
+                                className="absolute left-0 right-0 h-12 bg-gradient-to-b from-transparent via-violet-500/10 to-transparent pointer-events-none z-10"
+                            />
+                        )}
+                    </AnimatePresence>
+                </div>
+            </div>
+            {/* Base of Laptop */}
+            <div className="h-3 bg-[#1a1a1c] rounded-b-xl mx-0 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.5)] border-t border-black"></div>
+            <div className="h-0.5 bg-[#2a2a2c] mx-auto w-16 rounded-b-md"></div>
+        </div>
+    )
+}
+
+
+// --- SECTIONS: VALUE CALCULATOR ---
+
+const QUESTIONS = [
+    {
+        id: "tool",
+        q: "Which tool do you currently use?",
+        options: ["Jira", "Trello", "ClickUp", "Linear", "Spreadsheets/None"]
+    },
+    {
+        id: "frustration",
+        q: "What frustrates you most?",
+        options: ["Too much admin work", "Hard to see priorities", "Constant context switching", "Unclear dependencies", "Scattered information"]
+    },
+    {
+        id: "blockers",
+        q: "How often does unclear ownership block work?",
+        options: ["Rarely", "Sometimes", "Often", "Constantly"]
+    },
+    {
+        id: "decisions",
+        q: "Where do most decisions actually happen?",
+        options: ["In the task tool", "In Slack/Teams", "In Meetings", "Hallway/Random"]
+    },
+    {
+        id: "role",
+        q: "What best describes you?",
+        options: ["Founder", "Engineer", "Product Manager", "Team Lead"]
+    }
+];
+
+function ValueCalculator() {
+    const [active, setActive] = useState(false);
+    const [step, setStep] = useState(0);
+    const [answers, setAnswers] = useState<Record<string, string>>({});
+    const [showResult, setShowResult] = useState(false);
+    const [calculating, setCalculating] = useState(false);
+
+    // Dynamic Logic for Results
+    const getResultData = () => {
+        const tool = answers["tool"] || "Jira";
+        let hoursLost = 5;
+        let headline = "TaskLinex optimizes thinking.";
+
+        // Simple Heuristic Logic
+        if (tool === "Jira") {
+            hoursLost += 3;
+            headline = "Jira optimizes process. TaskLinex optimizes thinking.";
+        } else if (tool === "Trello") {
+            hoursLost += 4; // Chaos penalty
+            headline = "Trello organizes cards. TaskLinex organizes work.";
+        } else if (tool === "ClickUp") {
+            hoursLost += 2.5;
+            headline = "ClickUp gives features. TaskLinex gives clarity.";
+        }
+
+        if (answers["blockers"] === "Constantly") hoursLost += 5;
+        if (answers["blockers"] === "Often") hoursLost += 3;
+        if (answers["decisions"] === "In Slack/Teams") hoursLost += 2;
+
+        return { hoursLost: Math.min(hoursLost, 20), headline };
+    };
+
+    const handleSelect = (option: string) => {
+        setAnswers(prev => ({ ...prev, [QUESTIONS[step].id]: option }));
+
+        if (step < QUESTIONS.length - 1) {
+            setStep(prev => prev + 1);
+        } else {
+            // Finish
+            setCalculating(true);
+            setTimeout(() => {
+                setCalculating(false);
+                setShowResult(true);
+            }, 1200);
+        }
+    };
+
+    const reset = () => {
+        setActive(false);
+        setStep(0);
+        setShowResult(false);
+        setAnswers({});
+    };
+
+    const resultData = getResultData();
+
+    return (
+        <section className={`relative py-24 px-6 border-b border-white/5 transition-all duration-500 ease-in-out ${active ? "bg-[#080808]" : "bg-[#050505]"}`}>
+            <div className="max-w-6xl mx-auto">
+
+                <AnimatePresence mode="wait">
+                    {!active ? (
+                        /* TEASER STATE */
+                        <motion.div
+                            key="teaser"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center"
+                        >
+                            <div className="space-y-6">
+                                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-500/10 border border-violet-500/20">
+                                    <Calculator size={14} className="text-violet-400" />
+                                    <span className="text-[10px] font-bold uppercase tracking-widest text-violet-300">Personal Estimate</span>
+                                </div>
+                                <h2 className="text-4xl font-semibold text-white tracking-tight">
+                                    See how much coordination <br/>
+                                    <span className="text-white/40">is costing you.</span>
+                                </h2>
+                                <p className="text-lg text-white/50 max-w-md">
+                                    A 30-second estimate based on how you actually work.
+                                    No marketing fluff, just math.
+                                </p>
+                                <button
+                                    onClick={() => setActive(true)}
+                                    className="group flex items-center gap-2 bg-white text-black px-6 py-3 rounded-full font-bold text-sm hover:bg-violet-50 transition-all"
+                                >
+                                    Calculate my overhead
+                                    <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                                </button>
+                            </div>
+                            <div className="relative">
+                                {/* Decor */}
+                                <div className="absolute top-1/2 right-[10px] -translate-x-1/2 -translate-y-1/2 w-[400px] h-[300px] bg-violet-500/10 blur-[100px] rounded-full pointer-events-none" />
+                                <MacBookFrame step={0} />
+                            </div>
+                        </motion.div>
+                    ) : (
+                        /* ACTIVE CALCULATOR STATE */
+                        <motion.div
+                            key="active"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="w-full"
+                        >
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+
+                                {/* Left Column: Questions or Results */}
+                                <div className="lg:col-span-5 relative min-h-[400px] flex flex-col">
+                                    
+                                    {/* Header Controls */}
+                                    <div className="flex justify-between items-center mb-8">
+                                        <button onClick={reset} className="text-white/20 hover:text-white transition-colors flex items-center gap-2 text-xs">
+                                            <X size={14} /> Cancel
+                                        </button>
+                                        {!showResult && !calculating && (
+                                            <div className="text-xs font-mono text-violet-400">
+                                                Step {step + 1} / {QUESTIONS.length}
+                                            </div>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="flex-1 flex flex-col justify-center">
+                                    {calculating ? (
+                                        <div className="text-center space-y-4">
+                                            <RefreshCw className="w-8 h-8 text-violet-500 animate-spin mx-auto" />
+                                            <p className="text-white/50 text-sm">Crunching dependency chains...</p>
+                                        </div>
+                                    ) : showResult ? (
+                                        /* RESULTS VIEW */
+                                        <motion.div
+                                            initial={{ opacity: 0, scale: 0.95 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            className="space-y-6"
+                                        >
+                                            <div className="inline-block px-3 py-1 rounded bg-emerald-500/10 text-emerald-400 text-xs font-bold mb-2 border border-emerald-500/20">
+                                                Analysis Complete
+                                            </div>
+                                            <h3 className="text-2xl font-bold text-white leading-tight">
+                                                {resultData.headline}
+                                            </h3>
+                                            <div className="p-6 rounded-2xl bg-white/5 border border-white/10">
+                                                <div className="text-sm text-white/50 mb-1">Estimated overhead</div>
+                                                <div className="flex items-end gap-2">
+                                                    <span className="text-5xl font-bold text-violet-400">{resultData.hoursLost}h</span>
+                                                    <span className="text-lg text-white/40 mb-1">/ week</span>
+                                                </div>
+                                                <div className="mt-4 pt-4 border-t border-white/10 flex flex-wrap gap-2">
+                                                    {["Context Switching", "Dependency Blindness", "Comm. Leakage"].map((tag, i) => (
+                                                        <span key={i} className="text-[10px] px-2 py-1 rounded bg-black/40 border border-white/10 text-white/60">
+                                                            {tag}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="flex gap-4 pt-4">
+                                                <a href='../register' className="bg-violet-600 hover:bg-violet-500 text-white px-6 py-3 rounded-full font-bold text-sm transition-colors">
+                                                    Get Early Access
+                                                </a >
+                                                <a href="#workflow" className="flex items-center gap-2 text-sm text-white/50 hover:text-white px-4 py-3">
+                                                    See how it works <ArrowRight size={14} />
+                                                </a>
+                                            </div>
+                                        </motion.div>
+                                    ) : (
+                                        /* QUESTION VIEW */
+                                        <div className="space-y-8">
+                                            <AnimatePresence mode="wait">
+                                                <motion.div
+                                                    key={step}
+                                                    initial={{ opacity: 0, x: -20 }}
+                                                    animate={{ opacity: 1, x: 0 }}
+                                                    exit={{ opacity: 0, x: 20 }}
+                                                    transition={{ duration: 0.2 }}
+                                                >
+                                                    <h3 className="text-2xl font-medium text-white mb-8">
+                                                        {QUESTIONS[step].q}
+                                                    </h3>
+                                                    <div className="space-y-3">
+                                                        {QUESTIONS[step].options.map((opt) => (
+                                                            <button
+                                                                key={opt}
+                                                                onClick={() => handleSelect(opt)}
+                                                                className="w-full text-left p-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-violet-500/30 transition-all flex justify-between group"
+                                                            >
+                                                                <span className="text-white/70 group-hover:text-white transition-colors">{opt}</span>
+                                                                <ChevronLeft className="w-4 h-4 text-white/20 rotate-180 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </motion.div>
+                                            </AnimatePresence>
+
+                                            {step > 0 && (
+                                                <button
+                                                    onClick={() => setStep(prev => prev - 1)}
+                                                    className="text-xs text-white/30 hover:text-white flex items-center gap-1"
+                                                >
+                                                    <ChevronLeft size={12} /> Back
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                    </div>
+                                </div>
+
+                                {/* Right Column: Visual (MacBook) */}
+                                <div className="lg:col-span-7 relative flex justify-center lg:justify-end">
+                                    <div className={`transition-all duration-700 ${showResult ? "opacity-40 blur-sm scale-95" : "opacity-100"}`}>
+                                        <MacBookFrame step={step} />
+                                    </div>
+
+                                    {/* Result Overlay Stats on top of laptop if result is shown */}
+                                    {showResult && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: 0.2 }}
+                                            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-xl border border-violet-500/30 p-6 rounded-2xl shadow-2xl text-center w-64"
+                                        >
+                                            <div className="text-violet-400 mb-2">
+                                                <Lock className="w-6 h-6 mx-auto" />
+                                            </div>
+                                            <div className="text-white font-bold mb-1">Value Unlocked</div>
+                                            <div className="text-xs text-white/50">
+                                                Potential to recover <br/>
+                                                <span className="text-emerald-400 font-bold">~{resultData.hoursLost - 2} hours</span> / week
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+            </div>
+        </section>
+    );
 }
 
 function EnvoySection() {
@@ -944,6 +1358,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-[#050505] text-slate-200 font-sans selection:bg-violet-500/30 overflow-x-hidden">
       <Header />
       <Hero />
+      <ValueCalculator /> 
       <EnvoySection />
       <WorkflowEngine />
       <PersonasSection />

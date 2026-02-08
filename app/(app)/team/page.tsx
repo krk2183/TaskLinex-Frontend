@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { 
     Users, AlertTriangle, Shield, Activity, 
-    CheckCircle, XCircle, Zap, BarChart3 
+    CheckCircle, XCircle, Zap, BarChart3, Plus, UserPlus
 } from 'lucide-react';
 
 interface TeamOverview {
@@ -32,6 +32,9 @@ export default function TeamPage() {
     const [members, setMembers] = useState<Member[]>([]);
     const [interventions, setInterventions] = useState<Intervention[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isAdding, setIsAdding] = useState(false);
+    const [newUsername, setNewUsername] = useState("");
+    const [userRole, setUserRole] = useState("user");
 
     // Mock User ID - in real app get from context/auth
     const userId = "u1"; 
@@ -39,15 +42,18 @@ export default function TeamPage() {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const [ovRes, memRes, intRes] = await Promise.all([
+                const [ovRes, memRes, intRes, userRes] = await Promise.all([
                     fetch(`http://192.168.0.113:8000/team/overview?userId=${userId}`),
                     fetch(`http://192.168.0.113:8000/team/members?userId=${userId}`),
-                    fetch(`http://192.168.0.113:8000/envoy/interventions?userId=${userId}`)
+                    fetch(`http://192.168.0.113:8000/envoy/interventions?userId=${userId}`),
+                    fetch(`http://192.168.0.113:8000/users/${userId}`)
                 ]);
 
                 setOverview(await ovRes.json());
                 setMembers(await memRes.json());
                 setInterventions(await intRes.json());
+                const userData = await userRes.json();
+                setUserRole(userData.role);
             } catch (e) {
                 console.error("Failed to load team data", e);
             } finally {
@@ -56,6 +62,25 @@ export default function TeamPage() {
         };
         fetchData();
     }, []);
+
+    const handleAddMember = async () => {
+        if (!newUsername) return;
+        try {
+            const res = await fetch(`http://192.168.0.113:8000/team/add_member`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, username: newUsername })
+            });
+            if (res.ok) {
+                const memRes = await fetch(`http://192.168.0.113:8000/team/members?userId=${userId}`);
+                setMembers(await memRes.json());
+                setIsAdding(false);
+                setNewUsername("");
+            }
+        } catch (e) {
+            console.error("Failed to add member", e);
+        }
+    };
 
     if (loading) return <div className="p-8 text-slate-400">Loading Team Intelligence...</div>;
 
@@ -91,9 +116,31 @@ export default function TeamPage() {
                                 </div>
                             ))}
                         </div>
-                        <button className="w-full mt-4 py-2 text-xs font-bold text-violet-400 border border-violet-900/50 rounded-lg hover:bg-violet-900/20 transition-colors">
-                            Manage Roles
-                        </button>
+                        
+                        {userRole === 'admin' && (
+                            <div className="mt-4 pt-4 border-t border-slate-800">
+                            {isAdding ? (
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={newUsername}
+                                        onChange={(e) => setNewUsername(e.target.value)}
+                                        placeholder="Username"
+                                        className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:ring-1 focus:ring-violet-500 outline-none"
+                                    />
+                                    <button onClick={handleAddMember} className="bg-violet-600 hover:bg-violet-700 text-white p-1.5 rounded-lg transition-colors"><Plus className="w-4 h-4" /></button>
+                                    <button onClick={() => setIsAdding(false)} className="text-slate-400 hover:text-white p-1.5"><XCircle className="w-4 h-4" /></button>
+                                </div>
+                            ) : (
+                                <button 
+                                    onClick={() => setIsAdding(true)}
+                                    className="w-full py-2 text-xs font-bold text-violet-400 border border-violet-900/50 rounded-lg hover:bg-violet-900/20 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <UserPlus className="w-3 h-3" /> Add Team Member
+                                </button>
+                            )}
+                        </div>
+                        )}
                     </div>
                 </div>
 

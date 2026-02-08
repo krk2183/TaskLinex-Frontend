@@ -8,8 +8,8 @@ import { ArrowRight, ArrowLeft, Mail, User, Briefcase, ChevronRight, Lock, Alert
 // --- COMPONENTS ---
 
 const Logo = () => (
-  <div className="flex items-center gap-2 mb-10">
-    <span className="text-3xl font-bold tracking-tight select-none">
+  <div className="flex items-center gap-2">
+    <span className="text-4xl font-bold tracking-tight select-none">
       <span className="text-white">Task</span>
       <span className="text-violet-500">Linex</span>
     </span>
@@ -77,10 +77,12 @@ export default function SignupPage() {
   const [Data, setData] = React.useState({
     firstName: "",
     lastName: "",
+    username: "",
     email: "",
     password: "",
     confirmPassword: "",
     companyName: "",
+    role: "user",
     rememberMe: false
   });
   const [error, setError] = React.useState("");
@@ -125,16 +127,22 @@ export default function SignupPage() {
       
 
       {/* LEFT SIDE: VISUALIZATION (Swapped for Signup to create variety from Login) */}
-      <div className="hidden lg:flex w-5/12 relative bg-[#0B0F17] overflow-hidden border-r border-slate-800 flex-col justify-between p-12">
+      <div className="hidden lg:flex w-5/12 relative bg-[#0B0F17] overflow-hidden border-r border-slate-800 flex-col p-12">
          {/* Abstract Background */}
+           <div className="flex items-center gap-2 mb-12">
+            <span className="text-4xl font-bold tracking-tight select-none">
+              <span className="text-white">Task</span>
+              <span className="text-violet-500">Linex</span>
+            </span>
+          </div>
          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_var(--tw-gradient-stops))] from-violet-900/20 via-slate-950 to-slate-950" />
-         
-         <div className="relative z-10 mt-20">
+         <div className="relative z-10">
              <h2 className="text-4xl font-bold text-white tracking-tight mb-6">
                  Built for <br/> 
                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-indigo-400">Deterministic</span> <br/>
                  Workflows.
              </h2>
+             
              <div className="space-y-6">
                  {['Isolate dependencies.', 'Visualize critical paths.', 'Eliminate status meetings.'].map((item, i) => (
                      <motion.div 
@@ -153,7 +161,7 @@ export default function SignupPage() {
              </div>
          </div>
 
-         <div className="relative z-10">
+         <div className="relative z-10 mt-auto">
              <div className="flex items-center gap-3 opacity-60">
                  <div className="flex -space-x-2">
                      {[1,2,3].map(i => (
@@ -173,13 +181,13 @@ export default function SignupPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <div className="absolute top-8 right-8 lg:hidden">
+          {/* <div className="absolute top-8 right-8 lg:hidden">
              <Logo />
-          </div>
+          </div> */}
           
           <div className="mb-10 lg:mt-24 mt-20">
-             <div className="hidden lg:block"><Logo /></div>
-            <h1 className="text-3xl font-bold text-white tracking-tight mb-2">Initialize Workspace</h1>
+             {/* <div className="hidden lg:block"><Logo /></div> */}
+            <h1 className="text-3xl font-bold text-white tracking-tight mb-1">Initialize Workspace</h1>
             <p className="text-slate-400">Begin your 14-day trial. No credit card required.</p>
           </div>
 
@@ -212,6 +220,16 @@ export default function SignupPage() {
             </div>
 
             <InputField 
+              label="Username" 
+              type="text" 
+              name="username"
+              value={Data.username}
+              onChange={handleChange}
+              placeholder="unique_username" 
+              icon={User} 
+            />
+
+            <InputField 
               label="Work Email" 
               type="email" 
               name="email"
@@ -240,6 +258,28 @@ export default function SignupPage() {
               placeholder="Confirm Password" 
               icon={Lock}
             />
+
+            <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Account Type
+                </label>
+                <div className="grid grid-cols-2 gap-4">
+                    <button
+                        type="button"
+                        onClick={() => setData({...Data, role: 'user'})}
+                        className={`flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-medium transition-all ${Data.role === 'user' ? 'bg-violet-600 border-violet-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'}`}
+                    >
+                        <User className="w-4 h-4" /> User
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setData({...Data, role: 'admin'})}
+                        className={`flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-medium transition-all ${Data.role === 'admin' ? 'bg-violet-600 border-violet-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'}`}
+                    >
+                        <Briefcase className="w-4 h-4" /> Admin
+                    </button>
+                </div>
+            </div>
 
             <InputField 
               label="Company Name" 

@@ -9,7 +9,7 @@ import {  Check, Eye, Loader2, AlertCircle, Sparkles } from 'lucide-react';
 import {
     Info, ChevronRight,
      CheckCircle, ArrowRight,
-    GitCommit, Layers, Zap, BrainCircuit, UserCog,
+    GitCommit, Layers, Zap, BrainCircuit, UserCog, LayoutGrid, List, Calendar,
     RefreshCw, Plus, Search, X
 } from 'lucide-react';
 
@@ -18,6 +18,7 @@ import {
 type TaskStatus = 'On Track' | 'At Risk' | 'Blocked' | 'Completed';
 type Priority = 'High' | 'Medium' | 'Low';
 type ViewMode = 'Week' | 'Month';
+type LayoutMode = 'Roadmap' | 'Board' | 'Sprint';
 
 // The "Persona" allows one user to wear multiple hats (e.g., Lead vs Contributor)
 interface Persona {
@@ -220,6 +221,7 @@ interface AppState {
     activePersonaId: string | null; // Which "Hat" they are wearing
     isLoading: boolean;
     filters: FilterState;
+    layoutMode: LayoutMode;
     viewMode: ViewMode;
     envoyActive: string | null; // Task ID interacting with Envoy
 }
@@ -228,6 +230,7 @@ type Action =
     | { type: 'INIT_DATA', payload: any }
     | { type: 'SET_ACTIVE_PERSONA', payload: any }
     | { type: 'SET_FILTER', payload: Partial<FilterState> }
+    | { type: 'SET_LAYOUT_MODE', payload: LayoutMode }
     | { type: 'SET_VIEW_MODE', payload: ViewMode }
     | { type: 'TOGGLE_PERSONA', payload: string }
     | { type: 'ADD_TASK', payload: Task[] }
@@ -240,6 +243,7 @@ const initialState: AppState = {
     currentUser: MOCK_USERS[0], // Simulating logged in as Matthew
     activePersonaId: 'p_u1_1',
     isLoading: true,
+    layoutMode: 'Roadmap',
     viewMode: 'Week',
     envoyActive: null,
     filters: { query: '', owners: [], statuses: [], onlyMyPersonas: false }
@@ -253,6 +257,8 @@ function appReducer(state: AppState, action: Action): AppState {
             return { ...state, ...action.payload, isLoading: false };
         case 'SET_ACTIVE_PERSONA':
             return {...state,activePersonaId:action.payload}
+        case 'SET_LAYOUT_MODE':
+            return { ...state, layoutMode: action.payload };
         case 'SET_FILTER':
             return { ...state, filters: { ...state.filters, ...action.payload } };
         case 'SET_VIEW_MODE':
@@ -1045,6 +1051,108 @@ return (
 
 // MAIN PAGE COMPONENT
 
+const BoardView = ({ tasks, users }: { tasks: Task[], users: User[] }) => {
+    const columns: TaskStatus[] = ['On Track', 'At Risk', 'Blocked', 'Completed'];
+    
+    return (
+        <div className="flex-1 overflow-x-auto overflow-y-hidden bg-slate-50 dark:bg-[#0B1120] p-6">
+            <div className="flex h-full gap-6">
+                {columns.map(status => (
+                    <div key={status} className="flex-shrink-0 w-80 flex flex-col bg-slate-100/50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-800">
+                        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
+                            <h3 className="font-bold text-sm text-slate-700 dark:text-slate-200">{status}</h3>
+                            <span className="text-xs bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded-full text-slate-500">
+                                {tasks.filter(t => t.status === status).length}
+                            </span>
+                        </div>
+                        <div className="p-3 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
+                            {tasks.filter(t => t.status === status).map(task => {
+                                const owner = users.find(u => u.id === task.ownerId);
+                                return (
+                                    <div key={task.id} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:shadow-md transition-shadow cursor-pointer group">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                                                task.priority === 'High' ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400' :
+                                                task.priority === 'Medium' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' :
+                                                'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                            }`}>{task.priority}</span>
+                                            {owner && <img src={owner.avatar} className="w-5 h-5 rounded-full" alt={owner.name} />}
+                                        </div>
+                                        <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">{task.title}</h4>
+                                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                                            <span>W{task.startDate}</span>
+                                            <span>•</span>
+                                            <span>{task.duration}w</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const SprintView = ({ tasks, users }: { tasks: Task[], users: User[] }) => {
+    return (
+        <div className="flex-1 overflow-auto bg-slate-50 dark:bg-[#0B1120] p-8">
+            <div className="max-w-6xl mx-auto bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-50 dark:bg-slate-950 text-xs uppercase tracking-wider text-slate-500 font-semibold">
+                        <tr>
+                            <th className="p-4 border-b border-slate-200 dark:border-slate-800">Task</th>
+                            <th className="p-4 border-b border-slate-200 dark:border-slate-800">Owner</th>
+                            <th className="p-4 border-b border-slate-200 dark:border-slate-800">Status</th>
+                            <th className="p-4 border-b border-slate-200 dark:border-slate-800">Priority</th>
+                            <th className="p-4 border-b border-slate-200 dark:border-slate-800">Timeline</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
+                        {tasks.map(task => {
+                            const owner = users.find(u => u.id === task.ownerId);
+                            return (
+                                <tr key={task.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                    <td className="p-4 font-medium text-slate-900 dark:text-slate-200">{task.title}</td>
+                                    <td className="p-4">
+                                        {owner && (
+                                            <div className="flex items-center gap-2">
+                                                <img src={owner.avatar} className="w-5 h-5 rounded-full" alt={owner.name} />
+                                                <span className="text-slate-600 dark:text-slate-400">{owner.name}</span>
+                                            </div>
+                                        )}
+                                    </td>
+                                    <td className="p-4">
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                            task.status === 'On Track' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' :
+                                            task.status === 'At Risk' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                                            task.status === 'Blocked' ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' :
+                                            'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                        }`}>
+                                            {task.status}
+                                        </span>
+                                    </td>
+                                    <td className="p-4">
+                                        <span className={`font-medium ${
+                                            task.priority === 'High' ? 'text-rose-500' :
+                                            task.priority === 'Medium' ? 'text-amber-500' :
+                                            'text-slate-500'
+                                        }`}>{task.priority}</span>
+                                    </td>
+                                    <td className="p-4 text-slate-500">
+                                        W{task.startDate} - W{task.startDate + task.duration}
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
 export default function RoadmapPage() {
     const [state, dispatch] = useReducer(appReducer, initialState);
     const [taskToEdit, setTaskToEdit] = useState<Task | undefined>(undefined);
@@ -1151,6 +1259,21 @@ export default function RoadmapPage() {
                                 ))}
                             </select>
 
+                            <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
+
+                            {/* VIEW TOGGLE */}
+                            <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-1">
+                                <button onClick={() => dispatch({ type: 'SET_LAYOUT_MODE', payload: 'Roadmap' })} className={`p-1.5 rounded-md transition-all ${state.layoutMode === 'Roadmap' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                                    <Calendar className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => dispatch({ type: 'SET_LAYOUT_MODE', payload: 'Board' })} className={`p-1.5 rounded-md transition-all ${state.layoutMode === 'Board' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                                    <LayoutGrid className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => dispatch({ type: 'SET_LAYOUT_MODE', payload: 'Sprint' })} className={`p-1.5 rounded-md transition-all ${state.layoutMode === 'Sprint' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                                    <List className="w-4 h-4" />
+                                </button>
+                            </div>
+
                             <button
                                 onClick={handleAutoBalance}
                                 className="ml-auto bg-slate-900 dark:bg-indigo-600 hover:bg-slate-800 dark:hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/20 transition-all"
@@ -1164,7 +1287,8 @@ export default function RoadmapPage() {
                 <WorkloadHUD />
 
                 {/* GANTT CANVAS */}
-                <div className="flex-1 overflow-auto relative custom-scrollbar bg-slate-50 dark:bg-[#0B1120]">
+                {state.layoutMode === 'Roadmap' && (
+                    <div className="flex-1 overflow-auto relative custom-scrollbar bg-slate-50 dark:bg-[#0B1120]">
                     <div className="min-w-[1400px] p-8">
 
                         {/* TIMELINE DATES */}
@@ -1296,6 +1420,15 @@ export default function RoadmapPage() {
                             </div>
                         </div>
                     </div>
+                    </div>
+                )}
+
+                {/* BOARD & SPRINT VIEWS */}
+                {state.layoutMode === 'Board' && <BoardView tasks={filteredTasks} users={state.users} />}
+                {state.layoutMode === 'Sprint' && <SprintView tasks={filteredTasks} users={state.users} />}
+
+                {/* SHARED OVERLAYS */}
+                <div>
                     <div className='fixed bottom-6 right-6 z-50' id='addButton'>
                         <button
                             className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-[12px] p-4 shadow-lg transition-transform hover:scale-110"

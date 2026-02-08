@@ -90,15 +90,23 @@ def init_db():
             id TEXT NOT NULL UNIQUE,
             firstName TEXT,
             lastName TEXT,
+            username TEXT NOT NULL UNIQUE,
             email TEXT NOT NULL UNIQUE,
             password TEXT NOT NULL,
-            companyName TEXT
+            companyName TEXT,
+            role TEXT DEFAULT 'user',
+            avg_task_completion_time REAL DEFAULT 0,
+            completed_tasks_count INTEGER DEFAULT 0
         )
     ''')
     
     # Migrations for existing users table
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN username TEXT")
     except sqlite3.OperationalError:
         pass
     try:
@@ -259,6 +267,7 @@ class EnvoySuggestion(BaseModel):
 class UserCreate(BaseModel):
     firstName: str
     lastName: str
+    username: str
     email: str
     password: str
     companyName: Optional[str] = None
@@ -290,6 +299,10 @@ class CompleteTaskRequest(BaseModel):
     taskId: str
     userId: str
 
+class AddMemberRequest(BaseModel):
+    userId: str
+    username: str
+
 
 # Endpoints
 @app.get('/')
@@ -307,12 +320,18 @@ async def signup(user: UserCreate, response: Response):
         conn.close()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered.")
 
+    cursor.execute('SELECT * FROM users WHERE username = ?', (user.username,))
+    existing_username = cursor.fetchone()
+    if existing_username:
+        conn.close()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already taken.")
+
     hashed_pass = bcrypt.hashpw(user.password.encode('utf-8'), bcrypt.gensalt())
     user_id = str(uuid.uuid4())
 
     cursor.execute(
-        'INSERT INTO users (id, firstName, lastName, email, password, companyName, role) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        (user_id, user.firstName, user.lastName, user.email, hashed_pass.decode('utf-8'), user.companyName, user.role)
+        'INSERT INTO users (id, firstName, lastName, username, email, password, companyName, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        (user_id, user.firstName, user.lastName, user.username, user.email, hashed_pass.decode('utf-8'), user.companyName, user.role)
     )
     conn.commit()
     conn.close()
@@ -382,6 +401,20 @@ async def login(form_data: UserLogin, response: Response):
     )
 
     return {"access_token": token, "token_type": "bearer"}
+
+@app.get('/users/{user_id}')
+async def get_user_info(user_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id, firstName, lastName, username, email, role, companyName FROM users WHERE id = ?", (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return dict(user)
+    finally:
+        conn.close()
 
 @app.get('/renderTask')
 async def renderTask():
@@ -740,6 +773,38 @@ async def deletePersona(data: PersonaDelete):
             return {"message": "Persona not found, nothing deleted"}
         return {"message": "Persona deleted successfully"}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.post('/team/add_member')
+async def add_team_member(req: AddMemberRequest):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        # 1. Verify Requester is Admin
+        cursor.execute("SELECT role, companyName FROM users WHERE id = ?", (req.userId,))
+        admin = cursor.fetchone()
+        
+        if not admin:
+             raise HTTPException(status_code=404, detail="Requester not found")
+             
+        if admin['role'] != 'admin':
+            raise HTTPException(status_code=403, detail="Only admins can add team members")
+            
+        if not admin['companyName']:
+            raise HTTPException(status_code=400, detail="Admin must belong to a company/organization")
+
+        # 2. Find Target User & Update
+        cursor.execute("UPDATE users SET companyName = ? WHERE username = ?", (admin['companyName'], req.username))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="User with this username not found")
+            
+        conn.commit()
+        return {"message": f"User {req.username} added to {admin['companyName']}"}
+    except Exception as e:
+        conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
