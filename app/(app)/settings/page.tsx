@@ -373,6 +373,7 @@ export default function SettingsPage() {
             <aside className="w-full md:w-64 bg-white dark:bg-[#0F172A] border-r border-gray-200 dark:border-gray-800 flex-shrink-0 z-20">
                 <div className="p-6">
                     <h1 className="text-xl font-bold tracking-tight mb-1">Settings</h1>
+                    <p className="text-[13px] text-gray-200">Coming Soon!</p>
                     <p className="text-xs text-gray-500">TaskLinex v2.4 Control</p>
                 </div>
                 

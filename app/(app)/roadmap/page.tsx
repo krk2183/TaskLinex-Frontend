@@ -4,10 +4,11 @@ import React, {
     createContext, useContext, useReducer, useEffect, useState, useMemo, useRef
 } from 'react';
 import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from "framer-motion";
 import {
     Check, Eye, Loader2, AlertCircle, Sparkles, Info, ChevronRight, Ban, Hourglass, Lightbulb,
     CheckCircle, ArrowRight, XCircle, FolderPlus, Trash2,
-    GitCommit, Layers, Zap, BrainCircuit, UserCog, LayoutGrid, List, Calendar, RefreshCw, Plus, Search, X
+    GitCommit, Layers, Zap, BrainCircuit, UserCog, LayoutGrid, List, Calendar, RefreshCw, Plus, Search, X, ChevronDown, Unlink, Settings2
 } from 'lucide-react';
 import { useAuth } from '../../(auth)/register/AuthContext';
 
@@ -76,6 +77,9 @@ interface Task {
     personaId?: string; // Which "hat" is the owner wearing?
     dependencyIds: string[]; // Array of IDs this task depends on
     handOffToId?: string;
+    dependents?: Task[];
+    dependencyNote?: string;
+    dependencyType?: string;
     // Meta
     isMilestone?: boolean;
     tags: string[];
@@ -261,6 +265,15 @@ const MockAPI = {
         const response = await fetch(`${API_BASE_URL}/envoy/task/${taskId}/friction`);
         if (!response.ok) throw new Error('Failed to fetch Envoy friction data');
         return response.json();
+    },
+    lookupDependency: async (fromId: string, toId: string) => {
+        const response = await fetch(`${API_BASE_URL}/dependencies/lookup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from_task_id: fromId, to_task_id: toId })
+        });
+        if (!response.ok) throw new Error('Dependency not found');
+        return response.json();
     }
 };
 
@@ -335,6 +348,39 @@ function appReducer(state: AppState, action: Action): AppState {
         default: return state;
     }
 }
+
+// Helper to find task in tree
+const findTask = (tasks: Task[], id: string): Task | undefined => {
+    for (const task of tasks) {
+        if (task.id === id) return task;
+        if (task.dependents) {
+            const found = findTask(task.dependents, id);
+            if (found) return found;
+        }
+    }
+    return undefined;
+};
+
+const PortalTooltip = ({ text, rect }: { text: string, rect: DOMRect }) => {
+    if (typeof document === 'undefined') return null;
+    
+    const top = rect.top - 10;
+    const left = rect.left + (rect.width / 2);
+
+    return createPortal(
+        <div 
+            className="fixed z-[9999] flex flex-col items-center pointer-events-none animate-in fade-in zoom-in-95 duration-200"
+            style={{ top: top, left: left, transform: 'translate(-50%, -100%)' }}
+        >
+            <div className="bg-slate-900/90 backdrop-blur text-white text-[10px] px-2.5 py-1.5 rounded-lg shadow-xl border border-slate-700/50 flex items-center gap-1.5 whitespace-nowrap">
+                <span className="text-indigo-400 font-bold uppercase tracking-wider text-[9px]">Note:</span>
+                <span className="font-medium max-w-[200px] truncate">{text}</span>
+            </div>
+            <div className="w-1.5 h-1.5 bg-slate-900/90 rotate-45 -mt-0.5 border-r border-b border-slate-700/50"></div>
+        </div>,
+        document.body
+    );
+};
 
 // 4. SUB-COMPONENTS
 
@@ -518,8 +564,21 @@ const DependencyBadge = ({ type, count, onClick }: { type: string, count: number
 // };
 
 // Task Item
-const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit, personas, onTaskDrop, level = 0 }: { task: Task, user: User | undefined, dispatch: any, isEnvoyActive: boolean,onEdit: (t: Task) => void, personas: Persona[], onTaskDrop: (sourceId: string, targetId: string) => void, level?: number }) => {
+const TaskItem = ({ 
+    task, user, dispatch, isEnvoyActive, onEdit, personas, onTaskDrop, level = 0, 
+    parentId, onToggleExpand, isExpanded, hasDependents 
+}: { 
+    task: Task, user: User | undefined, dispatch: any, isEnvoyActive: boolean,
+    onEdit: (t: Task) => void, personas: Persona[], 
+    onTaskDrop: (sourceId: string, targetId: string) => void, level?: number,
+    parentId?: string | null,
+    onToggleExpand?: () => void,
+    isExpanded?: boolean,
+    hasDependents?: boolean
+}) => {
     const triggerRef = useRef<HTMLButtonElement>(null);
+    const taskRef = useRef<HTMLDivElement>(null);
+    const [hoverRect, setHoverRect] = useState<DOMRect | null>(null);
     const statusColor = {
         'On Track': 'bg-indigo-500', 'At Risk': 'bg-amber-500', 'Blocked': 'bg-rose-500', 'Completed': 'bg-emerald-500'
     };
@@ -535,9 +594,13 @@ const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit, personas, onTas
 
     return (
         <div
+            ref={taskRef}
+            onMouseEnter={() => { if (taskRef.current) setHoverRect(taskRef.current.getBoundingClientRect()); }}
+            onMouseLeave={() => setHoverRect(null)}
             draggable
             onDragStart={(e) => {
-                e.dataTransfer.setData('text/plain', task.id);
+                setHoverRect(null);
+                e.dataTransfer.setData('application/json', JSON.stringify({ taskId: task.id, parentId: parentId || null }));
                 e.dataTransfer.effectAllowed = 'link';
             }}
             onDragOver={(e) => { // Allow drop
@@ -547,9 +610,12 @@ const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit, personas, onTas
             onDrop={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const sourceId = e.dataTransfer.getData('text/plain');
-                if (sourceId && sourceId !== task.id) {
-                    onTaskDrop(sourceId, task.id);
+                const dataStr = e.dataTransfer.getData('application/json');
+                if (dataStr) {
+                    const { taskId: sourceId } = JSON.parse(dataStr);
+                    if (sourceId && sourceId !== task.id) {
+                        onTaskDrop(sourceId, task.id);
+                    }
                 }
             }}
             className="absolute top-1/2 -translate-y-1/2 group cursor-grab active:cursor-grabbing"
@@ -559,6 +625,11 @@ const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit, personas, onTas
                 height: level > 0 ? '2rem' : '2.5rem'
             }}
         >
+            {/* Dependency Note Tooltip */}
+            {task.dependencyNote && hoverRect && (
+                <PortalTooltip text={task.dependencyNote} rect={hoverRect} />
+            )}
+
             {/* NEW: Left Side Trigger (Hover) */}
             <button
                 onClick={() => onEdit(task)} // Trigger the edit flow
@@ -594,6 +665,17 @@ const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit, personas, onTas
                 transition-all transition-gpu duration-300 ease-in-out
                 group-hover:w-max hover:min-w-full hover:z-50 hover:shadow-xl
             `}>
+                {/* Dropdown Toggle for Dependents */}
+                {hasDependents && onToggleExpand && (
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
+                        className="relative z-20 mr-1 p-0.5 rounded hover:bg-black/20 text-white/80 hover:text-white transition-colors"
+                        title="Toggle Dependents"
+                    >
+                        {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                    </button>
+                )}
+
                 <div className="absolute left-0 top-0 bottom-0 bg-black/20" style={{ width: `${task.progress}%` }} />
 
                 <span className={`relative z-10 font-bold text-white truncate transition-all duration-300 ${level > 0 ? 'text-[11px]' : 'text-xs'}`}>
@@ -1276,8 +1358,8 @@ return (
 };
 
 const DependencyCreationModal = ({ sourceId, targetId, tasks, onClose, onConfirm }: { sourceId: string, targetId: string, tasks: Task[], onClose: () => void, onConfirm: (type: DependencyType, note: string) => void }) => {
-    const sourceTask = tasks.find(t => t.id === sourceId);
-    const targetTask = tasks.find(t => t.id === targetId);
+    const sourceTask = findTask(tasks, sourceId);
+    const targetTask = findTask(tasks, targetId);
     const [type, setType] = useState<DependencyType>('blocked_by');
     const [note, setNote] = useState('');
 
@@ -1317,6 +1399,76 @@ const DependencyCreationModal = ({ sourceId, targetId, tasks, onClose, onConfirm
                     <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 rounded-lg transition-colors">Cancel</button>
                     <button onClick={() => onConfirm(type, note)} className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-lg shadow-indigo-500/20 transition-all">Create Link</button>
                 </div>
+            </div>
+        </div>
+    );
+};
+
+const DependencyEditModal = ({ fromId, toId, tasks, onClose, onUpdate }: { fromId: string, toId: string, tasks: Task[], onClose: () => void, onUpdate: () => void }) => {
+    const { state, dispatch } = useContext(AppContext)!;
+    const fromTask = findTask(tasks, fromId);
+    const toTask = findTask(tasks, toId);
+    const [loading, setLoading] = useState(false);
+
+    const handleRemove = async () => {
+        setLoading(true);
+        try {
+            const dep = await MockAPI.lookupDependency(fromId, toId);
+            await MockAPI.deleteDependency(dep.id, state.currentUser?.id || 'u1');
+            onUpdate();
+            onClose();
+        } catch (e) {
+            console.error(e);
+            alert("Failed to remove dependency");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleChangeType = async (newType: DependencyType) => {
+        setLoading(true);
+        try {
+            const dep = await MockAPI.lookupDependency(fromId, toId);
+            await MockAPI.updateDependency(dep.id, { type: newType }, state.currentUser?.id || 'u1');
+            onUpdate();
+            onClose();
+        } catch (e) {
+            console.error(e);
+            alert("Failed to update dependency");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (!fromTask || !toTask) return null;
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Manage Dependency</h3>
+                <p className="text-sm text-slate-500 mb-6">
+                    <span className="font-bold text-slate-800 dark:text-slate-200">{toTask.title}</span> is currently dependent on <span className="font-bold text-slate-800 dark:text-slate-200">{fromTask.title}</span>.
+                </p>
+
+                <div className="space-y-3">
+                    <button onClick={handleRemove} disabled={loading} className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 font-bold text-sm transition-colors">
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Unlink className="w-4 h-4" />}
+                        Remove Dependency
+                    </button>
+                    
+                    <div className="relative">
+                        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200 dark:border-slate-700"></div></div>
+                        <div className="relative flex justify-center text-xs uppercase"><span className="bg-white dark:bg-slate-900 px-2 text-slate-500">Or Change Type</span></div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                        <button onClick={() => handleChangeType('blocked_by')} className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-center">Blocked By</button>
+                        <button onClick={() => handleChangeType('waiting_on')} className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-center">Waiting On</button>
+                        <button onClick={() => handleChangeType('helpful_if_done_first')} className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-center">Helpful</button>
+                    </div>
+                </div>
+
+                <button onClick={onClose} className="mt-6 w-full py-2 text-sm font-medium text-slate-500 hover:text-slate-700">Cancel</button>
             </div>
         </div>
     );
@@ -1521,23 +1673,24 @@ const SprintView = ({ tasks, users }: { tasks: Task[], users: User[] }) => {
     );
 };
 
-const RoadmapRow = ({ task, allProjectTasks, level, onEdit, onTaskDrop, dispatch, isEnvoyActive, personas }: {
+const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyActiveTaskId, personas, parentId }: {
     task: Task;
-    allProjectTasks: Task[];
+    users: User[];
     level: number;
     onEdit: (t: Task) => void;
     onTaskDrop: (sourceId: string, targetId: string) => void;
     dispatch: React.Dispatch<Action>;
-    isEnvoyActive: boolean;
+    envoyActiveTaskId: string | null;
     personas: Persona[];
+    parentId?: string | null;
 }) => {
     const [isExpanded, setIsExpanded] = useState(true);
-    const dependents = allProjectTasks.filter(t => t.dependencyIds.includes(task.id));
+    const dependents = task.dependents || [];
 
     return (
-        <div className="space-y-1">
+        <div className="space-y-0.5">
             <div className={`relative ${level > 0 ? 'h-12' : 'h-14'}`} style={{ paddingLeft: `${level * 24}px` }}>
-                {dependents.length > 0 && (
+                {/* {dependents.length > 0 && (
                     <button 
                         onClick={() => setIsExpanded(!isExpanded)} 
                         className="absolute left-0 top-1/2 -translate-y-1/2 z-30 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800"
@@ -1546,18 +1699,42 @@ const RoadmapRow = ({ task, allProjectTasks, level, onEdit, onTaskDrop, dispatch
                     >
                         <ChevronRight className={`w-4 h-4 text-slate-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                     </button>
+                )} */}
+                {/* Connector Line for Children */}
+                {level > 0 && (
+                    <div className="absolute left-0 top-0 bottom-1/2 w-4 border-l-2 border-b-2 border-slate-300 dark:border-slate-700 rounded-bl-xl" 
+                         style={{ left: `${(level * 24) - 12}px` }} 
+                    />
                 )}
-                <TaskItem task={task} level={level} onEdit={onEdit} onTaskDrop={onTaskDrop} dispatch={dispatch} isEnvoyActive={isEnvoyActive} personas={personas} user={undefined} />
-            </div>
-            {isExpanded && dependents.map(dep => (
-                <RoadmapRow 
-                    key={dep.id}
-                    task={dep}
-                    allProjectTasks={allProjectTasks}
-                    level={level + 1}
-                    onEdit={onEdit} onTaskDrop={onTaskDrop} dispatch={dispatch} isEnvoyActive={isEnvoyActive} personas={personas}
+                <TaskItem 
+                    task={task} user={users.find(u => u.id === task.ownerId)} dispatch={dispatch} isEnvoyActive={envoyActiveTaskId === task.id} onEdit={onEdit} personas={personas} onTaskDrop={onTaskDrop} level={level} 
+                    parentId={parentId}
+                    onToggleExpand={() => setIsExpanded(!isExpanded)}
+                    isExpanded={isExpanded}
+                    hasDependents={dependents.length > 0}
                 />
-            ))}
+            </div>
+            <AnimatePresence>
+                {isExpanded && dependents.length > 0 && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden"
+                    >
+                        {dependents.map(dep => (
+                            <RoadmapRow 
+                                key={dep.id}
+                                task={dep}
+                                users={users}
+                                level={level + 1}
+                                onEdit={onEdit} onTaskDrop={onTaskDrop} dispatch={dispatch} envoyActiveTaskId={envoyActiveTaskId} personas={personas}
+                                parentId={task.id}
+                            />
+                        ))}
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };
@@ -1569,6 +1746,7 @@ export default function RoadmapPage() {
     const [addProjectVisible, setAddProjectVisible] = useState(false);
     const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
     const [dependencyModal, setDependencyModal] = useState<{ sourceId: string, targetId: string } | null>(null);
+    const [dependencyEditModal, setDependencyEditModal] = useState<{ fromId: string, toId: string } | null>(null);
     const [timelineScale, setTimelineScale] = useState<'Week' | 'Month' | 'Quarter'>('Week');
     const [error, setError] = useState<string | null>(null);
     const loading = state.isLoading;
@@ -1713,6 +1891,20 @@ export default function RoadmapPage() {
 
     const [addVisible,setAVisible] = useState(false);
 
+    const handleBackgroundDrop = async (e: React.DragEvent) => {
+        e.preventDefault();
+        const dataStr = e.dataTransfer.getData('application/json');
+        if (!dataStr) return;
+        
+        try {
+            const { taskId, parentId } = JSON.parse(dataStr);
+            // If dragged item has a parent (is a child) and is dropped on background
+            if (parentId) {
+                setDependencyEditModal({ fromId: parentId, toId: taskId });
+            }
+        } catch(e) {}
+    };
+
     return (
         <AppContext.Provider value={{ state, dispatch }}>
             <div className="min-h-screen bg-slate-50 dark:bg-[#0B1120] text-slate-900 dark:text-slate-100 flex flex-col font-sans animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out">
@@ -1802,7 +1994,7 @@ export default function RoadmapPage() {
 
                 {/* GANTT CANVAS */}
                 {state.layoutMode === 'Roadmap' && (
-                    <div className="flex-1 overflow-auto relative custom-scrollbar bg-slate-50 dark:bg-[#0B1120]">
+                    <div className="flex-1 overflow-auto relative custom-scrollbar bg-slate-50 dark:bg-[#0B1120]" onDragOver={(e) => e.preventDefault()} onDrop={handleBackgroundDrop}>
                     <div className="min-w-[1400px] p-8">
 
                         {/* TIMELINE DATES */}
@@ -1901,22 +2093,22 @@ export default function RoadmapPage() {
                                                 {/* Animated Task Container */}
                                                 <div className={`grid transition-all duration-300 ease-in-out ${isCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}>
                                                     <div className="overflow-hidden">
-                                                        <div className="relative min-h-[100px]">
-                                                            {projectTasks.filter(t => !t.dependencyIds.some(depId => projectTasks.find(p => p.id === depId))).map(task => (
+                                                        <div className="relative min-h-[100px] space-y-1">
+                                                            {projectTasks.map(task => (
                                                                 <RoadmapRow
                                                                     key={task.id}
                                                                     task={task}
-                                                                    allProjectTasks={projectTasks}
+                                                                    users={state.users}
                                                                     level={0}
-                                                                    user={state.users.find(u => u.id === task.ownerId)}
                                                                     dispatch={dispatch}
-                                                                    isEnvoyActive={state.envoyActive === task.id}
+                                                                    envoyActiveTaskId={state.envoyActive}
                                                                     onEdit={(t) => {
                                                                         setTaskToEdit(t);
                                                                         setAVisible(true);
                                                                     }}
                                                                     personas={state.personas}
                                                                     onTaskDrop={(s, t) => setDependencyModal({ sourceId: s, targetId: t })}
+                                                                    parentId={null}
                                                                 />
                                                             ))}
                                                         </div>
@@ -1991,6 +2183,20 @@ export default function RoadmapPage() {
                             tasks={state.tasks}
                             onClose={() => setDependencyModal(null)}
                             onConfirm={handleCreateDependency}
+                        />
+                    )}
+
+                    {/* Dependency Edit Modal (Drag Out) */}
+                    {dependencyEditModal && (
+                        <DependencyEditModal
+                            fromId={dependencyEditModal.fromId}
+                            toId={dependencyEditModal.toId}
+                            tasks={state.tasks}
+                            onClose={() => setDependencyEditModal(null)}
+                            onUpdate={async () => {
+                                const data = await MockAPI.fetchData();
+                                dispatch({ type: 'INIT_DATA', payload: data });
+                            }}
                         />
                     )}
 

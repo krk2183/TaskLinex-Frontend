@@ -4,3 +4,4 @@ bcrypt
 pyjwt
 pydantic[email]
 google-genai
+httpx
