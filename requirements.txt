@@ -1,7 +1,9 @@
 fastapi
 uvicorn[standard]
+pydantic
+python-dotenv
 bcrypt
-pyjwt
-pydantic[email]
-google-genai
+jwt
 httpx
+supabase
+google-genai
