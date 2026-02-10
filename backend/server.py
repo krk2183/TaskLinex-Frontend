@@ -507,7 +507,15 @@ async def signup(user: UserCreate, response: Response):
         secure=False
     )
 
-    return {"access_token": token, "token_type": "bearer", "id": user_id, "role": user.role}
+    return {
+        "access_token": token, 
+        "token_type": "bearer", 
+        "id": user_id, 
+        "role": user.role,
+        "username": user.username,
+        "firstName": user.firstName,
+        "lastName": user.lastName
+    }
 
 @app.post('/login')
 async def login(form_data: UserLogin, response: Response):
@@ -857,6 +865,7 @@ async def renderTask():
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     try:
+        # 1. Fetch all tasks with owner info
         cursor.execute("""
             SELECT 
                 t.*, 
@@ -865,11 +874,16 @@ async def renderTask():
                 (SELECT count(*) FROM dependencies WHERE to_task_id = t.id AND type = 'blocked_by') as blocked_by_count,
                 (SELECT count(*) FROM dependencies WHERE to_task_id = t.id AND type = 'waiting_on') as waiting_on_count,
                 (SELECT count(*) FROM dependencies WHERE to_task_id = t.id AND type = 'helpful_if_done_first') as helpful_if_done_first_count
+                u.lastName
             FROM tasks t 
             LEFT JOIN users u ON t.ownerId = u.id
         """)
         rows = cursor.fetchall()
         tasks = []
+        if not rows:
+            return []
+
+        tasks_map = {}
         for row in rows:
             task_dict = dict(row)
             # Parse JSON fields
@@ -890,9 +904,29 @@ async def renderTask():
                 task_dict['ownerName'] = f"{fname or ''} {lname or ''}".strip()
             else:
                 task_dict['ownerName'] = "Unknown"
+            task_dict['ownerName'] = f"{fname or ''} {lname or ''}".strip() or "Unknown"
+            
+            # Initialize dependents array
+            task_dict['dependents'] = []
+            tasks_map[task_dict['id']] = task_dict
 
             tasks.append(task_dict)
         return tasks
+        # 2. Fetch all dependencies and build the tree
+        cursor.execute("SELECT from_task_id, to_task_id FROM dependencies")
+        dependencies_rows = cursor.fetchall()
+        
+        dependents_ids = set()
+        for dep in dependencies_rows:
+            from_id, to_id = dep['from_task_id'], dep['to_task_id']
+            if from_id in tasks_map and to_id in tasks_map:
+                tasks_map[from_id]['dependents'].append(tasks_map[to_id])
+                dependents_ids.add(to_id)
+
+        # 3. Return only top-level tasks (those that are not dependents)
+        final_tasks = [task for task_id, task in tasks_map.items() if task_id not in dependents_ids]
+        
+        return final_tasks
     except Exception as e:
         print(f"Error rendering tasks: {e}")
         raise HTTPException(status_code=500, detail=str(e))

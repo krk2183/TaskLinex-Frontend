@@ -15,12 +15,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const pathname = usePathname();
 
   useEffect(() => {
+    // Define public paths that don't require authentication
+    const publicPaths = ['/register', '/login', '/'];
+    
     const storedUserId = localStorage.getItem('userId');
-    if (!storedUserId || storedUserId === 'undefined' || storedUserId === 'null') {
-      // If there's no valid user ID, redirect them to the register page.
-      router.push('/register');
+    
+    if (!storedUserId) {
+      // If not logged in and trying to access a protected route, redirect to login
+      if (!publicPaths.includes(pathname)) {
+        router.push('/register'); // Or /login if you have a dedicated route, but keeping register as fallback based on file structure
+      }
     } else {
       setUserId(storedUserId);
+      // Optional: Redirect to roadmap if already logged in and on a public auth page
+      if (publicPaths.includes(pathname) && pathname !== '/') {
+        router.push('/roadmap');
+      }
     }
   }, [pathname, router]); // Rerun this check if the path changes
 

@@ -77,6 +77,7 @@ const BackButton = () => (
 // --- PAGE ---
 
 export default function SignupPage() {
+  const [isLogin, setIsLogin] = React.useState(false);
   const [Data, setData] = React.useState({
     firstName: "",
     lastName: "",
@@ -99,28 +100,39 @@ export default function SignupPage() {
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (Data.password !== Data.confirmPassword) {
+    if (!isLogin && Data.password !== Data.confirmPassword) {
       setError("Passwords do not match");
       return;
     }
     setLoading(true);
-    const { confirmPassword, ...formData } = Data;
+    
     try {
+      const endpoint = isLogin ? "login" : "signup";
+      const body = isLogin 
+        ? { email: Data.email, password: Data.password, rememberMe: Data.rememberMe }
+        : (() => {
+            const { confirmPassword, ...rest } = Data;
+            return rest;
+          })();
       
-      const response = await fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/signup`, {
+      const response = await fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/${endpoint}`, {
         method: "POST", 
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.detail || "Signup failed. Please try again.");
+        throw new Error(errorData?.detail || `${isLogin ? "Login" : "Signup"} failed. Please try again.`);
       }
       
       const data = await response.json();
       if (data && data.id) {
+        // THIS FIXES THE LOGIN ISSUE: Setting localStorage on both Login and Signup
         localStorage.setItem("userId", data.id);
+        localStorage.setItem("access_token", data.access_token);
+        if (data.role) localStorage.setItem("user_role", data.role);
+        
         window.location.href = "/roadmap";
       } else {
         window.location.href = "/login";
@@ -188,8 +200,8 @@ export default function SignupPage() {
         >
           
           <div className="mb-10 lg:mt-24 mt-20">
-            <h1 className="text-3xl font-bold text-white tracking-tight mb-1">Initialize Workspace</h1>
-            <p className="text-slate-400">Begin your 14-day trial. No credit card required.</p>
+            <h1 className="text-3xl font-bold text-white tracking-tight mb-1">{isLogin ? "Welcome Back" : "Initialize Workspace"}</h1>
+            <p className="text-slate-400">{isLogin ? "Enter your credentials to access your workspace." : "Begin your 14-day trial. No credit card required."}</p>
           </div>
 
           <form className="space-y-5" onSubmit={handleSignup}>
@@ -199,6 +211,7 @@ export default function SignupPage() {
                 {error}
               </div>
             )}
+            {!isLogin && (
             <div className="grid grid-cols-2 gap-4">
                 <InputField 
                 label="First Name" 
@@ -221,7 +234,9 @@ export default function SignupPage() {
                 required
                 />
             </div>
+            )}
 
+            {!isLogin && (
             <InputField 
               label="Username" 
               type="text" 
@@ -232,6 +247,7 @@ export default function SignupPage() {
               icon={User}
               required
             />
+            )}
 
             <InputField 
               label="Work Email" 
@@ -255,6 +271,7 @@ export default function SignupPage() {
               required
             />
 
+            {!isLogin && (
             <InputField 
               label="Confirm Password" 
               type="password" 
@@ -265,7 +282,9 @@ export default function SignupPage() {
               icon={Lock}
               required
             />
+            )}
 
+            {!isLogin && (
             <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
                   Account Type
@@ -287,7 +306,9 @@ export default function SignupPage() {
                     </button>
                 </div>
             </div>
+            )}
 
+            {!isLogin && (
             <InputField 
               label="Company Name" 
               type="text" 
@@ -297,6 +318,7 @@ export default function SignupPage() {
               placeholder="Acme Inc." 
               icon={Briefcase} 
             />
+            )}
 
             <div className="flex items-center justify-center gap-2">
               <input
@@ -315,14 +337,15 @@ export default function SignupPage() {
 
             <div className="pt-2">
                 <button type="submit" disabled={loading} className="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-lg shadow-[0_0_20px_rgba(124,58,237,0.3)] hover:shadow-[0_0_25px_rgba(124,58,237,0.5)] transition-all flex items-center justify-center gap-2 group">
-                {loading ? "Creating Account..." : "Create Account"} {!loading && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
+                {loading ? "Processing..." : (isLogin ? "Sign In" : "Create Account")} {!loading && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
                 </button>
             </div>
 
           <div className="mt-5 flex justify-center w-full">
            
-             <div className="mt-0.5 text-sm">Already have an account?</div>  <a href="/login" className="ml-2 text-violet-400 hover:text-violet-300 font-medium">
-              Sign in
+             <div className="mt-0.5 text-sm">{isLogin ? "Don't have an account?" : "Already have an account?"}</div>  
+             <a onClick={() => { setIsLogin(!isLogin); setError(""); }} className="ml-2 text-violet-400 hover:text-violet-300 font-medium cursor-pointer">
+              {isLogin ? "Create one" : "Sign in"}
             </a>
           </div>
 
