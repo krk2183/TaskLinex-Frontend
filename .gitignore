@@ -35,7 +35,7 @@ yarn-error.log*
 # .env.local
 
 # vercel
-.env.local
+# .env.local
 .vercel
 
 # typescript
@@ -43,5 +43,4 @@ yarn-error.log*
 
 
 #Self
-/backend
 # ngrok.yml
