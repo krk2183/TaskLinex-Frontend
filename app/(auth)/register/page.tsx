@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, ArrowLeft, Mail, User, Briefcase, ChevronRight, Lock, AlertCircle } from "lucide-react";
+import { useAuth } from "./AuthContext";
 
 // --- COMPONENTS ---
 
@@ -79,6 +80,7 @@ const BackButton = () => (
 
 export default function SignupPage() {
   const router = useRouter();
+  const { login, signup } = useAuth();
   const [isLogin, setIsLogin] = React.useState(false);
   const [Data, setData] = React.useState({
     firstName: "",
@@ -107,40 +109,34 @@ export default function SignupPage() {
       return;
     }
     setLoading(true);
+    setError(""); // Clear previous errors
     
     try {
-      const endpoint = isLogin ? "login" : "signup";
-      const body = isLogin 
-        ? { email: Data.email, password: Data.password, rememberMe: Data.rememberMe }
-        : (() => {
-            const { confirmPassword, ...rest } = Data;
-            return rest;
-          })();
-      
-      const response = await fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/${endpoint}`, {
-        method: "POST", 
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.detail || `${isLogin ? "Login" : "Signup"} failed. Please try again.`);
-      }
-      
-      const data = await response.json();
-      if (data && data.id) {
-        // THIS FIXES THE LOGIN ISSUE: Setting localStorage on both Login and Signup
-        localStorage.setItem("userId", data.id);
-        localStorage.setItem("access_token", data.access_token);
-        if (data.role) localStorage.setItem("user_role", data.role);
-        
+      if (isLogin) {
+        await login(Data.email, Data.password);
         router.push("/roadmap");
       } else {
-        router.push("/login");
+        const { data } = await signup(Data.email, Data.password, {
+          data: {
+            firstName: Data.firstName,
+            lastName: Data.lastName,
+            username: Data.username,
+            companyName: Data.companyName,
+            role: Data.role
+          }
+        });
+        
+        if (data.session) {
+          router.push("/roadmap");
+        } else if (data.user) {
+          // Email verification required
+          setError("Please check your email to verify your account.");
+        }
       }
     } catch (err: any) {
+      console.error("Authentication Error:", err);
       setError(err.message || "An unexpected error occurred.");
+    } finally {
       setLoading(false); 
     }
   };
@@ -259,7 +255,7 @@ export default function SignupPage() {
               onChange={handleChange}
               placeholder="jane@company.com" 
               icon={Mail}
-              required
+              // required
             />
 
             <InputField 

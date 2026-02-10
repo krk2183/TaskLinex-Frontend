@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowRight, Lock, Mail, Github, Chrome, ShieldCheck, ArrowLeft, AlertCircle } from "lucide-react";
+import { useAuth } from "../../register/AuthContext";
 
 // --- COMPONENTS ---
 
@@ -15,8 +16,6 @@ const Logo = () => (
     </span>
   </div>
 );
-
-const port = process.env.NEXT_PUBLIC_SERVER_PORT;
 
 const InputField = ({ 
   label, 
@@ -74,6 +73,7 @@ const BackButton = () => (
 // --- PAGE ---
 
 export default function LoginPage() {
+  const { login } = useAuth();
   const [data, setData] = React.useState({
     email: "",
     password: "",
@@ -93,19 +93,8 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.detail || "Login failed. Please check your credentials.");
-      }
-      
-      const result = await response.json();
-      localStorage.setItem("token", result.access_token);
+      await login(data.email, data.password);
+      // Redirect is handled in AuthContext or we can force it here
       window.location.href = "/pulse";
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred.");

@@ -2,9 +2,20 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import { createClient, Session, User } from '@supabase/supabase-js';
+
+// Initialize Supabase client
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_KEY!;
+export const supabase = createClient(supabaseUrl, supabaseKey);
 
 interface AuthContextType {
-  userId: string | null;
+  user: User | null;
+  jwt: string | null;
+  login: (email: string, password: string) => Promise<any>;
+  signup: (email: string, password: string, options?: any) => Promise<any>;
+  logout: () => Promise<void>;
+  loading: boolean;
 }
 
 const publicPaths = ['/register', '/login', '/'];
@@ -12,34 +23,88 @@ const publicPaths = ['/register', '/login', '/'];
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [userId, setUserId] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    
-    const storedUserId = localStorage.getItem('userId');
-    
-    if (!storedUserId) {
-      // If not logged in and trying to access a protected route, redirect to login
-      if (!publicPaths.includes(pathname)) {
-        router.push('/register'); // Or /login if you have a dedicated route, but keeping register as fallback based on file structure
-      }
-    } else {
-      setUserId(storedUserId);
-      // Optional: Redirect to roadmap if already logged in and on a public auth page
-      if (publicPaths.includes(pathname) && pathname !== '/') {
-        router.push('/roadmap');
-      }
-    }
-  }, [pathname, router]); // Rerun this check if the path changes
+    const setData = async () => {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) console.error('Error getting session:', error);
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
+    };
 
-  // We can show a loading state here while the user ID is being verified.
-  if (!userId && !publicPaths.includes(pathname)) {
-    return null; // Or a loading spinner
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session) {
+        console.log("Supabase JWT:", session.access_token);
+      }
+      setLoading(false);
+      
+      if (session) {
+         if (publicPaths.includes(pathname) && pathname !== '/') {
+             router.push('/roadmap');
+         }
+      } else {
+         if (!publicPaths.includes(pathname)) {
+             router.push('/register');
+         }
+      }
+    });
+
+    setData();
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, [pathname, router]);
+
+  const login = async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    return data;
+  };
+
+  const signup = async (email: string, password: string, options?: any) => {
+    const { data, error } = await supabase.auth.signUp({ 
+      email, 
+      password, 
+      options 
+    });
+    if (error) {
+      console.error("Supabase Signup Error:", error);
+      throw error;
+    }
+    return data;
+  };
+
+  const logout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+    router.push('/register');
+  };
+
+  if (loading && !publicPaths.includes(pathname)) {
+    return null; 
   }
 
-  return <AuthContext.Provider value={{ userId }}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ 
+      user, 
+      jwt: session?.access_token ?? null, 
+      login, 
+      signup, 
+      logout, 
+      loading 
+    }}>
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
 export const useAuth = () => {

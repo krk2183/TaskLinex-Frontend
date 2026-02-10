@@ -155,19 +155,19 @@ const MOCK_TASKS: Task[] = [
     }
 ];
 
-const PORT_SUFFIX = process.env.NEXT_PUBLIC_NPM_PORT;
-const API_BASE_URL = PORT_SUFFIX ? `http://192.168.0.${PORT_SUFFIX}:8000` : 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // Async Placeholder
 const MockAPI = {
     sleep: (ms: number) => new Promise(r => setTimeout(r, ms)),
     // Newly added: Fetchdata to replace MOCK data
-    fetchData: async () => {
+    fetchData: async (token: string) => {
+        const headers = { Authorization: `Bearer ${token}` };
         try {
             const [tasksRes, personasRes, projectsRes] = await Promise.all([
-                fetch(`${API_BASE_URL}/renderTask`, { cache: 'no-store' }),
-                fetch(`${API_BASE_URL}/renderPersona`, { cache: 'no-store' }),
-                fetch(`${API_BASE_URL}/projects`, { cache: 'no-store' })
+                fetch(`${API_BASE_URL}/renderTask`, { headers, cache: 'no-store' }),
+                fetch(`${API_BASE_URL}/renderPersona`, { headers, cache: 'no-store' }),
+                fetch(`${API_BASE_URL}/projects`, { headers, cache: 'no-store' })
             ]);
             
             const tasks = await tasksRes.json();
@@ -195,10 +195,10 @@ const MockAPI = {
         }
     },
     // Newly added: CreateTask to replace MOCK data
-    createTask: async (task: Task) => {
+    createTask: async (task: Task, token: string) => {
         const response = await fetch(`${API_BASE_URL}/createTask`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify(task)
         });
         if (!response.ok)  {
@@ -207,10 +207,10 @@ const MockAPI = {
         }
         return response.json();
     },
-    completeTask: async (taskId: string, userId: string) => {
+    completeTask: async (taskId: string, userId: string, token: string) => {
         const response = await fetch(`${API_BASE_URL}/completeTask`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({ taskId, userId })
         });
         if (!response.ok) throw new Error('Failed to complete task');
@@ -231,45 +231,46 @@ const MockAPI = {
         await MockAPI.sleep(1000);
         return { success: true, message: `Envoy executed: ${action}` };
     },
-    createDependency: async (dep: { from_task_id: string, to_task_id: string, type: string, note?: string, userId: string }) => {
+    createDependency: async (dep: { from_task_id: string, to_task_id: string, type: string, note?: string, userId: string }, token: string) => {
         const response = await fetch(`${API_BASE_URL}/dependencies`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify(dep)
         });
         if (!response.ok) throw new Error('Failed to create dependency');
         return response.json();
     },
-    fetchDependencies: async (taskId: string) => {
-        const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/dependencies`);
+    fetchDependencies: async (taskId: string, token: string) => {
+        const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/dependencies`, { headers: { Authorization: `Bearer ${token}` } });
         if (!response.ok) throw new Error('Failed to fetch dependencies');
         return response.json();
     },
-    updateDependency: async (depId: string, update: { type?: DependencyType, note?: string }, userId: string) => {
+    updateDependency: async (depId: string, update: { type?: DependencyType, note?: string }, userId: string, token: string) => {
         const response = await fetch(`${API_BASE_URL}/dependencies/${depId}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({ ...update, userId })
         });
         if (!response.ok) throw new Error('Failed to update dependency');
         return response.json();
     },
-    deleteDependency: async (depId: string, userId: string) => {
+    deleteDependency: async (depId: string, userId: string, token: string) => {
         const response = await fetch(`${API_BASE_URL}/dependencies/${depId}/${userId}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
         });
         if (!response.ok) throw new Error('Failed to delete dependency');
         return response.json();
     },
-    fetchEnvoyFriction: async (taskId: string) => {
-        const response = await fetch(`${API_BASE_URL}/envoy/task/${taskId}/friction`);
+    fetchEnvoyFriction: async (taskId: string, token: string) => {
+        const response = await fetch(`${API_BASE_URL}/envoy/task/${taskId}/friction`, { headers: { Authorization: `Bearer ${token}` } });
         if (!response.ok) throw new Error('Failed to fetch Envoy friction data');
         return response.json();
     },
-    lookupDependency: async (fromId: string, toId: string) => {
+    lookupDependency: async (fromId: string, toId: string, token: string) => {
         const response = await fetch(`${API_BASE_URL}/dependencies/lookup`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({ from_task_id: fromId, to_task_id: toId })
         });
         if (!response.ok) throw new Error('Dependency not found');
@@ -466,102 +467,6 @@ const DependencyBadge = ({ type, count, onClick }: { type: string, count: number
         </button>
     );
 };
-
-// 4.2 The "Envoy" AI Assistant Popup
-// const EnvoyPopup = ({ task, onClose, triggerRef }: { task: Task, onClose: () => void, triggerRef: React.RefObject<HTMLElement> }) => {
-//     const [status, setStatus] = useState<'idle' | 'thinking' | 'done'>('idle');
-//     const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
-//     const popupRef = useRef<HTMLDivElement>(null);
-
-//     useEffect(() => {
-//         if (triggerRef.current) {
-//             const rect = triggerRef.current.getBoundingClientRect();
-//             setCoords({
-//                 top: rect.bottom + 10,
-//                 left: rect.left
-//             });
-//         }
-//     }, [triggerRef]);
-
-//     // Handle click outside
-//     useEffect(() => {
-//         const handleClickOutside = (event: MouseEvent) => {
-//             if (
-//                 popupRef.current &&
-//                 !popupRef.current.contains(event.target as Node) &&
-//                 triggerRef.current &&
-//                 !triggerRef.current.contains(event.target as Node)
-//             ) {
-//                 onClose();
-//             }
-//         };
-//         document.addEventListener('mousedown', handleClickOutside);
-//         return () => document.removeEventListener('mousedown', handleClickOutside);
-//     }, [onClose, triggerRef]);
-
-//     // Close on scroll/resize to prevent detached popup
-//     useEffect(() => {
-//         const handleDismiss = () => onClose();
-//         window.addEventListener('scroll', handleDismiss, true);
-//         window.addEventListener('resize', handleDismiss);
-//         return () => {
-//             window.removeEventListener('scroll', handleDismiss, true);
-//             window.removeEventListener('resize', handleDismiss);
-//         };
-//     }, [onClose]);
-
-//     const handleAction = async () => {
-//         setStatus('thinking');
-//         await MockAPI.triggerEnvoyAction(task.id, 'Optimized Schedule');
-//         setStatus('done');
-//         setTimeout(onClose, 1500);
-//     };
-
-//     if (typeof document === 'undefined' || !coords) return null;
-
-//     return createPortal(
-//         <div
-//             ref={popupRef}
-//             className="fixed z-[9999] w-64 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-indigo-100 dark:border-indigo-900 p-4 animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-200 ease-out"
-//             style={{ top: coords.top, left: coords.left }}
-//         >
-//             <div className="flex items-center gap-2 mb-3 border-b border-gray-100 dark:border-gray-700 pb-2">
-//                 <BrainCircuit className="w-4 h-4 text-indigo-500" />
-//                 <span className="font-bold text-xs uppercase tracking-wider text-indigo-900 dark:text-indigo-100">Envoy AI</span>
-//             </div>
-
-//             {status === 'idle' && (
-//                 <>
-//                     <p className="text-xs text-slate-600 dark:text-slate-300 mb-3">
-//                         {task.envoySuggestion?.message || "I can help optimize this task's allocation."}
-//                     </p>
-//                     <button
-//                         onClick={handleAction}
-//                         className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
-//                     >
-//                         <Zap className="w-3 h-3" />
-//                         {task.envoySuggestion?.actionLabel || "Analyze Impact"}
-//                     </button>
-//                 </>
-//             )}
-
-//             {status === 'thinking' && (
-//                 <div className="flex flex-col items-center py-2 text-indigo-500">
-//                     <RefreshCw className="w-5 h-5 animate-spin mb-2" />
-//                     <span className="text-xs">Optimizing critical path...</span>
-//                 </div>
-//             )}
-
-//             {status === 'done' && (
-//                 <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-//                     <CheckCircle className="w-5 h-5" />
-//                     <span className="text-xs font-bold">Optimization Applied</span>
-//                 </div>
-//             )}
-//         </div>,
-//         document.body
-//     );
-// };
 
 // Task Item
 const TaskItem = ({ 
@@ -789,6 +694,7 @@ const WorkloadHUD = () => {
 // Add Task Modal
 const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     const { state, dispatch } = useContext(AppContext)!;
+    const { jwt, user } = useAuth();
     const headline = taskToEdit?  'Update Task Details': "Add New Task";
     const buttontitle = taskToEdit? 'Edit Task':'Create Task';
 
@@ -801,6 +707,8 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     const [status, setStatus] = useState<TaskStatus>(taskToEdit?.status || 'On Track');
     const [priority, setPriority] = useState<Priority>(taskToEdit?.priority || 'Medium');
 
+    const currentUserId = state.currentUser?.id || user?.id;
+
     const handleDelete = async (e: React.FormEvent) => {
         e.preventDefault();
                 if (!taskToEdit) return;
@@ -809,8 +717,8 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
             try {
                 const response = await fetch(`${API_BASE_URL}/deleteTask`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: taskToEdit.id, userId: state.currentUser?.id })
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+                    body: JSON.stringify({ id: taskToEdit.id, userId: currentUserId })
                 });
 
                 if (!response.ok) throw new Error('Failed to delete task');
@@ -828,9 +736,9 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     const handleComplete = async () => {
         if (!taskToEdit) return;
         try {
-            await MockAPI.completeTask(taskToEdit.id, state.currentUser?.id || 'u1');
+            await MockAPI.completeTask(taskToEdit.id, currentUserId || 'u1', jwt!);
             // Refresh data
-            const data = await MockAPI.fetchData();
+            const data = await MockAPI.fetchData(jwt!);
             dispatch({ type: 'INIT_DATA', payload: data });
             onClose();
         } catch (e) {
@@ -843,18 +751,18 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
         try {
             const response = await fetch(`${API_BASE_URL}/updateTask`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
                 body: JSON.stringify({ 
                     ...taskToEdit, 
                     status: 'On Track', 
                     progress: 0,
-                    userId: state.currentUser?.id
+                    userId: currentUserId
                 })
             });
 
             if (!response.ok) throw new Error('Failed to uncomplete task');
 
-            const data = await MockAPI.fetchData();
+            const data = await MockAPI.fetchData(jwt!);
             dispatch({ type: 'INIT_DATA', payload: data });
             onClose();
         } catch (e) {
@@ -865,6 +773,12 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     // handleSubmit decides between adding tasks and updating tasks
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (!jwt) {
+            alert("You are not authenticated. Please log in.");
+            return;
+        }
+
         const taskPayload = {
             id: taskToEdit ? taskToEdit.id : `t${Date.now()}`,
             projectId,
@@ -875,10 +789,10 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
             progress: taskToEdit ? taskToEdit.progress : 0,
             status,
             priority,
-            ownerId,
+            ownerId: ownerId || currentUserId,
             dependencyIds: taskToEdit ? taskToEdit.dependencyIds : [],
             tags: taskToEdit ? taskToEdit.tags : [],
-            userId: state.currentUser?.id
+            userId: currentUserId
         };
 
 
@@ -887,11 +801,21 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
                 // Use the dynamic IP or localhost consistently
                 const response = await fetch(`${API_BASE_URL}${endpoint}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
                     body: JSON.stringify(taskPayload)
                 });
 
-                if (!response.ok) throw new Error('Failed to save task');
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    let errorData;
+                    try {
+                        errorData = JSON.parse(errorText);
+                    } catch {
+                        errorData = { detail: errorText };
+                    }
+                    console.error("Task save failed:", errorData);
+                    throw new Error(errorData?.detail || `Failed to save task: ${response.status}`);
+                }
                 const savedTask = await response.json();
 
                 // FIX: If updating, find the task in the current list and replace it
@@ -1067,6 +991,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
 
 const AddProjectModal = ({ onClose }: { onClose: () => void }) => {
     const { state, dispatch } = useContext(AppContext)!;
+    const { jwt } = useAuth();
     const [name, setName] = useState('');
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -1074,13 +999,13 @@ const AddProjectModal = ({ onClose }: { onClose: () => void }) => {
         try {
             const response = await fetch(`${API_BASE_URL}/createProject`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
                     body: JSON.stringify({ name, userId: state.currentUser?.id })
             });
             if (!response.ok) throw new Error('Failed to create project');
             
             // Refresh data
-            const data = await MockAPI.fetchData();
+            const data = await MockAPI.fetchData(jwt!);
             dispatch({ type: 'INIT_DATA', payload: data });
             onClose();
         } catch (error) {
@@ -1143,6 +1068,7 @@ const DeleteProjectModal = ({ project, onClose, onConfirm }: { project: Project,
 };
 
 const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUpdateSuccess }) => {
+    const { jwt } = useAuth();
     const [proposals, setProposals] = useState<Proposal[]>([]);
     const [loading, setLoading] = useState(false);
     const [applyingId, setApplyingId] = useState<string | null>(null);
@@ -1161,10 +1087,10 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
             const [suggestRes, frictionRes] = await Promise.all([
                 fetch(`${API_BASE_URL}/envoy/suggest`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
                 body: JSON.stringify({ task_id: taskId, all: true })
             }),
-                MockAPI.fetchEnvoyFriction(taskId)
+                MockAPI.fetchEnvoyFriction(taskId, jwt!)
             ]);
             if (!suggestRes.ok) throw new Error('Failed to fetch suggestions');
             const suggestData = await suggestRes.json();
@@ -1188,7 +1114,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
         try {
             const response = await fetch(`${API_BASE_URL}/envoy/apply`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
                 body: JSON.stringify({
                     task_id: taskId,
                     proposals: [proposal]
@@ -1406,6 +1332,7 @@ const DependencyCreationModal = ({ sourceId, targetId, tasks, onClose, onConfirm
 
 const DependencyEditModal = ({ fromId, toId, tasks, onClose, onUpdate }: { fromId: string, toId: string, tasks: Task[], onClose: () => void, onUpdate: () => void }) => {
     const { state, dispatch } = useContext(AppContext)!;
+    const { jwt } = useAuth();
     const fromTask = findTask(tasks, fromId);
     const toTask = findTask(tasks, toId);
     const [loading, setLoading] = useState(false);
@@ -1413,8 +1340,8 @@ const DependencyEditModal = ({ fromId, toId, tasks, onClose, onUpdate }: { fromI
     const handleRemove = async () => {
         setLoading(true);
         try {
-            const dep = await MockAPI.lookupDependency(fromId, toId);
-            await MockAPI.deleteDependency(dep.id, state.currentUser?.id || 'u1');
+            const dep = await MockAPI.lookupDependency(fromId, toId, jwt!);
+            await MockAPI.deleteDependency(dep.id, state.currentUser?.id || 'u1', jwt!);
             onUpdate();
             onClose();
         } catch (e) {
@@ -1428,8 +1355,8 @@ const DependencyEditModal = ({ fromId, toId, tasks, onClose, onUpdate }: { fromI
     const handleChangeType = async (newType: DependencyType) => {
         setLoading(true);
         try {
-            const dep = await MockAPI.lookupDependency(fromId, toId);
-            await MockAPI.updateDependency(dep.id, { type: newType }, state.currentUser?.id || 'u1');
+            const dep = await MockAPI.lookupDependency(fromId, toId, jwt!);
+            await MockAPI.updateDependency(dep.id, { type: newType }, state.currentUser?.id || 'u1', jwt!);
             onUpdate();
             onClose();
         } catch (e) {
@@ -1476,6 +1403,7 @@ const DependencyEditModal = ({ fromId, toId, tasks, onClose, onUpdate }: { fromI
 
 const DependencyPanel = ({ taskId, onClose }: { taskId: string, onClose: () => void }) => {
     const { state, dispatch } = useContext(AppContext)!;
+    const { jwt } = useAuth();
     const [dependencies, setDependencies] = useState<{ blocked_by: Dependency[], blocking: Dependency[] }>({ blocked_by: [], blocking: [] });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -1483,7 +1411,7 @@ const DependencyPanel = ({ taskId, onClose }: { taskId: string, onClose: () => v
     const fetchData = async () => {
         setLoading(true);
         try {
-            const data = await MockAPI.fetchDependencies(taskId);
+            const data = await MockAPI.fetchDependencies(taskId, jwt!);
             setDependencies(data);
         } catch (e: any) {
             setError(e.message);
@@ -1497,14 +1425,14 @@ const DependencyPanel = ({ taskId, onClose }: { taskId: string, onClose: () => v
     }, [taskId]);
 
     const refreshRoadmapData = async () => {
-        const data = await MockAPI.fetchData();
+        const data = await MockAPI.fetchData(jwt!);
         dispatch({ type: 'INIT_DATA', payload: data });
     };
 
     const handleDelete = async (depId: string) => {
         if (!state.currentUser) return;
         try {
-            await MockAPI.deleteDependency(depId, state.currentUser.id);
+            await MockAPI.deleteDependency(depId, state.currentUser.id, jwt!);
             await fetchData();
             await refreshRoadmapData();
         } catch (e) {
@@ -1740,7 +1668,8 @@ const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyAct
 };
 
 export default function RoadmapPage() {
-    const { userId } = useAuth();
+    const { user, jwt } = useAuth();
+    const userId = user?.id;
     const [state, dispatch] = useReducer(appReducer, initialState);
     const [taskToEdit, setTaskToEdit] = useState<Task | undefined>(undefined);
     const [addProjectVisible, setAddProjectVisible] = useState(false);
@@ -1756,15 +1685,17 @@ export default function RoadmapPage() {
     // Initial Data Fetch
     useEffect(() => {
         // Wait for the AuthContext to provide the userId.
-        if (!userId) return;
+        if (!userId || !jwt) return;
 
         const loadData = async () => {
-            const data = await MockAPI.fetchData(); // This now calls /renderTask
+            const data = await MockAPI.fetchData(jwt); // This now calls /renderTask
             
             // Fetch Team Members (Users) to populate owner fields
             let teamMembers: User[] = [];
             try {
-                const teamRes = await fetch(`${API_BASE_URL}/team/members?userId=${userId}`);
+                const teamRes = await fetch(`${API_BASE_URL}/team/members?userId=${userId}`, {
+                    headers: { Authorization: `Bearer ${jwt}` }
+                });
                 if (teamRes.ok) {
                     const members = await teamRes.json();
                     teamMembers = members.map((m: any) => ({
@@ -1781,7 +1712,9 @@ export default function RoadmapPage() {
             let currentUser = teamMembers.find(u => u.id === userId);
             if (!currentUser) {
                  try {
-                    const res = await fetch(`${API_BASE_URL}/users/${userId}`);
+                    const res = await fetch(`${API_BASE_URL}/users/${userId}`, {
+                        headers: { Authorization: `Bearer ${jwt}` }
+                    });
                     if (res.ok) {
                         const u = await res.json();
                         currentUser = {
@@ -1804,7 +1737,7 @@ export default function RoadmapPage() {
             dispatch({ type: 'INIT_DATA', payload: { ...data, currentUser } });
         };
         loadData();
-    }, [userId]);
+    }, [userId, jwt]);
 
     // Filter Logic
     const filteredTasks = useMemo(() => {
@@ -1823,10 +1756,10 @@ export default function RoadmapPage() {
         try {
             await fetch(`${API_BASE_URL}/envoy/auto-balance`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
                 body: JSON.stringify({ userId: state.currentUser?.id || 'u1' }) // Backend now handles role-based logic
             });
-            const data = await MockAPI.fetchData();
+            const data = await MockAPI.fetchData(jwt!);
             dispatch({ type: 'INIT_DATA', payload: data });
         } catch (e) { console.error(e); }
         dispatch({ type: 'SET_LOADING', payload: false }); 
@@ -1853,7 +1786,7 @@ export default function RoadmapPage() {
         try {
             const res = await fetch(`${API_BASE_URL}/deleteProject`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
                 body: JSON.stringify({ id: projectToDelete.id, userId })
             });
             if (!res.ok) throw new Error("Failed");
@@ -1879,8 +1812,8 @@ export default function RoadmapPage() {
                 type,
                 note,
                 userId: state.currentUser.id
-            });
-            const data = await MockAPI.fetchData();
+            }, jwt!);
+            const data = await MockAPI.fetchData(jwt!);
             dispatch({ type: 'INIT_DATA', payload: data });
             setDependencyModal(null);
         } catch (e) {
@@ -2148,7 +2081,7 @@ export default function RoadmapPage() {
                         onClose={() => dispatch({ type: 'TRIGGER_ENVOY', payload: null })}
                         onUpdateSuccess={async () => {
                             // Refresh data after AI apply
-                            const data = await MockAPI.fetchData();
+                            const data = await MockAPI.fetchData(jwt!);
                             dispatch({ type: 'INIT_DATA', payload: data });
                         }}
                     />
@@ -2194,7 +2127,7 @@ export default function RoadmapPage() {
                             tasks={state.tasks}
                             onClose={() => setDependencyEditModal(null)}
                             onUpdate={async () => {
-                                const data = await MockAPI.fetchData();
+                                const data = await MockAPI.fetchData(jwt!);
                                 dispatch({ type: 'INIT_DATA', payload: data });
                             }}
                         />

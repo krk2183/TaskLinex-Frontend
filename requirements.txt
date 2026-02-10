@@ -3,7 +3,7 @@ uvicorn[standard]
 pydantic
 python-dotenv
 bcrypt
-jwt
+pyjwt
 httpx
 supabase
 google-genai

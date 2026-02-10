@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from './(auth)/register/AuthContext';
 
 const inter = Inter({ 
   subsets: ["latin"], 
@@ -21,7 +22,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="scroll-smooth">
       <body className={`${inter.variable} bg-[#F4F4F5] text-[#18181B] antialiased selection:bg-[#18181B] selection:text-white [overscroll-behavior-y:contain]`}>
-        {children}
+        {/* Wrap children here! */}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );
