@@ -23,7 +23,8 @@ const InputField = ({
   icon: Icon,
   name,
   value,
-  onChange
+  onChange,
+  required = false
 }: { 
   label: string, 
   type: string, 
@@ -31,11 +32,12 @@ const InputField = ({
   icon: any,
   name: string,
   value: string,
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void,
+  required?: boolean
 }) => (
   <div className="space-y-1.5">
     <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-      {label}
+      {label} {required && <span className="text-violet-500">*</span>}
     </label>
     <div className="relative group">
       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -46,6 +48,7 @@ const InputField = ({
         name={name}
         value={value}
         onChange={onChange}
+        required={required}
         className="w-full bg-slate-900 border border-slate-800 text-slate-200 text-sm rounded-lg block pl-10 p-3 placeholder-slate-600 focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 outline-none transition-all shadow-sm"
         placeholder={placeholder}
       />
@@ -91,7 +94,7 @@ export default function SignupPage() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.type === "checkbox" ? e.target.checked : e.target.value;
     setData({ ...Data, [e.target.name]: value });
-    setError(""); // Clear error when user starts typing again
+    setError(""); 
   };
 
   const handleSignup = async (e: React.FormEvent) => {
@@ -124,17 +127,14 @@ export default function SignupPage() {
       }
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred.");
-      setLoading(false); // Only set loading to false on error
+      setLoading(false); 
     }
   };
 
   return (
     <div className="min-h-screen w-full flex bg-slate-950 text-slate-200 font-sans selection:bg-violet-500/30">
       
-
-      {/* LEFT SIDE: VISUALIZATION (Swapped for Signup to create variety from Login) */}
       <div className="hidden lg:flex w-5/12 relative bg-[#0B0F17] overflow-hidden border-r border-slate-800 flex-col p-12">
-         {/* Abstract Background */}
            <div className="flex items-center gap-2 mb-12">
             <span className="text-4xl font-bold tracking-tight select-none">
               <span className="text-white">Task</span>
@@ -179,7 +179,6 @@ export default function SignupPage() {
          </div>
       </div>
 
-      {/* RIGHT SIDE: FORM */}
       <div className="w-full lg:w-7/12 flex flex-col justify-center px-8 md:px-24 xl:px-40 relative z-10 bg-slate-950">
       <BackButton />
         <motion.div
@@ -187,12 +186,8 @@ export default function SignupPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          {/* <div className="absolute top-8 right-8 lg:hidden">
-             <Logo />
-          </div> */}
           
           <div className="mb-10 lg:mt-24 mt-20">
-             {/* <div className="hidden lg:block"><Logo /></div> */}
             <h1 className="text-3xl font-bold text-white tracking-tight mb-1">Initialize Workspace</h1>
             <p className="text-slate-400">Begin your 14-day trial. No credit card required.</p>
           </div>
@@ -212,7 +207,8 @@ export default function SignupPage() {
                 value={Data.firstName}
                 onChange={handleChange}
                 placeholder="Jane" 
-                icon={User} 
+                icon={User}
+                required
                 />
                 <InputField 
                 label="Last Name" 
@@ -221,7 +217,8 @@ export default function SignupPage() {
                 value={Data.lastName}
                 onChange={handleChange}
                 placeholder="Doe" 
-                icon={User} 
+                icon={User}
+                required
                 />
             </div>
 
@@ -232,7 +229,8 @@ export default function SignupPage() {
               value={Data.username}
               onChange={handleChange}
               placeholder="unique_username" 
-              icon={User} 
+              icon={User}
+              required
             />
 
             <InputField 
@@ -242,7 +240,8 @@ export default function SignupPage() {
               value={Data.email}
               onChange={handleChange}
               placeholder="jane@company.com" 
-              icon={Mail} 
+              icon={Mail}
+              required
             />
 
             <InputField 
@@ -253,6 +252,7 @@ export default function SignupPage() {
               onChange={handleChange}
               placeholder="Password" 
               icon={Lock}
+              required
             />
 
             <InputField 
@@ -263,6 +263,7 @@ export default function SignupPage() {
               onChange={handleChange}
               placeholder="Confirm Password" 
               icon={Lock}
+              required
             />
 
             <div className="space-y-1.5">

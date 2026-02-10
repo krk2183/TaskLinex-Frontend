@@ -529,6 +529,9 @@ async def login(form_data: UserLogin, response: Response):
     user_id = result[1]
     role = result[2]
     company = result[3]
+    first_name = result[4]
+    last_name = result[5]
+    username = result[6]
 
     input_password_bytes = form_data.password.encode('utf-8')
     stored_hash_bytes = stored_hash_str.encode('utf-8')
@@ -555,7 +558,15 @@ async def login(form_data: UserLogin, response: Response):
         secure=False
     )
 
-    return {"access_token": token, "token_type": "bearer", "id": user_id, "role": role}
+    return {
+        "access_token": token, 
+        "token_type": "bearer", 
+        "id": user_id, 
+        "role": role,
+        "username": username,
+        "firstName": first_name,
+        "lastName": last_name
+    }
 
 @app.get('/users/{user_id}')
 async def get_user_info(user_id: str):
@@ -741,41 +752,6 @@ async def get_user_settings(user_id: str):
         return response
     finally:
         conn.close()
-
-@app.post("/dependencies", response_model=Dependency)
-async def create_dependency(dep: DependencyCreate):
-    """
-    Creates a dependency between two tasks.
-    This resolves the 404 error.
-    """
-    print(f"Received request to create dependency: {dep}")
-    # In a real application, you would save this to a database.
-    # Here we'll just simulate it.
-    dep_id = f"dep_{len(db['dependencies']) + 1}"
-    new_dep = Dependency(id=dep_id, **dep.dict())
-    db["dependencies"][dep_id] = new_dep
-
-    # Add the dependency to the task
-    to_task_id = dep.to_task_id
-    if to_task_id in db["tasks"]:
-        if dep.from_task_id not in db["tasks"][to_task_id].dependencyIds:
-            db["tasks"][to_task_id].dependencyIds.append(dep.from_task_id)
-    
-    print(f"Successfully created dependency {dep_id}")
-    return new_dep
-
-@app.get("/tasks/{task_id}/dependencies")
-async def get_task_dependencies(task_id: str):
-    blocked_by = [dep for dep in db["dependencies"].values() if dep.to_task_id == task_id]
-    blocking = [dep for dep in db["dependencies"].values() if dep.from_task_id == task_id]
-    return {"blocked_by": blocked_by, "blocking": blocking}
-
-@app.delete("/dependencies/{dep_id}/{user_id}")
-async def delete_dependency(dep_id: str, user_id: str):
-    if dep_id in db["dependencies"]:
-        del db["dependencies"][dep_id]
-        return {"message": "Dependency deleted"}
-    raise HTTPException(status_code=404, detail="Dependency not found")
 
 @app.post('/settings/{user_id}/{section}')
 async def update_user_settings_section(user_id: str, section: str, payload: dict = Body(...)):
@@ -1053,7 +1029,6 @@ async def delete_task(req: DeleteRequest):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
-'''
 @app.post("/dependencies")
 async def create_dependency(dep: DependencyCreate):
     conn = sqlite3.connect(DB_PATH)
@@ -1196,21 +1171,6 @@ async def get_dependency_summary(task_id: str):
         }
     finally:
         conn.close()
-
-INPUT EXAMPLE
-{
-  "task_id": "123",
-  "proposals": [
-    {
-      "field": "priority",
-      "current": "low",
-      "suggested": "high",
-      "reason": "Task is overdue and has dependencies"
-    }
-  ]
-}
-
-'''
 
 # -----------------------------
 # Gemini Suggest Endpoint
