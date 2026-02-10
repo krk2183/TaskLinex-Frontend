@@ -7,6 +7,8 @@ interface AuthContextType {
   userId: string | null;
 }
 
+const publicPaths = ['/register', '/login', '/'];
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -15,8 +17,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const pathname = usePathname();
 
   useEffect(() => {
-    // Define public paths that don't require authentication
-    const publicPaths = ['/register', '/login', '/'];
     
     const storedUserId = localStorage.getItem('userId');
     
@@ -35,7 +35,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [pathname, router]); // Rerun this check if the path changes
 
   // We can show a loading state here while the user ID is being verified.
-  if (!userId) {
+  if (!userId && !publicPaths.includes(pathname)) {
     return null; // Or a loading spinner
   }
 

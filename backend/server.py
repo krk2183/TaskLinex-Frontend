@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi.responses import JSONResponse
 from google import genai
 from enum import Enum
+
 # Server initialization
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -522,7 +523,7 @@ async def login(form_data: UserLogin, response: Response):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT password, id, role, companyName FROM users WHERE email = ?", (form_data.email,))
+    cursor.execute("SELECT password, id, role, companyName, firstName, lastName, username FROM users WHERE email = ?", (form_data.email,))
     result = cursor.fetchone()
     conn.close()
 

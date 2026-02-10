@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, ArrowLeft, Mail, User, Briefcase, ChevronRight, Lock, AlertCircle } from "lucide-react";
 
@@ -77,6 +78,7 @@ const BackButton = () => (
 // --- PAGE ---
 
 export default function SignupPage() {
+  const router = useRouter();
   const [isLogin, setIsLogin] = React.useState(false);
   const [Data, setData] = React.useState({
     firstName: "",
@@ -133,9 +135,9 @@ export default function SignupPage() {
         localStorage.setItem("access_token", data.access_token);
         if (data.role) localStorage.setItem("user_role", data.role);
         
-        window.location.href = "/roadmap";
+        router.push("/roadmap");
       } else {
-        window.location.href = "/login";
+        router.push("/login");
       }
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred.");
