@@ -4,7 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowRight, Lock, Mail, Github, Chrome, ShieldCheck, ArrowLeft, AlertCircle } from "lucide-react";
-import { useAuth } from "../../register/AuthContext";
+import { useAuth } from "../register/AuthContext";
 
 // --- COMPONENTS ---
 
@@ -95,7 +95,7 @@ export default function LoginPage() {
     try {
       await login(data.email, data.password);
       // Redirect is handled in AuthContext or we can force it here
-      window.location.href = "/pulse";
+      window.location.href = "/roadmap";
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred.");
     } finally {

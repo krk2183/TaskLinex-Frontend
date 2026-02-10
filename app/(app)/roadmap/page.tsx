@@ -163,13 +163,17 @@ const MockAPI = {
     // Newly added: Fetchdata to replace MOCK data
     fetchData: async (token: string) => {
         const headers = { Authorization: `Bearer ${token}` };
+        const [tasksRes, personasRes, projectsRes] = await Promise.all([
+            fetch(`${API_BASE_URL}/renderTask`, { headers, cache: 'no-store' }),
+            fetch(`${API_BASE_URL}/renderPersona`, { headers, cache: 'no-store' }),
+            fetch(`${API_BASE_URL}/projects`, { headers, cache: 'no-store' })
+        ]);
+
+        if (tasksRes.status === 401 || personasRes.status === 401 || projectsRes.status === 401) {
+            throw new Error("Unauthorized");
+        }
+
         try {
-            const [tasksRes, personasRes, projectsRes] = await Promise.all([
-                fetch(`${API_BASE_URL}/renderTask`, { headers, cache: 'no-store' }),
-                fetch(`${API_BASE_URL}/renderPersona`, { headers, cache: 'no-store' }),
-                fetch(`${API_BASE_URL}/projects`, { headers, cache: 'no-store' })
-            ]);
-            
             const tasks = await tasksRes.json();
             const personasData = await personasRes.json();
             const projects = await projectsRes.json();
@@ -694,7 +698,7 @@ const WorkloadHUD = () => {
 // Add Task Modal
 const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     const { state, dispatch } = useContext(AppContext)!;
-    const { jwt, user } = useAuth();
+    const { jwt, user, logout } = useAuth();
     const headline = taskToEdit?  'Update Task Details': "Add New Task";
     const buttontitle = taskToEdit? 'Edit Task':'Create Task';
 
@@ -804,6 +808,11 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
                     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
                     body: JSON.stringify(taskPayload)
                 });
+
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
 
                 if (!response.ok) {
                     const errorText = await response.text();
@@ -1668,7 +1677,7 @@ const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyAct
 };
 
 export default function RoadmapPage() {
-    const { user, jwt } = useAuth();
+    const { user, jwt, logout } = useAuth();
     const userId = user?.id;
     const [state, dispatch] = useReducer(appReducer, initialState);
     const [taskToEdit, setTaskToEdit] = useState<Task | undefined>(undefined);
@@ -1688,7 +1697,8 @@ export default function RoadmapPage() {
         if (!userId || !jwt) return;
 
         const loadData = async () => {
-            const data = await MockAPI.fetchData(jwt); // This now calls /renderTask
+            try {
+                const data = await MockAPI.fetchData(jwt); // This now calls /renderTask
             
             // Fetch Team Members (Users) to populate owner fields
             let teamMembers: User[] = [];
@@ -1735,9 +1745,16 @@ export default function RoadmapPage() {
             }
 
             dispatch({ type: 'INIT_DATA', payload: { ...data, currentUser } });
+            } catch (e: any) {
+                if (e.message === "Unauthorized") {
+                    logout();
+                } else {
+                    console.error("Failed to load data", e);
+                }
+            }
         };
         loadData();
-    }, [userId, jwt]);
+    }, [userId, jwt, logout]);
 
     // Filter Logic
     const filteredTasks = useMemo(() => {

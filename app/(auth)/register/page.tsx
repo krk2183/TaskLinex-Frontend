@@ -116,7 +116,7 @@ export default function SignupPage() {
         await login(Data.email, Data.password);
         router.push("/roadmap");
       } else {
-        const { data } = await signup(Data.email, Data.password, {
+        const data = await signup(Data.email, Data.password, {
           data: {
             firstName: Data.firstName,
             lastName: Data.lastName,
