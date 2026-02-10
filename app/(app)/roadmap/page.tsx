@@ -5,7 +5,7 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
-    Check, Eye, Loader2, AlertCircle, Sparkles, Info, ChevronRight,
+    Check, Eye, Loader2, AlertCircle, Sparkles, Info, ChevronRight, Ban, Hourglass, Lightbulb,
     CheckCircle, ArrowRight, XCircle, FolderPlus, Trash2,
     GitCommit, Layers, Zap, BrainCircuit, UserCog, LayoutGrid, List, Calendar, RefreshCw, Plus, Search, X
 } from 'lucide-react';
@@ -16,6 +16,7 @@ type TaskStatus = 'On Track' | 'At Risk' | 'Blocked' | 'Completed';
 type Priority = 'High' | 'Medium' | 'Low';
 type ViewMode = 'Week' | 'Month';
 type LayoutMode = 'Roadmap' | 'Board' | 'Sprint';
+type DependencyType = 'blocked_by' | 'waiting_on' | 'helpful_if_done_first';
 
 // The "Persona" allows one user to wear multiple hats (e.g., Lead vs Contributor)
 interface Persona { 
@@ -32,6 +33,22 @@ interface User {
     avatar: string;
     baseCapacity: number;
     personas: Persona[];
+}
+
+
+interface Dependency {
+    id: string;
+    type: DependencyType;
+    note: string | null;
+    from_task_id: string;
+    from_task_title: string;
+    from_task_status: TaskStatus;
+    to_task_id?: string;
+    to_task_title?: string;
+}
+
+interface DependencySummary {
+    [key: string]: number;
 }
 
 interface EnvoySuggestion {
@@ -63,6 +80,7 @@ interface Task {
     isMilestone?: boolean;
     tags: string[];
     // AI Context
+    dependencySummary?: DependencySummary;
     envoySuggestion?: EnvoySuggestion;
 }
 
@@ -208,6 +226,41 @@ const MockAPI = {
     triggerEnvoyAction: async (taskId: string, action: string) => {
         await MockAPI.sleep(1000);
         return { success: true, message: `Envoy executed: ${action}` };
+    },
+    createDependency: async (dep: { from_task_id: string, to_task_id: string, type: string, note?: string, userId: string }) => {
+        const response = await fetch(`${API_BASE_URL}/dependencies`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dep)
+        });
+        if (!response.ok) throw new Error('Failed to create dependency');
+        return response.json();
+    },
+    fetchDependencies: async (taskId: string) => {
+        const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/dependencies`);
+        if (!response.ok) throw new Error('Failed to fetch dependencies');
+        return response.json();
+    },
+    updateDependency: async (depId: string, update: { type?: DependencyType, note?: string }, userId: string) => {
+        const response = await fetch(`${API_BASE_URL}/dependencies/${depId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...update, userId })
+        });
+        if (!response.ok) throw new Error('Failed to update dependency');
+        return response.json();
+    },
+    deleteDependency: async (depId: string, userId: string) => {
+        const response = await fetch(`${API_BASE_URL}/dependencies/${depId}/${userId}`, {
+            method: 'DELETE'
+        });
+        if (!response.ok) throw new Error('Failed to delete dependency');
+        return response.json();
+    },
+    fetchEnvoyFriction: async (taskId: string) => {
+        const response = await fetch(`${API_BASE_URL}/envoy/task/${taskId}/friction`);
+        if (!response.ok) throw new Error('Failed to fetch Envoy friction data');
+        return response.json();
     }
 };
 
@@ -227,6 +280,7 @@ interface AppState {
     layoutMode: LayoutMode;
     viewMode: ViewMode;
     envoyActive: string | null; // Task ID interacting with Envoy
+    viewingDependenciesFor: string | null;
 }
 
 type Action =
@@ -239,7 +293,8 @@ type Action =
     | { type: 'ADD_TASK', payload: Task[] }
     | { type: 'UPDATE_TASKS', payload: Task[] }
     | { type: 'SET_LOADING', payload: boolean }
-    | { type: 'TRIGGER_ENVOY', payload: string | null };
+    | { type: 'TRIGGER_ENVOY', payload: string | null }
+    | { type: 'VIEW_DEPENDENCIES', payload: string | null };
 
 const initialState: AppState = {
     tasks: [], users: [], projects: [], personas: [],
@@ -249,6 +304,7 @@ const initialState: AppState = {
     layoutMode: 'Roadmap',
     viewMode: 'Week',
     envoyActive: null,
+    viewingDependenciesFor: null,
     filters: { query: '', owners: [], statuses: [], onlyMyPersonas: false }
 };
 
@@ -274,6 +330,8 @@ function appReducer(state: AppState, action: Action): AppState {
             return { ...state, isLoading: action.payload };
         case 'TRIGGER_ENVOY':
             return { ...state, envoyActive: action.payload };
+        case 'VIEW_DEPENDENCIES':
+            return { ...state, viewingDependenciesFor: action.payload };
         default: return state;
     }
 }
@@ -341,6 +399,25 @@ const DependencyLayer = ({ tasks, projects, viewMode, collapsedProjects }: { tas
                 });
             })}
         </svg>
+    );
+};
+
+const DependencyBadge = ({ type, count, onClick }: { type: string, count: number, onClick: () => void }) => {
+    if (count === 0) return null;
+
+    const config: Record<string, { icon: React.ElementType, color: string, label: string }> = {
+        blocked_by: { icon: Ban, color: 'text-rose-500', label: 'Blocked by' },
+        waiting_on: { icon: Hourglass, color: 'text-amber-500', label: 'Waiting on' },
+        helpful_if_done_first: { icon: Lightbulb, color: 'text-sky-500', label: 'Helpful if done' }
+    };
+
+    const { icon: Icon, color, label } = config[type];
+
+    return (
+        <button onClick={onClick} className={`flex items-center gap-1 text-xs font-semibold ${color} bg-white/80 dark:bg-slate-900/80 px-2 py-1 rounded-full border border-current/20 backdrop-blur-sm`} title={`${label}: ${count}`}>
+            <Icon className="w-3 h-3" />
+            <span>{count}</span>
+        </button>
     );
 };
 
@@ -441,11 +518,12 @@ const DependencyLayer = ({ tasks, projects, viewMode, collapsedProjects }: { tas
 // };
 
 // Task Item
-const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit, personas }: { task: Task, user: User | undefined, dispatch: any, isEnvoyActive: boolean,onEdit: (t: Task) => void, personas: Persona[]}) => {
+const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit, personas, onTaskDrop, level = 0 }: { task: Task, user: User | undefined, dispatch: any, isEnvoyActive: boolean,onEdit: (t: Task) => void, personas: Persona[], onTaskDrop: (sourceId: string, targetId: string) => void, level?: number }) => {
     const triggerRef = useRef<HTMLButtonElement>(null);
     const statusColor = {
         'On Track': 'bg-indigo-500', 'At Risk': 'bg-amber-500', 'Blocked': 'bg-rose-500', 'Completed': 'bg-emerald-500'
     };
+    const currentStatusColor = statusColor[task.status as keyof typeof statusColor] || 'bg-slate-500';
     const assignedPersona = personas?.find(p => p.id === task.personaId);
 
     // Calculate slippage
@@ -457,8 +535,29 @@ const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit, personas }: { t
 
     return (
         <div
-            className="absolute top-2 h-10 group"
-            style={{ left: `${(task.startDate - 1) * 8.33}%`, width: `${task.duration * 8.33}%` }}
+            draggable
+            onDragStart={(e) => {
+                e.dataTransfer.setData('text/plain', task.id);
+                e.dataTransfer.effectAllowed = 'link';
+            }}
+            onDragOver={(e) => { // Allow drop
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'link';
+            }}
+            onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const sourceId = e.dataTransfer.getData('text/plain');
+                if (sourceId && sourceId !== task.id) {
+                    onTaskDrop(sourceId, task.id);
+                }
+            }}
+            className="absolute top-1/2 -translate-y-1/2 group cursor-grab active:cursor-grabbing"
+            style={{ 
+                left: `${(task.startDate - 1) * 8.33}%`, 
+                width: `${task.duration * 8.33}%`,
+                height: level > 0 ? '2rem' : '2.5rem'
+            }}
         >
             {/* NEW: Left Side Trigger (Hover) */}
             <button
@@ -486,27 +585,34 @@ const TaskItem = ({ task, user, dispatch, isEnvoyActive, onEdit, personas }: { t
             {isSlipping && (
                 <div className="absolute inset-0 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-md opacity-50 w-full" style={{ width: `${ghostWidth}%` }} />
             )}
-
+            
             {/* Main Bar */}
             <div className={`
                 relative h-full rounded-md shadow-sm
-                flex items-center px-3 gap-2 overflow-hidden
-                ${statusColor[task.status as keyof typeof statusColor]}
+                flex items-center px-2 gap-2 overflow-hidden
+                ${currentStatusColor}
                 transition-all transition-gpu duration-300 ease-in-out
                 group-hover:w-max hover:min-w-full hover:z-50 hover:shadow-xl
             `}>
                 <div className="absolute left-0 top-0 bottom-0 bg-black/20" style={{ width: `${task.progress}%` }} />
 
-                <span className="relative z-10 text-xs font-bold text-white truncate transition-all duration-300">
+                <span className={`relative z-10 font-bold text-white truncate transition-all duration-300 ${level > 0 ? 'text-[11px]' : 'text-xs'}`}>
                     {task.title}
                 </span>
 
                 <img
                     src={ownerAvatar}
-                    className="relative z-10 w-6 h-6 rounded-full border border-white/30 flex-shrink-0"
+                    className={`relative z-10 rounded-full border border-white/30 flex-shrink-0 ${level > 0 ? 'w-5 h-5' : 'w-6 h-6'}`}
                     alt={ownerName}
                     title={ownerName}
                 />
+
+                <div className="absolute bottom-1 left-2 z-20 flex items-center gap-1.5">
+                    <DependencyBadge type="blocked_by" count={task.dependencySummary?.blocked_by_count || 0} onClick={() => dispatch({ type: 'VIEW_DEPENDENCIES', payload: task.id })} />
+                    <DependencyBadge type="waiting_on" count={task.dependencySummary?.waiting_on_count || 0} onClick={() => dispatch({ type: 'VIEW_DEPENDENCIES', payload: task.id })} />
+                    <DependencyBadge type="helpful_if_done_first" count={task.dependencySummary?.helpful_if_done_first_count || 0} onClick={() => dispatch({ type: 'VIEW_DEPENDENCIES', payload: task.id })} />
+                </div>
+
 
                 {/* Persona Indicator */}
                 {assignedPersona && (
@@ -958,6 +1064,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
     const [proposals, setProposals] = useState<Proposal[]>([]);
     const [loading, setLoading] = useState(false);
     const [applyingId, setApplyingId] = useState<string | null>(null);
+    const [frictionData, setFrictionData] = useState<{ blockers: string[], external_waits: string[], soft_dependencies: string[] } | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     // Modal state for "Review" fields
@@ -965,19 +1072,22 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
 
     const autoApplyFields = ['status', 'priority'];
 
-    const fetchSuggestions = async () => {
+    const fetchSuggestionsAndFriction = async () => {
         setLoading(true);
         setError(null);
         try {
-            // const response = await fetch('http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/envoy/suggest', {
-            const response = await fetch(`${API_BASE_URL}/envoy/suggest`, {
+            const [suggestRes, frictionRes] = await Promise.all([
+                fetch(`${API_BASE_URL}/envoy/suggest`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ task_id: taskId, all: true })
-            });
-            if (!response.ok) throw new Error('Failed to fetch suggestions');
-            const data = await response.json();
-            setProposals(data.proposals || []);
+            }),
+                MockAPI.fetchEnvoyFriction(taskId)
+            ]);
+            if (!suggestRes.ok) throw new Error('Failed to fetch suggestions');
+            const suggestData = await suggestRes.json();
+            setProposals(suggestData.proposals || []);
+            setFrictionData(frictionRes);
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -987,7 +1097,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
 
     useEffect(() => {
         if (isOpen && taskId) {
-            fetchSuggestions();
+            fetchSuggestionsAndFriction();
         }
     }, [isOpen, taskId]);
 
@@ -1100,7 +1210,7 @@ return (
 
                     {/* Main Action Button */}
                     <button
-                        onClick={fetchSuggestions}
+                        onClick={fetchSuggestionsAndFriction}
                         className="mt-4 w-full py-3 bg-gray-800 border-2 border-violet-700 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-gray-700 hover:border-violet-600 transition-all shadow-lg shadow-gray-900/50 active:scale-[0.98]"
                     >
                         <Sparkles className="w-4 h-4 text-violet-400" />
@@ -1162,6 +1272,144 @@ return (
                 </div>
             </div>
         </div>
+    );
+};
+
+const DependencyCreationModal = ({ sourceId, targetId, tasks, onClose, onConfirm }: { sourceId: string, targetId: string, tasks: Task[], onClose: () => void, onConfirm: (type: DependencyType, note: string) => void }) => {
+    const sourceTask = tasks.find(t => t.id === sourceId);
+    const targetTask = tasks.find(t => t.id === targetId);
+    const [type, setType] = useState<DependencyType>('blocked_by');
+    const [note, setNote] = useState('');
+
+    if (!sourceTask || !targetTask) return null;
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 scale-100 animate-in zoom-in-95 duration-200">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Create Dependency</h3>
+                <p className="text-sm text-slate-500 mb-6">
+                    How is <span className="font-bold text-slate-800 dark:text-slate-200">{targetTask.title}</span> related to <span className="font-bold text-slate-800 dark:text-slate-200">{sourceTask.title}</span>?
+                </p>
+
+                <div className="space-y-3 mb-6">
+                    <button onClick={() => setType('blocked_by')} className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${type === 'blocked_by' ? 'bg-rose-50 border-rose-500 ring-1 ring-rose-500 dark:bg-rose-900/20' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-rose-300'}`}>
+                        <div className={`p-2 rounded-full ${type === 'blocked_by' ? 'bg-rose-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-500'}`}><Ban className="w-4 h-4" /></div>
+                        <div className="text-left"><div className="font-bold text-sm text-slate-900 dark:text-white">Blocked By</div><div className="text-xs text-slate-500">Target cannot start until source is done</div></div>
+                    </button>
+                    
+                    <button onClick={() => setType('waiting_on')} className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${type === 'waiting_on' ? 'bg-amber-50 border-amber-500 ring-1 ring-amber-500 dark:bg-amber-900/20' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-amber-300'}`}>
+                        <div className={`p-2 rounded-full ${type === 'waiting_on' ? 'bg-amber-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-500'}`}><Hourglass className="w-4 h-4" /></div>
+                        <div className="text-left"><div className="font-bold text-sm text-slate-900 dark:text-white">Waiting On</div><div className="text-xs text-slate-500">External factor or decision needed</div></div>
+                    </button>
+
+                    <button onClick={() => setType('helpful_if_done_first')} className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${type === 'helpful_if_done_first' ? 'bg-sky-50 border-sky-500 ring-1 ring-sky-500 dark:bg-sky-900/20' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-sky-300'}`}>
+                        <div className={`p-2 rounded-full ${type === 'helpful_if_done_first' ? 'bg-sky-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-500'}`}><Lightbulb className="w-4 h-4" /></div>
+                        <div className="text-left"><div className="font-bold text-sm text-slate-900 dark:text-white">Helpful if done first</div><div className="text-xs text-slate-500">Soft dependency, advisory only</div></div>
+                    </button>
+                </div>
+
+                <div className="mb-6">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Note (Optional)</label>
+                    <input type="text" value={note} onChange={e => setNote(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="e.g. API spec needed" />
+                </div>
+
+                <div className="flex justify-end gap-3">
+                    <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 rounded-lg transition-colors">Cancel</button>
+                    <button onClick={() => onConfirm(type, note)} className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-lg shadow-indigo-500/20 transition-all">Create Link</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const DependencyPanel = ({ taskId, onClose }: { taskId: string, onClose: () => void }) => {
+    const { state, dispatch } = useContext(AppContext)!;
+    const [dependencies, setDependencies] = useState<{ blocked_by: Dependency[], blocking: Dependency[] }>({ blocked_by: [], blocking: [] });
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchData = async () => {
+        setLoading(true);
+        try {
+            const data = await MockAPI.fetchDependencies(taskId);
+            setDependencies(data);
+        } catch (e: any) {
+            setError(e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchData();
+    }, [taskId]);
+
+    const refreshRoadmapData = async () => {
+        const data = await MockAPI.fetchData();
+        dispatch({ type: 'INIT_DATA', payload: data });
+    };
+
+    const handleDelete = async (depId: string) => {
+        if (!state.currentUser) return;
+        try {
+            await MockAPI.deleteDependency(depId, state.currentUser.id);
+            await fetchData();
+            await refreshRoadmapData();
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const DepTypeIcon = ({ type }: { type: DependencyType }) => {
+        const config = {
+            blocked_by: { icon: Ban, color: 'text-rose-400' },
+            waiting_on: { icon: Hourglass, color: 'text-amber-400' },
+            helpful_if_done_first: { icon: Lightbulb, color: 'text-sky-400' }
+        };
+        const Icon = config[type].icon;
+        return <Icon className={`w-4 h-4 ${config[type].color}`} />;
+    };
+
+    return (
+        <>
+            <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
+            <div className="fixed top-0 right-0 h-full w-full max-w-md bg-white dark:bg-slate-900 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right-full duration-300">
+                <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
+                    <h3 className="font-bold text-lg">Task Dependencies</h3>
+                    <button onClick={onClose} className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                    {loading ? <Loader2 className="animate-spin" /> : error ? <p>{error}</p> : (
+                        <>
+                            <section>
+                                <h4 className="text-sm font-bold text-slate-500 mb-3">This Task is Blocked By...</h4>
+                                <div className="space-y-2">
+                                    {dependencies.blocked_by.length > 0 ? dependencies.blocked_by.map(dep => (
+                                        <div key={dep.id} className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                                            <div className="flex justify-between items-center">
+                                                <div className="flex items-center gap-2"><DepTypeIcon type={dep.type} /><span className="font-medium">{dep.from_task_title}</span></div>
+                                                <button onClick={() => handleDelete(dep.id)} className="text-slate-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+                                            </div>
+                                            {dep.note && <p className="text-xs text-slate-500 mt-1 pl-6 italic">"{dep.note}"</p>}
+                                        </div>
+                                    )) : <p className="text-sm text-slate-400 italic">No blocking dependencies.</p>}
+                                </div>
+                            </section>
+                            <section>
+                                <h4 className="text-sm font-bold text-slate-500 mb-3">This Task Blocks...</h4>
+                                <div className="space-y-2">
+                                     {dependencies.blocking.length > 0 ? dependencies.blocking.map(dep => (
+                                        <div key={dep.id} className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                                            <div className="flex justify-between items-center"><div className="flex items-center gap-2"><DepTypeIcon type={dep.type} /><span className="font-medium">{dep.to_task_title}</span></div><button onClick={() => handleDelete(dep.id)} className="text-slate-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button></div>
+                                        </div>
+                                    )) : <p className="text-sm text-slate-400 italic">This task is not blocking anything.</p>}
+                                </div>
+                            </section>
+                        </>
+                    )}
+                </div>
+            </div>
+        </>
     );
 };
 
@@ -1273,15 +1521,58 @@ const SprintView = ({ tasks, users }: { tasks: Task[], users: User[] }) => {
     );
 };
 
+const RoadmapRow = ({ task, allProjectTasks, level, onEdit, onTaskDrop, dispatch, isEnvoyActive, personas }: {
+    task: Task;
+    allProjectTasks: Task[];
+    level: number;
+    onEdit: (t: Task) => void;
+    onTaskDrop: (sourceId: string, targetId: string) => void;
+    dispatch: React.Dispatch<Action>;
+    isEnvoyActive: boolean;
+    personas: Persona[];
+}) => {
+    const [isExpanded, setIsExpanded] = useState(true);
+    const dependents = allProjectTasks.filter(t => t.dependencyIds.includes(task.id));
+
+    return (
+        <div className="space-y-1">
+            <div className={`relative ${level > 0 ? 'h-12' : 'h-14'}`} style={{ paddingLeft: `${level * 24}px` }}>
+                {dependents.length > 0 && (
+                    <button 
+                        onClick={() => setIsExpanded(!isExpanded)} 
+                        className="absolute left-0 top-1/2 -translate-y-1/2 z-30 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800"
+                        style={{ left: `${level > 0 ? level * 24 - 20 : 4}px`}}
+                        title={isExpanded ? "Collapse dependents" : "Expand dependents"}
+                    >
+                        <ChevronRight className={`w-4 h-4 text-slate-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                    </button>
+                )}
+                <TaskItem task={task} level={level} onEdit={onEdit} onTaskDrop={onTaskDrop} dispatch={dispatch} isEnvoyActive={isEnvoyActive} personas={personas} user={undefined} />
+            </div>
+            {isExpanded && dependents.map(dep => (
+                <RoadmapRow 
+                    key={dep.id}
+                    task={dep}
+                    allProjectTasks={allProjectTasks}
+                    level={level + 1}
+                    onEdit={onEdit} onTaskDrop={onTaskDrop} dispatch={dispatch} isEnvoyActive={isEnvoyActive} personas={personas}
+                />
+            ))}
+        </div>
+    );
+};
+
 export default function RoadmapPage() {
     const { userId } = useAuth();
     const [state, dispatch] = useReducer(appReducer, initialState);
     const [taskToEdit, setTaskToEdit] = useState<Task | undefined>(undefined);
     const [addProjectVisible, setAddProjectVisible] = useState(false);
     const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+    const [dependencyModal, setDependencyModal] = useState<{ sourceId: string, targetId: string } | null>(null);
     const [timelineScale, setTimelineScale] = useState<'Week' | 'Month' | 'Quarter'>('Week');
     const [error, setError] = useState<string | null>(null);
     const loading = state.isLoading;
+    const { viewingDependenciesFor } = state;
     const personas = ['P1', 'P2', 'P3'] // Dummy
 
     // Initial Data Fetch
@@ -1398,6 +1689,25 @@ export default function RoadmapPage() {
             alert("Failed to delete project");
         } finally {
             setProjectToDelete(null);
+        }
+    };
+
+    const handleCreateDependency = async (type: DependencyType, note: string) => {
+        if (!dependencyModal || !state.currentUser) return;
+        try {
+            await MockAPI.createDependency({
+                from_task_id: dependencyModal.sourceId,
+                to_task_id: dependencyModal.targetId,
+                type,
+                note,
+                userId: state.currentUser.id
+            });
+            const data = await MockAPI.fetchData();
+            dispatch({ type: 'INIT_DATA', payload: data });
+            setDependencyModal(null);
+        } catch (e) {
+            console.error(e);
+            alert("Failed to create dependency");
         }
     };
 
@@ -1555,7 +1865,7 @@ export default function RoadmapPage() {
                                         if (projectTasks.length === 0) return null;
 
                                         return (
-                                            <div key={project.id} className="transition-all duration-300">
+                                            <div key={project.id}>
                                                 {/* Project Title Stickiness */}
                                                 <div className="sticky left-0 flex items-center gap-3 pr-4 w-fit z-20 bg-slate-50 dark:bg-[#0B1120] py-1 rounded-r-lg mb-2">
                                                     <button onClick={() => toggleProjectCollapse(project.id)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors">
@@ -1591,36 +1901,23 @@ export default function RoadmapPage() {
                                                 {/* Animated Task Container */}
                                                 <div className={`grid transition-all duration-300 ease-in-out ${isCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}>
                                                     <div className="overflow-hidden">
-                                                        <div className="relative space-y-4 min-h-[100px]">
-                                                            {projectTasks.map(task => (
-                                                                <div key={task.id} className="relative h-14 w-full hover:bg-white/50 dark:hover:bg-white/5 rounded-lg transition-colors">
-                                                                    {task.isMilestone ? (
-                                                                        // Milestone Render
-                                                                        <div
-                                                                            className="absolute top-1/2 -translate-y-1/2 flex flex-col items-center z-20 cursor-pointer"
-                                                                            style={{ left: `${(task.startDate - 1) * 8.33}%` }}
-                                                                        >
-                                                                            <div className="w-5 h-5 rotate-45 bg-purple-500 border-2 border-white dark:border-slate-900 shadow-lg hover:scale-125 transition-transform" />
-                                                                            <span className="mt-8 text-[10px] font-bold text-purple-600 bg-white dark:bg-slate-800 px-2 py-0.5 rounded shadow-sm">
-                                                                                {task.title}
-                                                                            </span>
-                                                                        </div>
-                                                                    ) : (
-                                                                        // Standard Task Render
-                                                                        <TaskItem
-                                                                            task={task}
-                                                                            user={state.users.find(u => u.id === task.ownerId)}
-                                                                            dispatch={dispatch}
-                                                                            isEnvoyActive={state.envoyActive === task.id}
-                                                                            onEdit={(t) => {
-                                                                                setTaskToEdit(t); // Set the task data
-                                                                                setAVisible(true); // Opens the Modal
-                                                                            }}
-                                                                            personas={state.personas}
-                                                                        />
-                                                                    )}
-
-                                                                </div>
+                                                        <div className="relative min-h-[100px]">
+                                                            {projectTasks.filter(t => !t.dependencyIds.some(depId => projectTasks.find(p => p.id === depId))).map(task => (
+                                                                <RoadmapRow
+                                                                    key={task.id}
+                                                                    task={task}
+                                                                    allProjectTasks={projectTasks}
+                                                                    level={0}
+                                                                    user={state.users.find(u => u.id === task.ownerId)}
+                                                                    dispatch={dispatch}
+                                                                    isEnvoyActive={state.envoyActive === task.id}
+                                                                    onEdit={(t) => {
+                                                                        setTaskToEdit(t);
+                                                                        setAVisible(true);
+                                                                    }}
+                                                                    personas={state.personas}
+                                                                    onTaskDrop={(s, t) => setDependencyModal({ sourceId: s, targetId: t })}
+                                                                />
                                                             ))}
                                                         </div>
                                                     </div>
@@ -1686,6 +1983,24 @@ export default function RoadmapPage() {
                         />
                     )}
 
+                    {/* Dependency Creation Modal */}
+                    {dependencyModal && (
+                        <DependencyCreationModal
+                            sourceId={dependencyModal.sourceId}
+                            targetId={dependencyModal.targetId}
+                            tasks={state.tasks}
+                            onClose={() => setDependencyModal(null)}
+                            onConfirm={handleCreateDependency}
+                        />
+                    )}
+
+                    {/* NEW: Dependency Panel */}
+                    {viewingDependenciesFor && (
+                        <DependencyPanel 
+                            taskId={viewingDependenciesFor}
+                            onClose={() => dispatch({ type: 'VIEW_DEPENDENCIES', payload: null })}
+                        />
+                    )}
                 </div>
 
             </div>

@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from pathlib import Path
 from fastapi.responses import JSONResponse
 from google import genai
+from enum import Enum
 # Server initialization
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -173,6 +174,19 @@ def init_db():
         )
     ''')
     
+    # Dependencies table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS dependencies (
+            id TEXT PRIMARY KEY,
+            from_task_id TEXT NOT NULL,
+            to_task_id TEXT NOT NULL,
+            type TEXT NOT NULL,
+            note TEXT,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (from_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+            FOREIGN KEY (to_task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        )
+    ''')
     try:
         cursor.execute("ALTER TABLE tasks ADD COLUMN completedAt INTEGER")
     except sqlite3.OperationalError:
@@ -184,19 +198,6 @@ def init_db():
         UPDATE users 
         SET isNew = 0 
         WHERE id IN (SELECT DISTINCT ownerId FROM tasks)
-    ''')
-
-    # Dependencies table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS dependencyIds (
-            pk INTEGER PRIMARY KEY AUTOINCREMENT,
-            id TEXT NOT NULL UNIQUE,
-            task_id TEXT NOT NULL,
-            depends_on_id TEXT NOT NULL,
-            type TEXT NOT NULL,
-            FOREIGN KEY (task_id) REFERENCES tasks(id),
-            FOREIGN KEY (depends_on_id) REFERENCES tasks(id)
-        )
     ''')
 
     # Personas table
@@ -318,18 +319,22 @@ class ProjectCreate(BaseModel):
 class ProjectDelete(BaseModel):
     id: str
     userId: Optional[str] = None
+class DependencyType(str, Enum):
+    blocked_by = "blocked_by"
+    waiting_on = "waiting_on"
+    helpful_if_done_first = "helpful_if_done_first"
 
-# To be Implemented 
 class DependencyCreate(BaseModel):
-    task_id: str
-    depends_on_id: str
-    type: str = "blocks"
+    from_task_id: str
+    to_task_id: str
+    type: DependencyType
+    note: Optional[str] = None
+    userId: str
 
-
-class Dependency(BaseModel):
-    task_id: str
-    depends_on_id: str
-    type: str = Field(..., pattern="^(blocks|relates_to)$")
+class DependencyUpdate(BaseModel):
+    type: Optional[DependencyType] = None
+    note: Optional[str] = None
+    userId: str
 
 class Persona(BaseModel):
     id: str
@@ -417,6 +422,31 @@ class DeleteAccountRequest(BaseModel):
 @app.get('/')
 async def root():
     return {"status":'ok',"message": "TaskLinex API is active"}
+
+def update_task_status_after_dependency_change(cursor, task_id: str):
+    # Check for blocking dependencies on incomplete tasks
+    cursor.execute("""
+        SELECT 1 FROM dependencies d
+        JOIN tasks t ON d.from_task_id = t.id
+        WHERE d.to_task_id = ? AND d.type = 'blocked_by' AND t.status != 'Done'
+        LIMIT 1
+    """, (task_id,))
+    is_blocked = cursor.fetchone()
+
+    if is_blocked:
+        cursor.execute("UPDATE tasks SET status = 'Blocked' WHERE id = ?", (task_id,))
+        return
+
+    # Check for waiting_on dependencies
+    cursor.execute("SELECT 1 FROM dependencies WHERE to_task_id = ? AND type = 'waiting_on' LIMIT 1", (task_id,))
+    is_waiting = cursor.fetchone()
+
+    if is_waiting:
+        cursor.execute("UPDATE tasks SET status = 'At Risk' WHERE id = ?", (task_id,)) # Mapping 'waiting' to 'At Risk'
+        return
+
+    # If neither, and status was dependency-related, revert to 'On Track'
+    cursor.execute("UPDATE tasks SET status = 'On Track' WHERE id = ? AND status IN ('Blocked', 'At Risk')", (task_id,))
 
 def log_event(cursor, userId, type, targetTask, details):
     event_id = str(uuid.uuid4())
@@ -712,6 +742,41 @@ async def get_user_settings(user_id: str):
     finally:
         conn.close()
 
+@app.post("/dependencies", response_model=Dependency)
+async def create_dependency(dep: DependencyCreate):
+    """
+    Creates a dependency between two tasks.
+    This resolves the 404 error.
+    """
+    print(f"Received request to create dependency: {dep}")
+    # In a real application, you would save this to a database.
+    # Here we'll just simulate it.
+    dep_id = f"dep_{len(db['dependencies']) + 1}"
+    new_dep = Dependency(id=dep_id, **dep.dict())
+    db["dependencies"][dep_id] = new_dep
+
+    # Add the dependency to the task
+    to_task_id = dep.to_task_id
+    if to_task_id in db["tasks"]:
+        if dep.from_task_id not in db["tasks"][to_task_id].dependencyIds:
+            db["tasks"][to_task_id].dependencyIds.append(dep.from_task_id)
+    
+    print(f"Successfully created dependency {dep_id}")
+    return new_dep
+
+@app.get("/tasks/{task_id}/dependencies")
+async def get_task_dependencies(task_id: str):
+    blocked_by = [dep for dep in db["dependencies"].values() if dep.to_task_id == task_id]
+    blocking = [dep for dep in db["dependencies"].values() if dep.from_task_id == task_id]
+    return {"blocked_by": blocked_by, "blocking": blocking}
+
+@app.delete("/dependencies/{dep_id}/{user_id}")
+async def delete_dependency(dep_id: str, user_id: str):
+    if dep_id in db["dependencies"]:
+        del db["dependencies"][dep_id]
+        return {"message": "Dependency deleted"}
+    raise HTTPException(status_code=404, detail="Dependency not found")
+
 @app.post('/settings/{user_id}/{section}')
 async def update_user_settings_section(user_id: str, section: str, payload: dict = Body(...)):
     conn = sqlite3.connect(DB_PATH)
@@ -816,9 +881,14 @@ async def renderTask():
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     try:
-        # Join with users to get owner details
         cursor.execute("""
-            SELECT t.*, u.firstName, u.lastName 
+            SELECT 
+                t.*, 
+                u.firstName, 
+                u.lastName,
+                (SELECT count(*) FROM dependencies WHERE to_task_id = t.id AND type = 'blocked_by') as blocked_by_count,
+                (SELECT count(*) FROM dependencies WHERE to_task_id = t.id AND type = 'waiting_on') as waiting_on_count,
+                (SELECT count(*) FROM dependencies WHERE to_task_id = t.id AND type = 'helpful_if_done_first') as helpful_if_done_first_count
             FROM tasks t 
             LEFT JOIN users u ON t.ownerId = u.id
         """)
@@ -984,6 +1054,149 @@ async def delete_task(req: DeleteRequest):
     finally:
         conn.close()
 '''
+@app.post("/dependencies")
+async def create_dependency(dep: DependencyCreate):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        dep_id = str(uuid.uuid4())
+        created_at = int(datetime.now(timezone.utc).timestamp())
+        cursor.execute(
+            "INSERT INTO dependencies (id, from_task_id, to_task_id, type, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (dep_id, dep.from_task_id, dep.to_task_id, dep.type.value, dep.note, created_at)
+        )
+        
+        update_task_status_after_dependency_change(cursor, dep.to_task_id)
+
+        from_task_title_row = cursor.execute("SELECT title FROM tasks WHERE id = ?", (dep.from_task_id,)).fetchone()
+        to_task_title_row = cursor.execute("SELECT title FROM tasks WHERE id = ?", (dep.to_task_id,)).fetchone()
+        if from_task_title_row and to_task_title_row:
+            details = f"set '{to_task_title_row[0]}' as dependent on '{from_task_title_row[0]}'"
+            log_event(cursor, dep.userId, 'dependency_change', to_task_title_row[0], details)
+
+        conn.commit()
+        return {"id": dep_id, **dep.dict()}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.get("/tasks/{task_id}/dependencies")
+async def get_task_dependencies(task_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        # Dependencies where this task is blocked by others
+        cursor.execute("""
+            SELECT d.id, d.type, d.note, d.from_task_id, t.title as from_task_title, t.status as from_task_status
+            FROM dependencies d
+            JOIN tasks t ON d.from_task_id = t.id
+            WHERE d.to_task_id = ?
+        """, (task_id,))
+        blocked_by = [dict(row) for row in cursor.fetchall()]
+
+        # Dependencies where this task blocks others
+        cursor.execute("""
+            SELECT d.id, d.type, d.note, d.to_task_id, t.title as to_task_title, t.status as to_task_status
+            FROM dependencies d
+            JOIN tasks t ON d.to_task_id = t.id
+            WHERE d.from_task_id = ?
+        """, (task_id,))
+        blocking = [dict(row) for row in cursor.fetchall()]
+
+        return {"blocked_by": blocked_by, "blocking": blocking}
+    finally:
+        conn.close()
+
+@app.patch("/dependencies/{dependency_id}")
+async def update_dependency(dependency_id: str, dep_update: DependencyUpdate):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT to_task_id FROM dependencies WHERE id = ?", (dependency_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Dependency not found")
+        task_id = row[0]
+
+        updates = []
+        params = []
+        if dep_update.type:
+            updates.append("type = ?")
+            params.append(dep_update.type.value)
+        if dep_update.note is not None:
+            updates.append("note = ?")
+            params.append(dep_update.note)
+        
+        if not updates:
+            raise HTTPException(status_code=400, detail="No update fields provided")
+
+        params.append(dependency_id)
+        cursor.execute(f"UPDATE dependencies SET {', '.join(updates)} WHERE id = ?", tuple(params))
+
+        update_task_status_after_dependency_change(cursor, task_id)
+        conn.commit()
+        return {"message": "Dependency updated successfully"}
+    finally:
+        conn.close()
+
+@app.delete("/dependencies/{dependency_id}/{user_id}")
+async def delete_dependency(dependency_id: str, user_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT from_task_id, to_task_id FROM dependencies WHERE id = ?", (dependency_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Dependency not found")
+        from_task_id, to_task_id = row
+
+        cursor.execute("DELETE FROM dependencies WHERE id = ?", (dependency_id,))
+        
+        update_task_status_after_dependency_change(cursor, to_task_id)
+
+        from_task_title_row = cursor.execute("SELECT title FROM tasks WHERE id = ?", (from_task_id,)).fetchone()
+        to_task_title_row = cursor.execute("SELECT title FROM tasks WHERE id = ?", (to_task_id,)).fetchone()
+        if from_task_title_row and to_task_title_row:
+            details = f"removed dependency between '{to_task_title_row[0]}' and '{from_task_title_row[0]}'"
+            log_event(cursor, user_id, 'dependency_change', to_task_title_row[0], details)
+
+        conn.commit()
+        return {"message": "Dependency deleted successfully"}
+    finally:
+        conn.close()
+
+@app.get("/tasks/{task_id}/dependency-summary")
+async def get_dependency_summary(task_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT type, count(*) as count FROM dependencies WHERE to_task_id = ? GROUP BY type", (task_id,))
+        counts = {row['type']: row['count'] for row in cursor.fetchall()}
+
+        cursor.execute("""
+            SELECT t.title FROM tasks t
+            JOIN dependencies d ON t.id = d.from_task_id
+            WHERE d.to_task_id = ? AND d.type = 'blocked_by' AND t.status != 'Done'
+        """, (task_id,))
+        blocking_tasks = [row['title'] for row in cursor.fetchall()]
+
+        cursor.execute("SELECT note FROM dependencies WHERE to_task_id = ? AND type = 'waiting_on' AND note IS NOT NULL", (task_id,))
+        waiting_notes = [row['note'] for row in cursor.fetchall()]
+
+        return {
+            "blocked_by_count": counts.get('blocked_by', 0),
+            "waiting_on_count": counts.get('waiting_on', 0),
+            "helpful_if_done_first_count": counts.get('helpful_if_done_first', 0),
+            "blocking_tasks": blocking_tasks,
+            "waiting_notes": waiting_notes
+        }
+    finally:
+        conn.close()
+
 INPUT EXAMPLE
 {
   "task_id": "123",
@@ -1002,6 +1215,37 @@ INPUT EXAMPLE
 # -----------------------------
 # Gemini Suggest Endpoint
 # -----------------------------
+@app.get("/envoy/task/{task_id}/friction")
+async def get_envoy_friction(task_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        # Blockers
+        cursor.execute("""
+            SELECT t.title, u.firstName, u.lastName
+            FROM dependencies d
+            JOIN tasks t ON d.from_task_id = t.id
+            JOIN users u ON t.ownerId = u.id
+            WHERE d.to_task_id = ? AND d.type = 'blocked_by' AND t.status != 'Done'
+        """, (task_id,))
+        blockers = [f"{row['title']} (owned by {row['firstName']})" for row in cursor.fetchall()]
+
+        # External Waits
+        cursor.execute("SELECT note FROM dependencies WHERE to_task_id = ? AND type = 'waiting_on' AND note IS NOT NULL", (task_id,))
+        external_waits = [row['note'] for row in cursor.fetchall()]
+
+        # Soft Dependencies
+        cursor.execute("""
+            SELECT t.title FROM tasks t
+            JOIN dependencies d ON t.id = d.from_task_id
+            WHERE d.to_task_id = ? AND d.type = 'helpful_if_done_first' AND t.status != 'Done'
+        """, (task_id,))
+        soft_dependencies = [row['title'] for row in cursor.fetchall()]
+
+        return { "blockers": blockers, "external_waits": external_waits, "soft_dependencies": soft_dependencies }
+    finally:
+        conn.close()
 @app.post("/envoy/suggest")
 def suggest(req: EnvoyRequest):
     # 1) Fetch a snapshot of tasks from the DB
