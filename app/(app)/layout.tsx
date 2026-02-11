@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { AuthProvider } from '../(auth)/register/AuthContext';
+import { AuthProvider } from '../providers/AuthContext';
 import SideBar from '../../components/SideBar';
 import { LayoutProvider } from '../../components/LayoutContext';
 

@@ -20,7 +20,7 @@ import {
     Trash2,
     AlertTriangle
 } from 'lucide-react';
-import { useAuth } from '../../(auth)/register/AuthContext';
+import { useAuth } from '../../providers/AuthContext';
 
 const EnvoyConsole = () => {
     // --- STATE ---

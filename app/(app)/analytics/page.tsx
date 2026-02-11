@@ -7,7 +7,7 @@ import {
   ArrowRight, Search, Bell, Menu, TrendingUp, 
   MessageSquareWarning, Clock, ChevronRight, CheckCircle2 
 } from 'lucide-react';
-import { useAuth } from '../../(auth)/register/AuthContext';
+import { useAuth } from '../../providers/AuthContext';
 
 // --- 1. MOCK DATA & TYPES (Based on your provided Schema) ---
 

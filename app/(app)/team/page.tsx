@@ -5,7 +5,7 @@ import {
     Users, AlertTriangle, Shield, Activity, 
     CheckCircle, XCircle, Zap, BarChart3, Plus, UserPlus, Edit3, Search, X
 } from 'lucide-react';
-import { useAuth } from '../../(auth)/register/AuthContext';
+import { useAuth } from '../../providers/AuthContext';
 
 interface TeamOverview {
     coordinationDebt: string;

@@ -4,7 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowRight, Lock, Mail, Github, Chrome, ShieldCheck, ArrowLeft, AlertCircle } from "lucide-react";
-import { useAuth } from "../register/AuthContext";
+import { useAuth } from "@/app/providers/AuthContext";
 
 // --- COMPONENTS ---
 
@@ -94,8 +94,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(data.email, data.password);
-      // Redirect is handled in AuthContext or we can force it here
-      window.location.href = "/roadmap";
+      // Redirect is now handled by AuthContext upon successful login
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred.");
     } finally {
@@ -193,9 +192,9 @@ export default function LoginPage() {
           </div>
 
           <div className="mt-5 flex justify-center w-full">
-              <div className="mt-0.5 text-sm">Don't have an account?</div> <a href="/register" className="ml-1 text-violet-400 hover:text-violet-300 font-medium">
+              <div className="mt-0.5 text-sm">Don't have an account?</div> <Link href="/register" className="ml-1 text-violet-400 hover:text-violet-300 font-medium">
               Initialize Workspace
-            </a>
+            </Link>
           </div>
         </motion.div>
       </div>

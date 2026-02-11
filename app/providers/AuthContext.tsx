@@ -30,39 +30,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const pathname = usePathname();
 
   useEffect(() => {
-    const setData = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) console.error('Error getting session:', error);
+    // Initial check for session on page load
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
-    };
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    });
+    
+    // Set up a listener for any auth event (sign in, sign out, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
-      if (session) {
-        console.log("Supabase JWT:", session.access_token);
-      }
       setLoading(false);
-      
-      if (session) {
-         if (publicPaths.includes(pathname) && pathname !== '/') {
-             router.push('/roadmap');
-         }
-      } else {
-         if (!publicPaths.includes(pathname)) {
-             router.push('/register');
-         }
-      }
     });
 
-    setData();
-
     return () => {
-      listener.subscription.unsubscribe();
+      subscription.unsubscribe();
     };
-  }, [pathname, router]);
+  }, []);
+
+  // This separate effect handles all redirection logic
+  useEffect(() => {
+    if (loading) return; // Don't redirect until auth state is confirmed
+
+    const isProtected = !publicPaths.includes(pathname);
+
+    if (!user && isProtected) {
+      router.push('/login'); // User is not logged in and on a protected page, send to login.
+    } else if (user && (pathname === '/login' || pathname === '/register')) {
+      router.push('/roadmap'); // User is logged in but on login/register page, send to roadmap.
+    }
+  }, [user, loading, pathname, router]);
 
   const login = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });

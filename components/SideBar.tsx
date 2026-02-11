@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Home, Settings,FolderKanban,UsersRound, ChevronLeft, LayoutDashboard, BarChart3, Sun, Moon, BadgePlus, MapPinCheck, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { useLayout } from './LayoutContext'; 
-import { useAuth } from '../app/(auth)/register/AuthContext';
+import { useAuth } from '../app/providers/AuthContext';
 
 const navItems = [
     { name: 'Pulse', href: '/pulse', icon: BadgePlus },

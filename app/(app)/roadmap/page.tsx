@@ -10,7 +10,7 @@ import {
     CheckCircle, ArrowRight, XCircle, FolderPlus, Trash2,
     GitCommit, Layers, Zap, BrainCircuit, UserCog, LayoutGrid, List, Calendar, RefreshCw, Plus, Search, X, ChevronDown, Unlink, Settings2
 } from 'lucide-react';
-import { useAuth } from '../../(auth)/register/AuthContext';
+import { useAuth } from "@/app/providers/AuthContext";
 
 // 1. BACKEND-READY TYPES & INTERFACES
 type TaskStatus = 'On Track' | 'At Risk' | 'Blocked' | 'Completed';

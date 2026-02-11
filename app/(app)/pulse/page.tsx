@@ -7,7 +7,7 @@ import {
     MessageSquare, Users, User, Calendar, Flag, Activity, Layers, Info,
     MoreHorizontal, Filter, Search 
 } from 'lucide-react';
-import { useAuth } from '../../(auth)/register/AuthContext';
+import { useAuth } from '../../providers/AuthContext';
 
 // --- TYPES & INTERFACES ---
 

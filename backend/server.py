@@ -13,9 +13,10 @@ from google import genai
 from enum import Enum
 import httpx
 import asyncio
-from time import time
+from time import time   
 from supabase import create_client, Client
 from dotenv import load_dotenv
+from jose import jwt
 
 # # --- Setup & Config ---
 # backend_dir = Path(__file__).resolve().parent
@@ -45,6 +46,7 @@ else:
 # Supabase Init
 SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
 SUPABASE_KEY = os.getenv("NEXT_PUBLIC_SUPABASE_KEY")
+JWKS_URL = os.getenv("SUPABASE_JWKS")
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_KEY")
 if not SUPABASE_URL or not SUPABASE_KEY or not SUPABASE_JWT_SECRET:
     raise ValueError("Supabase URL, KEY, or JWT_SECRET missing in environment!")
@@ -71,17 +73,32 @@ SERVER_PORT = int(os.getenv("BACKEND_PORT", 8000))
 
 # --- Auth ---
 auth_scheme = HTTPBearer()
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(auth_scheme)):
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(auth_scheme)):
     token = credentials.credentials
+    
     try:
-        payload = jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        # 1. Fetch the Public Keys from Supabase
+        # (In production, you'd cache this so you don't call it every time)
+        async with httpx.AsyncClient() as client:
+            response = await client.get(JWKS_URL)
+            jwks = response.json()
 
+        # 2. Decode using the JWKS 
+        # This automatically finds the correct key (3ab522bd...) from the set
+        payload = jwt.decode(
+            token, 
+            jwks, 
+            algorithms=["ES256"], 
+            audience="authenticated"
+        )
+        return payload
+
+    except Exception as e:
+        print(f"❌ AUTH ERROR: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail=f"Authentication failed: {str(e)}"
+        )
 # Logic Constants
 # Expanded to include statuses used by the dependency logic
 VALID_STATUS = {"Todo", "In Progress", "Done", "Blocked", "At Risk", "On Track"}
@@ -1163,6 +1180,109 @@ async def deletePersona(data: PersonaDelete, user: dict = Depends(get_current_us
         return {"message": "Persona not found, nothing deleted"}
     return {"message": "Persona deleted successfully"}
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@app.get("/users/{user_id}")
+async def get_user_profile(user_id: str, current_user: dict = Depends(get_current_user)):
+    """Stops the 404 error on the roadmap page."""
+    res = supabase.table('profiles').select("*").eq('id', user_id).single().execute()
+    if not res.data:
+        # Create a profile on the fly if it doesn't exist
+        new_profile = {
+            "id": user_id,
+            "firstName": current_user.get("email", "User").split('@')[0],
+            "baseCapacity": 100
+        }
+        supabase.table('profiles').insert(new_profile).execute()
+        return new_profile
+    return res.data
+
+@app.put("/users/{user_id}")
+async def update_user_profile(user_id: str, data: dict = Body(...), current_user: dict = Depends(get_current_user)):
+    """Restored from OLD-FILE.PY profile update logic."""
+    res = supabase.table('profiles').update(data).eq('id', user_id).execute()
+    return res.data
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@app.get("/users/{user_id}")
+async def get_user_profile(user_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Restored from OLD-FILE.PY logic, updated for Supabase.
+    This stops the 404 error in roadmap.tsx.
+    """
+    try:
+        # Try to fetch from 'profiles' table (common Supabase pattern)
+        res = supabase.table('profiles').select("*").eq('id', user_id).single().execute()
+        
+        if res.data:
+            return res.data
+            
+        # Fallback: If no profile exists, return data from the JWT/Auth metadata
+        # This ensures the frontend always gets a valid object
+        return {
+            "id": user_id,
+            "firstName": current_user.get("user_metadata", {}).get("full_name", "New"),
+            "username": current_user.get("email", "User").split('@')[0],
+            "avatar": f"https://ui-avatars.com/api/?name={user_id}&background=random",
+            "baseCapacity": 100
+        }
+    except Exception as e:
+        print(f"Error in get_user_profile: {e}")
+        # Return a safe default to prevent frontend crashes
+        return {"id": user_id, "firstName": "User", "baseCapacity": 100}
+
+# --- RESTORED TEAM MEMBERS ENDPOINT ---
+@app.get("/projects/{project_id}/team")
+async def get_project_team(project_id: str, user: dict = Depends(get_current_user)):
+    """
+    Roadmap.tsx often calls this to populate the user list.
+    """
+    try:
+        # In Supabase, we fetch all profiles
+        res = supabase.table('profiles').select("*").execute()
+        return res.data
+    except Exception:
+        return []
+
 @app.post('/team/add_member')
 async def add_team_member(req: AddMemberRequest, user: dict = Depends(get_current_user)):
     res_admin = supabase.table('users').select('role, companyName').eq('id', req.userId).execute()
@@ -1258,6 +1378,39 @@ async def get_pulse_events(user: dict = Depends(get_current_user)):
             "timestamp": time_ago(row['timestamp'])
         })
     return events
+
+
+
+
+
+
+@app.patch("/tasks/{task_id}")
+async def patch_task(task_id: str, updates: dict = Body(...), user: dict = Depends(get_current_user)):
+    """Essential for drag-and-drop status changes (Todo -> Done)."""
+    res = supabase.table('tasks').update(updates).eq('id', task_id).execute()
+    return res.data
+
+@app.delete("/tasks/{task_id}")
+async def delete_task(task_id: str, user: dict = Depends(get_current_user)):
+    """Restored delete functionality."""
+    supabase.table('tasks').delete().eq('id', task_id).execute()
+    return {"status": "deleted"}
+
+@app.get("/pulse/activity/{user_id}")
+async def get_activity_logs(user_id: str, user: dict = Depends(get_current_user)):
+    """Restored the 'Activity Feed' logic from your OLD-FILE.PY."""
+    res = supabase.table('activity_logs').select("*").eq('userId', user_id).order('created_at', desc=True).limit(20).execute()
+    return res.data
+
+
+
+
+
+@app.get("/users/{user_id}/personas")
+async def get_user_personas(user_id: str, user: dict = Depends(get_current_user)):
+    """Restored Persona logic (e.g., Designer vs Developer roles for one user)."""
+    res = supabase.table('personas').select("*").eq('ownerId', user_id).execute()
+    return res.data
 
 @app.get('/envoy/interventions')
 async def get_interventions(userId: str, user: dict = Depends(get_current_user)):

@@ -6,7 +6,7 @@ import {
     Save, CheckCircle, AlertCircle, Plus, Trash2, 
     Activity, Lock, RefreshCw, Smartphone, Monitor
 } from 'lucide-react';
-import { useAuth } from '../../(auth)/register/AuthContext';
+import { useAuth } from '../../providers/AuthContext';
 
 // ==========================================
 // 1. DATA MODELS (Backend Schema)

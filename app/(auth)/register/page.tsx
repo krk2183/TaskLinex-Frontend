@@ -2,10 +2,9 @@
 
 import React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, ArrowLeft, Mail, User, Briefcase, ChevronRight, Lock, AlertCircle } from "lucide-react";
-import { useAuth } from "./AuthContext";
+import { useAuth } from "@/app/providers/AuthContext";
 
 // --- COMPONENTS ---
 
@@ -79,7 +78,6 @@ const BackButton = () => (
 // --- PAGE ---
 
 export default function SignupPage() {
-  const router = useRouter();
   const { login, signup } = useAuth();
   const [isLogin, setIsLogin] = React.useState(false);
   const [Data, setData] = React.useState({
@@ -114,7 +112,7 @@ export default function SignupPage() {
     try {
       if (isLogin) {
         await login(Data.email, Data.password);
-        router.push("/roadmap");
+        // Redirect is now handled by AuthContext
       } else {
         const data = await signup(Data.email, Data.password, {
           data: {
@@ -127,7 +125,7 @@ export default function SignupPage() {
         });
         
         if (data.session) {
-          router.push("/roadmap");
+          // Redirect is now handled by AuthContext
         } else if (data.user) {
           // Email verification required
           setError("Please check your email to verify your account.");
