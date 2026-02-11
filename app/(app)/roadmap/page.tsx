@@ -64,14 +64,12 @@ interface Task {
     id: string;
     projectId: string;
     title: string;
-    // Backend would store ISO dates; frontend converts to grid units
     startDate: number;
     duration: number; // Actual duration
     plannedDuration: number; // For slippage visualization
     progress: number;
     status: TaskStatus;
     priority: Priority;
-    // Relationships
     ownerId: string;
     ownerName?: string;
     personaId?: string; // Which "hat" is the owner wearing?
@@ -80,10 +78,8 @@ interface Task {
     dependents?: Task[];
     dependencyNote?: string;
     dependencyType?: string;
-    // Meta
     isMilestone?: boolean;
     tags: string[];
-    // AI Context
     dependencySummary?: DependencySummary;
     envoySuggestion?: EnvoySuggestion;
 }

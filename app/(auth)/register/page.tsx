@@ -2,9 +2,12 @@
 
 import React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, ArrowLeft, Mail, User, Briefcase, ChevronRight, Lock, AlertCircle } from "lucide-react";
-import { useAuth } from "@/app/providers/AuthContext";
+import { useAuth, supabase } from "@/app/providers/AuthContext";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
 // --- COMPONENTS ---
 
@@ -78,7 +81,8 @@ const BackButton = () => (
 // --- PAGE ---
 
 export default function SignupPage() {
-  const { login, signup } = useAuth();
+  const { login } = useAuth();
+  const router = useRouter();
   const [isLogin, setIsLogin] = React.useState(false);
   const [Data, setData] = React.useState({
     firstName: "",
@@ -102,40 +106,147 @@ export default function SignupPage() {
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isLogin && Data.password !== Data.confirmPassword) {
+    
+    if (isLogin) {
+      // Handle login
+      setLoading(true);
+      setError("");
+      try {
+        await login(Data.email, Data.password);
+        // AuthContext will handle redirect
+      } catch (err: any) {
+        console.error("Login Error:", err);
+        setError(err.message || "Login failed.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Handle signup
+    if (Data.password !== Data.confirmPassword) {
       setError("Passwords do not match");
       return;
     }
+
     setLoading(true);
-    setError(""); // Clear previous errors
+    setError("");
     
     try {
-      if (isLogin) {
-        await login(Data.email, Data.password);
-        // Redirect is now handled by AuthContext
-      } else {
-        const data = await signup(Data.email, Data.password, {
+      console.log('🚀 Starting registration process...');
+
+      // Step 1: Sign up with Supabase anonymous auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: Data.email,
+        password: Data.password,
+        options: {
           data: {
+            username: Data.username,
             firstName: Data.firstName,
             lastName: Data.lastName,
-            username: Data.username,
             companyName: Data.companyName,
-            role: Data.role
+            role: Data.role,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          }
+        }
+      });
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('No user returned from signup');
+
+      const userId = authData.user.id;
+      const token = authData.session?.access_token;
+
+      if (!token) throw new Error('No access token received');
+
+      console.log('✅ Supabase auth created:', userId);
+
+      // Step 2: Wait for Supabase trigger to process
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // Step 3: Try to fetch user (backend has retry logic built-in)
+      console.log('🔍 Verifying user data...');
+      let userExists = false;
+      
+      try {
+        const userResponse = await fetch(`${API_BASE_URL}/users/${userId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
           }
         });
-        
-        if (data.session) {
-          // Redirect is now handled by AuthContext
-        } else if (data.user) {
-          // Email verification required
-          setError("Please check your email to verify your account.");
+
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          console.log('✅ User data verified:', userData);
+          userExists = true;
         }
+      } catch (err) {
+        console.log('⚠️ User not found after initial check, attempting fallback...');
       }
+
+      // Step 4: If user doesn't exist, create manually via fallback endpoint
+      if (!userExists) {
+        console.log('🔧 Creating user via fallback endpoint...');
+        const ensureResponse = await fetch(`${API_BASE_URL}/users/ensure`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            userId,
+            email: Data.email,
+            username: Data.username,
+            firstName: Data.firstName,
+            lastName: Data.lastName,
+            companyName: Data.companyName,
+            role: Data.role,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          })
+        });
+
+        if (!ensureResponse.ok) {
+          const errorData = await ensureResponse.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Failed to create user data');
+        }
+
+        const result = await ensureResponse.json();
+        console.log('✅ User ensured:', result);
+      }
+
+      // Step 5: Final verification
+      console.log('🔍 Final verification...');
+      const finalCheck = await fetch(`${API_BASE_URL}/users/${userId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!finalCheck.ok) {
+        throw new Error('User data verification failed after creation');
+      }
+
+      const finalUserData = await finalCheck.json();
+      console.log('✅ Registration complete!', finalUserData);
+      
+      // Success! Redirect to roadmap
+      console.log('🎉 Redirecting to roadmap...');
+      router.push('/roadmap');
+
     } catch (err: any) {
-      console.error("Authentication Error:", err);
-      setError(err.message || "An unexpected error occurred.");
+      console.error('❌ Registration error:', err);
+      setError(err.message || "Registration failed. Please try again.");
+      
+      // Clean up auth on error
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutErr) {
+        console.error('Error signing out:', signOutErr);
+      }
     } finally {
-      setLoading(false); 
+      setLoading(false);
     }
   };
 
@@ -207,6 +318,14 @@ export default function SignupPage() {
                 {error}
               </div>
             )}
+            
+            {loading && (
+              <div className="p-3 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center gap-2 text-violet-400 text-sm">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-violet-400"></div>
+                {isLogin ? 'Signing in...' : 'Creating your workspace...'}
+              </div>
+            )}
+
             {!isLogin && (
             <div className="grid grid-cols-2 gap-4">
                 <InputField 
@@ -262,7 +381,7 @@ export default function SignupPage() {
               name="password"
               value={Data.password}
               onChange={handleChange}
-              placeholder="Password" 
+              placeholder="••••••••••••" 
               icon={Lock}
               required
             />
@@ -274,7 +393,7 @@ export default function SignupPage() {
               name="confirmPassword"
               value={Data.confirmPassword}
               onChange={handleChange}
-              placeholder="Confirm Password" 
+              placeholder="••••••••••••" 
               icon={Lock}
               required
             />
@@ -313,6 +432,7 @@ export default function SignupPage() {
               onChange={handleChange}
               placeholder="Acme Inc." 
               icon={Briefcase} 
+              required
             />
             )}
 
@@ -333,7 +453,7 @@ export default function SignupPage() {
 
             <div className="pt-2">
                 <button type="submit" disabled={loading} className="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-lg shadow-[0_0_20px_rgba(124,58,237,0.3)] hover:shadow-[0_0_25px_rgba(124,58,237,0.5)] transition-all flex items-center justify-center gap-2 group">
-                {loading ? "Processing..." : (isLogin ? "Sign In" : "Create Account")} {!loading && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
+                {loading ? (isLogin ? "Signing In..." : "Creating Account...") : (isLogin ? "Sign In" : "Create Account")} {!loading && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
                 </button>
             </div>
 
