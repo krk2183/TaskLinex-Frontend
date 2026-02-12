@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Home, Settings,FolderKanban,UsersRound, ChevronLeft, LayoutDashboard, BarChart3, Sun, Moon, BadgePlus, MapPinCheck, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { useLayout } from './LayoutContext'; 
-import { useAuth } from '../app/providers/AuthContext';
+import { useAuth, supabase } from '../app/providers/AuthContext';
 
 const navItems = [
     { name: 'Pulse', href: '/pulse', icon: BadgePlus },
@@ -25,9 +25,24 @@ export default function Sidebar() {
 
         const fetchUser = async () => {
             try {
-                const port = process.env.NEXT_PUBLIC_NPM_PORT;
-                const baseUrl = port ? `http://192.168.0.${port}:8000` : 'http://localhost:8000';
-                const response = await fetch(`${baseUrl}/users/${userId}`);
+                // Use centralized API URL from environment variables
+                const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+                
+                // Get the JWT token from Supabase session
+                const { data: { session } } = await supabase.auth.getSession();
+                const token = session?.access_token;
+                
+                if (!token) {
+                    console.error("No auth token available");
+                    return;
+                }
+                
+                const response = await fetch(`${baseUrl}/users/${userId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
                 
                 if (response.ok) {
                     const userData = await response.json();
@@ -40,6 +55,8 @@ export default function Sidebar() {
                         initials: initials || userData.username?.charAt(0).toUpperCase() || 'U',
                         role: userData.role || 'User'
                     });
+                } else {
+                    console.error("Failed to fetch user:", response.status);
                 }
             } catch (error) {
                 console.error("Failed to fetch user info for sidebar", error);

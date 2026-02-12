@@ -82,37 +82,118 @@ SERVER_PORT = int(os.getenv("BACKEND_PORT", 8000))
 # --- Auth ---
 auth_scheme = HTTPBearer()
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(auth_scheme)):
-    token = credentials.credentials
-    jwt_secret = os.getenv("SUPABASE_JWT_KEY", "").strip()
+from jwt.exceptions import InvalidTokenError, ExpiredSignatureError, InvalidSignatureError
+from fastapi import HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import serialization
+import base64
 
+auth_scheme = HTTPBearer()
+
+# Your JWK from Supabase
+JWK_DATA = {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "5DLsWjnNvuPMnvs8g5xcBZpiYsGMVu0jsFv49XfxwiQ",
+    "y": "bW5dA4pg1CgSYCCPYF7nxSwImO_kDya4KE8HTBiSIjk",
+    "alg": "ES256",
+    "use": "sig"
+}
+
+def jwk_to_pem(jwk: dict) -> bytes:
+    """Convert ES256 JWK to PEM public key"""
+    # Decode base64url coordinates (add padding if needed)
+    x_bytes = base64.urlsafe_b64decode(jwk['x'] + '==')
+    y_bytes = base64.urlsafe_b64decode(jwk['y'] + '==')
+    
+    # Create ECC public key
+    curve = ec.SECP256R1()  # P-256 curve
+    public_numbers = ec.EllipticCurvePublicNumbers(
+        x=int.from_bytes(x_bytes, 'big'),
+        y=int.from_bytes(y_bytes, 'big'),
+        curve=curve
+    )
+    
+    public_key = public_numbers.public_key()
+    
+    # Convert to PEM format
+    pem = public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    
+    return pem
+
+# Convert JWK to PEM at startup
+try:
+    PUBLIC_KEY_PEM = jwk_to_pem(JWK_DATA)
+    print("✅ Supabase ES256 public key loaded")
+except Exception as e:
+    print(f"❌ Failed to load public key: {e}")
+    PUBLIC_KEY_PEM = None
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(auth_scheme)):
+    """
+    SECURE JWT verification with ES256 public key
+    """
+    if not PUBLIC_KEY_PEM:
+        raise HTTPException(
+            status_code=500,
+            detail="Server misconfiguration: JWT verification unavailable"
+        )
+    
+    token = credentials.credentials
+    
     try:
-        # Supabase uses ES256 (ECDSA) algorithm, not HS256
-        # We need to get the public key from Supabase JWKS endpoint
+        # Decode and VERIFY with ES256
         payload = jwt.decode(
             token,
-            jwt_secret,
-            algorithms=["HS256", "ES256"],  # ✅ Added ES256
+            PUBLIC_KEY_PEM,
+            algorithms=["ES256"],
             options={
-                "verify_aud": False,
                 "verify_signature": True,
-                "require": ["exp", "iat", "sub"]
+                "verify_exp": True,
+                "verify_aud": False,
+                "require": ["exp", "sub"]
             }
         )
-        return payload
-    except jwt.exceptions.InvalidAlgorithmError:
-        # If ES256, try decoding without verification (Supabase handles verification)
-        try:
-            payload = jwt.decode(
-                token, 
-                options={"verify_signature": False}
+        
+        if not payload.get('sub'):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid token: missing user ID"
             )
-            return payload
-        except:
-            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        return payload
+    
+    except ExpiredSignatureError:
+        print("🔒 Token expired")
+        raise HTTPException(
+            status_code=401,
+            detail="Token expired. Please log in again."
+        )
+    
+    except InvalidSignatureError:
+        print("🚨 SECURITY: Invalid signature!")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token signature"
+        )
+    
+    except jwt.exceptions.DecodeError as e:
+        print(f"⚠️ Malformed token: {e}")
+        raise HTTPException(
+            status_code=401,
+            detail="Malformed token"
+        )
+    
     except Exception as e:
-        print(f"Auth Error: {e}")
-        raise HTTPException(status_code=401, detail="Invalid token")
+        print(f"❌ Auth error: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication failed"
+        )
 
 
 # Logic Constants
@@ -1892,6 +1973,16 @@ async def get_analytics(user_id: str, user: dict = Depends(get_current_user)):
         "velocityTrend": velocity_trend,
         "capacityHeatmap": heatmap_data
     }
+
+# FOR TESTING PURPOSES ONLY
+@app.get("/test-auth")
+async def test_auth(user: dict = Depends(get_current_user)):
+    return {
+        "message": "Auth working!",
+        "user_id": user.get('sub'),
+        "email": user.get('email')
+    }
+
 
 @app.post('/pulse/set_focus')
 async def set_focus(req: SetFocusRequest, user: dict = Depends(get_current_user)):

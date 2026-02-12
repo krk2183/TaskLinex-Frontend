@@ -3,10 +3,11 @@
 import React, { useEffect, useState } from 'react';
 import { 
     Users, AlertTriangle, Shield, Activity, 
-    CheckCircle, XCircle, Zap, BarChart3, Plus, UserPlus, Edit3, Search, X
+    CheckCircle, XCircle, Zap, BarChart3, Plus, UserPlus, Edit3, Search, X, Loader2
 } from 'lucide-react';
 import { useAuth } from '../../providers/AuthContext';
 import { api } from '@/lib/api';
+
 interface TeamOverview {
     coordinationDebt: string;
     leakageScore: number;
@@ -45,19 +46,20 @@ export default function TeamPage() {
     const [isAdding, setIsAdding] = useState(false);
     const [newUsername, setNewUsername] = useState("");
     const [userRole, setUserRole] = useState("user");
+    const [error, setError] = useState<string | null>(null);
 
     // Skills Modal State
     const [editingMember, setEditingMember] = useState<Member | null>(null);
     const [skillSearch, setSkillSearch] = useState("");
 
     useEffect(() => {
-        // 1. Wait for both userId AND jwt to be ready
         if (!userId || !jwt) return;
 
         const fetchData = async () => {
+            setLoading(true);
+            setError(null);
+            
             try {
-                // 2. Use the 'api' helper with the jwt for all requests
-                // This ensures the 'get_current_user' bouncer in server.py lets you in
                 const [ovData, memData, intData, userData] = await Promise.all([
                     api.get(`/team/overview?userId=${userId}`, jwt),
                     api.get(`/team/members?userId=${userId}`, jwt),
@@ -65,57 +67,60 @@ export default function TeamPage() {
                     api.get(`/users/${userId}`, jwt)
                 ]);
 
-                // 3. Use your EXISTING setter names
                 setOverview(ovData);
-                setMembers(memData); // This is your 'setTeamMembers'
-                setInterventions(intData);
+                setMembers(memData);
+                setInterventions(intData.filter((i: any) => i.scope === 'team'));
                 setUserRole(userData.role);
             } catch (e) {
                 console.error("Failed to load team data", e);
+                setError("Failed to load team data. Please try again.");
             } finally {
                 setLoading(false);
             }
         };
+        
         fetchData();
-    }, [userId, jwt]); // 4. Include jwt in the dependency array
+    }, [userId, jwt]);
 
     const handleAddMember = async () => {
-        if (!newUsername || !userId || !jwt) return;
+        if (!newUsername.trim() || !userId || !jwt) return;
         
         try {
-            // Backend now onlu accepts shortened endpoints
-            const res = await api.post('/team/add_member', { 
+            await api.post('/team/add_member', { 
                 userId, 
-                username: newUsername 
+                username: newUsername.trim() 
             }, jwt);
 
+            // Refresh members list
             const updatedMembers = await api.get(`/team/members?userId=${userId}`, jwt);
             setMembers(updatedMembers);            
             setIsAdding(false);
             setNewUsername("");
             
-        } catch (e) {
+        } catch (e: any) {
             console.error("Failed to add member:", e);
+            alert(e.message || "Failed to add team member. Please check the username and try again.");
         }
     };
 
     const handleUpdateSkills = async (memberId: string, newSkills: string[]) => {
-        if (!userId) return;
+        if (!userId || !jwt) return;
+        
         try {
-            const res = await fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/team/update_skills`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ requesterId: userId, targetUserId: memberId, skills: newSkills })
-            });
-            if (res.ok) {
-                // Update local state
-                setMembers(prev => prev.map(m => m.id === memberId ? { ...m, skills: newSkills } : m));
-                if (editingMember && editingMember.id === memberId) {
-                    setEditingMember(prev => prev ? { ...prev, skills: newSkills } : null);
-                }
+            await api.post('/team/update_skills', {
+                requesterId: userId,
+                targetUserId: memberId,
+                skills: newSkills
+            }, jwt);
+
+            // Update local state
+            setMembers(prev => prev.map(m => m.id === memberId ? { ...m, skills: newSkills } : m));
+            if (editingMember && editingMember.id === memberId) {
+                setEditingMember(prev => prev ? { ...prev, skills: newSkills } : null);
             }
         } catch (e) {
             console.error("Failed to update skills", e);
+            alert("Failed to update skills. Please try again.");
         }
     };
 
@@ -128,7 +133,55 @@ export default function TeamPage() {
         handleUpdateSkills(editingMember.id, newSkills);
     };
 
-    if (loading) return <div className="p-8 text-slate-400">Loading Team Intelligence...</div>;
+    const handleResolveIntervention = async (interventionId: string) => {
+        if (!jwt) return;
+        
+        try {
+            // Call backend to resolve intervention
+            await api.post('/envoy/resolve_intervention', {
+                interventionId,
+                userId
+            }, jwt);
+
+            // Remove from UI
+            setInterventions(prev => prev.filter(i => i.id !== interventionId));
+        } catch (e) {
+            console.error("Failed to resolve intervention:", e);
+        }
+    };
+
+    const handleDismissIntervention = (interventionId: string) => {
+        // Just remove from UI (no backend call for dismiss)
+        setInterventions(prev => prev.filter(i => i.id !== interventionId));
+    };
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+                <div className="text-center">
+                    <Loader2 className="w-8 h-8 text-violet-500 animate-spin mx-auto mb-4" />
+                    <p className="text-slate-400">Loading Team Intelligence...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+                <div className="text-center">
+                    <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto mb-4" />
+                    <p className="text-slate-400">{error}</p>
+                    <button 
+                        onClick={() => window.location.reload()}
+                        className="mt-4 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
+                    >
+                        Retry
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-slate-950 text-slate-200 p-6 font-sans">
@@ -226,6 +279,7 @@ export default function TeamPage() {
                                         type="text" 
                                         value={newUsername}
                                         onChange={(e) => setNewUsername(e.target.value)}
+                                        onKeyPress={(e) => e.key === 'Enter' && handleAddMember()}
                                         placeholder="Username"
                                         className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:ring-1 focus:ring-violet-500 outline-none"
                                     />
@@ -252,19 +306,19 @@ export default function TeamPage() {
                         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
                             <div className="text-xs text-slate-500 uppercase font-bold mb-1">Coordination Debt</div>
                             <div className={`text-2xl font-black ${overview?.coordinationDebt === 'High' ? 'text-rose-500' : 'text-amber-500'}`}>
-                                {overview?.coordinationDebt}
+                                {overview?.coordinationDebt || 'Low'}
                             </div>
                         </div>
                         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
                             <div className="text-xs text-slate-500 uppercase font-bold mb-1">Leakage Score</div>
                             <div className="text-2xl font-black text-violet-500">
-                                {overview?.leakageScore}%
+                                {overview?.leakageScore || 0}%
                             </div>
                         </div>
                         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
                             <div className="text-xs text-slate-500 uppercase font-bold mb-1">Dependency Risk</div>
                             <div className="text-2xl font-black text-rose-500">
-                                {overview?.dependencyRisk}
+                                {overview?.dependencyRisk || 'Low'}
                             </div>
                         </div>
                     </div>
@@ -287,7 +341,7 @@ export default function TeamPage() {
 
                         <div className="space-y-4">
                             {interventions.map((item, idx) => (
-                                <div key={idx} className="bg-slate-950 border border-slate-800 p-3 rounded-lg relative group">
+                                <div key={item.id} className="bg-slate-950 border border-slate-800 p-3 rounded-lg relative group">
                                     <div className="flex items-start gap-3">
                                         {item.type === 'critical' ? (
                                             <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
@@ -304,10 +358,16 @@ export default function TeamPage() {
                                     
                                     {/* Actions */}
                                     <div className="mt-3 flex gap-2 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button className="flex-1 bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-bold py-1.5 rounded">
+                                        <button 
+                                            onClick={() => handleResolveIntervention(item.id)}
+                                            className="flex-1 bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-bold py-1.5 rounded transition-colors"
+                                        >
                                             Resolve
                                         </button>
-                                        <button className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold py-1.5 rounded">
+                                        <button 
+                                            onClick={() => handleDismissIntervention(item.id)}
+                                            className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold py-1.5 rounded transition-colors"
+                                        >
                                             Dismiss
                                         </button>
                                     </div>
