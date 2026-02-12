@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../providers/AuthContext';
 
+import { api } from '@/lib/api';
+
 // --- TYPES & INTERFACES ---
 
 type EventType = 'status_change' | 'comment' | 'blocker' | 'milestone' | 'handoff';
@@ -80,6 +82,7 @@ const SYSTEM_EVENTS: PulseEvent[] = [
 // Sprint Health Graph
 const SprintHealthCard  = ({ data, isNewUser }: { data: ProjectHealth, isNewUser?: boolean }) => {
     const totalSlots = 25;
+
     var totalTasks = (data?.sprint?.completed ?? 0) + (data?.sprint?.remaining ?? 0);
 
     const currentDayIndex = 15; // Example: we are at bar 15 of 25
@@ -441,14 +444,6 @@ const ActivityStream = ({ events, isNewUser }: { events: PulseEvent[], isNewUser
 };
 
 // --- Pulse Focus ---
-
-const PulseFocus = ({ currentTask, nextTask, rationale }: { currentTask: any, nextTask: any, rationale: string }) => {
-    // We'll handle the "New User" empty state in the parent or by checking props here if needed, 
-    // but for now let's assume if no tasks are passed, we check if it's a new user state via a prop or context.
-    // However, since we don't pass isNewUser here yet, let's update the signature.
-    return null; // Placeholder to be overridden by the actual component below
-};
-
 const PulseFocusComponent = ({ currentTask, nextTask, rationale, isNewUser }: { currentTask: any, nextTask: any, rationale: string, isNewUser: boolean }) => {
     if (!currentTask && !nextTask) {
         return (
@@ -533,7 +528,7 @@ const PulseFocusComponent = ({ currentTask, nextTask, rationale, isNewUser }: { 
 // --- MAIN PAGE LAYOUT ---
 
 export default function PulsePage() {
-    const { userId } = useAuth();
+    const { userId, jwt } = useAuth();
     const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
     const [activityEvents, setActivityEvents] = useState<PulseEvent[]>([]);
     const [focusData, setFocusData] = useState<any>({ currentTask: null, nextTask: null, rationale: null });
@@ -587,70 +582,56 @@ export default function PulsePage() {
     }
 
     useEffect(() => {
-        if (!userId) return;
+            if (!userId || !jwt) return;
 
-        const fetchData = async () => {
-            try {
-                const PORT_SUFFIX = process.env.NEXT_PUBLIC_NPM_PORT;
-                const baseUrl = PORT_SUFFIX ? `http://192.168.0.${PORT_SUFFIX}:8000` : 'http://localhost:8000';
+            const fetchData = async () => {
+                try {
+                    const [teamData, activityData, focusData, statsData] = await Promise.all([
+                        api.get(`/team/members?userId=${userId}`, jwt),
+                        api.get(`/pulse/events`, jwt),
+                        api.get(`/pulse/${userId}`, jwt), // Ensure this endpoint exists in backend!
+                        api.get(`/pulse/stats?userId=${userId}`, jwt),
+                    ]);
 
-                // Fetch all data in parallel to reduce loading time
-                const [teamRes, activityRes, focusRes, statsRes] = await Promise.all([
-                    fetch(`${baseUrl}/team/members?userId=${userId}`),
-                    fetch(`${baseUrl}/pulse/events`),
-                    fetch(`${baseUrl}/pulse/${userId}`),
-                    fetch(`${baseUrl}/pulse/stats?userId=${userId}`)
-                ]);
-
-                // Process Team Data
-                if (teamRes.ok) {
-                    const data = await teamRes.json();
-                    const mappedTeam: TeamMember[] = data.map((m: any) => ({
+                    const mappedTeam: TeamMember[] = Array.isArray(teamData) ? teamData.map((m: any) => ({
                         id: m.id,
                         name: m.name,
                         role: m.role,
                         avatar: `https://ui-avatars.com/api/?name=${m.name}&background=random`,
                         status: m.status || 'offline',
-                        workload: m.workload || Math.floor(Math.random() * 100), // Fallback for demo if not in DB
+                        workload: m.workload || Math.floor(Math.random() * 100),
                         currentTask: m.currentTask
-                    }));
+                    })) : [];
+                    
                     setTeamMembers(mappedTeam);
                     if (mappedTeam.length > 0) setHasSeenActivity(true);
-                }
 
-                // Process Activity Data
-                if (activityRes.ok) {
-                    const data = await activityRes.json();
-                    const events = Array.isArray(data) ? data : [];
+                    const events = Array.isArray(activityData) ? activityData : [];
                     setActivityEvents(events);
                     if (events.length > 0) setHasSeenActivity(true);
+
+                    if (focusData) {
+                        setFocusData(focusData);
+                    }
+
+                    if (statsData) {
+                        setStats(statsData);
+                    }
+
+                } catch (error) {
+                    console.error("Failed to fetch pulse data", error);
+                } finally {
+                    setLoading(false);
                 }
+            };
 
-                // Process Focus Data
-                if (focusRes.ok) {
-                    const data = await focusRes.json();
-                    setFocusData(data);
-                }
-
-                // Process Stats Data
-                if (statsRes.ok) {
-                    const data = await statsRes.json();
-                    setStats(data);
-                }
-
-            } catch (error) {
-                console.error("Failed to fetch pulse data", error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchData();
-        // Poll for updates every 5 seconds (increased from 3s to reduce load)
-        const interval = setInterval(fetchData, 5000);
-        return () => clearInterval(interval);
-    }, [userId]);
-
+            fetchData();
+            
+            // Poll for updates every 5 seconds
+            const interval = setInterval(fetchData, 5000);
+            return () => clearInterval(interval);
+        }, [userId, jwt]);
+        
     return (
         <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans selection:bg-indigo-500/30">
             {/* Header Area */}

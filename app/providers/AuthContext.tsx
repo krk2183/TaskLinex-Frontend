@@ -11,6 +11,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey);
 
 interface AuthContextType {
   user: User | null;
+  userId: string | null; // Added for convenience
   jwt: string | null;
   login: (email: string, password: string) => Promise<any>;
   signup: (email: string, password: string, options?: any) => Promise<any>;
@@ -94,6 +95,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   return (
     <AuthContext.Provider value={{ 
       user, 
+      userId: user?.id ?? null, // Add userId for convenience
       jwt: session?.access_token ?? null, 
       login, 
       signup, 

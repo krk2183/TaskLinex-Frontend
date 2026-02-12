@@ -5,6 +5,9 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../providers/AuthContext';
 import { useRouter } from 'next/navigation';
 
+import { api } from '@/lib/api'; 
+
+
 interface AccountSettings {
     displayName: string;
     username: string;
@@ -50,7 +53,7 @@ const SectionHeader = ({ title, icon: Icon }: any) => (
 );
 
 export default function AccountPage() {
-    const { userId } = useAuth();
+    const { userId, jwt } = useAuth(); 
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -80,35 +83,26 @@ export default function AccountPage() {
     const API_URL = PORT_SUFFIX ? `http://192.168.0.${PORT_SUFFIX}:8000` : 'http://localhost:8000';
 
     useEffect(() => {
-        if (!userId) return;
+    if (!userId || !jwt) return;
         
-        fetch(`${API_URL}/users/${userId}`)
-            .then(res => res.json())
-            .then(user => {
-                setData(prev => ({
-                    ...prev,
-                    displayName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-                    username: user.username,
-                    email: user.email,
-                    timezone: user.timezone || 'UTC',
-                    accountType: user.role === 'admin' ? 'Team' : 'Individual',
-                    avatarUrl: `https://ui-avatars.com/api/?name=${user.firstName}+${user.lastName}&background=random`
-                }));
-                setIsLoading(false);
-            })
-            .catch(err => {
-                console.error(err);
-                setIsLoading(false);
-            });
-
-        // Fetch Sessions
-        fetch(`${API_URL}/sessions?userId=${userId}`)
-            .then(res => res.json())
-            .then(data => {
-                if (Array.isArray(data)) setSessions(data);
-            })
-            .catch(err => console.error("Failed to load sessions", err));
-    }, [userId]);
+    api.get(`/users/${userId}`, jwt)
+        .then(user => {
+            setData(prev => ({
+                ...prev,
+                displayName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+                username: user.username,
+                email: user.email,
+                timezone: user.timezone || 'UTC',
+                accountType: user.role === 'admin' ? 'Team' : 'Individual',
+                avatarUrl: `https://ui-avatars.com/api/?name=${user.firstName}+${user.lastName}&background=random`
+            }));
+            setIsLoading(false);
+        })
+        .catch(err => {
+            console.error('Failed to load user:', err);
+            setIsLoading(false);
+        });
+    }, [userId, jwt]);
 
     const updateData = (updates: Partial<AccountSettings>) => {
         setData(prev => ({ ...prev, ...updates }));

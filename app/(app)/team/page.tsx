@@ -6,7 +6,7 @@ import {
     CheckCircle, XCircle, Zap, BarChart3, Plus, UserPlus, Edit3, Search, X
 } from 'lucide-react';
 import { useAuth } from '../../providers/AuthContext';
-
+import { api } from '@/lib/api';
 interface TeamOverview {
     coordinationDebt: string;
     leakageScore: number;
@@ -37,7 +37,7 @@ const AVAILABLE_SKILLS = [
 ];
 
 export default function TeamPage() {
-    const { userId } = useAuth();
+    const { userId, jwt } = useAuth();
     const [overview, setOverview] = useState<TeamOverview | null>(null);
     const [members, setMembers] = useState<Member[]>([]);
     const [interventions, setInterventions] = useState<Intervention[]>([]);
@@ -51,22 +51,24 @@ export default function TeamPage() {
     const [skillSearch, setSkillSearch] = useState("");
 
     useEffect(() => {
-        // Wait for the AuthContext to provide the userId.
-        if (!userId) return;
+        // 1. Wait for both userId AND jwt to be ready
+        if (!userId || !jwt) return;
 
         const fetchData = async () => {
             try {
-                const [ovRes, memRes, intRes, userRes] = await Promise.all([
-                    fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/team/overview?userId=${userId}`),
-                    fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/team/members?userId=${userId}`),
-                    fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/envoy/interventions?userId=${userId}`),
-                    fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/users/${userId}`)
+                // 2. Use the 'api' helper with the jwt for all requests
+                // This ensures the 'get_current_user' bouncer in server.py lets you in
+                const [ovData, memData, intData, userData] = await Promise.all([
+                    api.get(`/team/overview?userId=${userId}`, jwt),
+                    api.get(`/team/members?userId=${userId}`, jwt),
+                    api.get(`/envoy/interventions?userId=${userId}`, jwt),
+                    api.get(`/users/${userId}`, jwt)
                 ]);
 
-                setOverview(await ovRes.json());
-                setMembers(await memRes.json());
-                setInterventions(await intRes.json());
-                const userData = await userRes.json();
+                // 3. Use your EXISTING setter names
+                setOverview(ovData);
+                setMembers(memData); // This is your 'setTeamMembers'
+                setInterventions(intData);
                 setUserRole(userData.role);
             } catch (e) {
                 console.error("Failed to load team data", e);
@@ -75,24 +77,25 @@ export default function TeamPage() {
             }
         };
         fetchData();
-    }, [userId]);
+    }, [userId, jwt]); // 4. Include jwt in the dependency array
 
     const handleAddMember = async () => {
-        if (!newUsername || !userId) return;
+        if (!newUsername || !userId || !jwt) return;
+        
         try {
-            const res = await fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/team/add_member`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, username: newUsername })
-            });
-            if (res.ok) {
-                const memRes = await fetch(`http://192.168.0.${process.env.NEXT_PUBLIC_NPM_PORT}:8000/team/members?userId=${userId}`);
-                setMembers(await memRes.json());
-                setIsAdding(false);
-                setNewUsername("");
-            }
+            // Backend now onlu accepts shortened endpoints
+            const res = await api.post('/team/add_member', { 
+                userId, 
+                username: newUsername 
+            }, jwt);
+
+            const updatedMembers = await api.get(`/team/members?userId=${userId}`, jwt);
+            setMembers(updatedMembers);            
+            setIsAdding(false);
+            setNewUsername("");
+            
         } catch (e) {
-            console.error("Failed to add member", e);
+            console.error("Failed to add member:", e);
         }
     };
 

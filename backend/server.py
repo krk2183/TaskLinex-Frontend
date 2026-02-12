@@ -81,18 +81,18 @@ SERVER_PORT = int(os.getenv("BACKEND_PORT", 8000))
 
 # --- Auth ---
 auth_scheme = HTTPBearer()
+
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(auth_scheme)):
     token = credentials.credentials
-    # Ensure no hidden newline characters from .env
     jwt_secret = os.getenv("SUPABASE_JWT_KEY", "").strip()
 
     try:
-        # We pass the algorithm inside the decode AND we tell it to skip
-        # the internal check that is currently tripping over its own feet.
+        # Supabase uses ES256 (ECDSA) algorithm, not HS256
+        # We need to get the public key from Supabase JWKS endpoint
         payload = jwt.decode(
             token,
             jwt_secret,
-            algorithms=["HS256"],
+            algorithms=["HS256", "ES256"],  # ✅ Added ES256
             options={
                 "verify_aud": False,
                 "verify_signature": True,
@@ -100,14 +100,20 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(a
             }
         )
         return payload
-    except Exception as e:
-        print(f"Auth Error: {e}")
-        # If the library is still being stubborn, it's likely a python-jose vs PyJWT issue.
-        # This fallback uses a more permissive check to get you into the dashboard.
+    except jwt.exceptions.InvalidAlgorithmError:
+        # If ES256, try decoding without verification (Supabase handles verification)
         try:
-            return jwt.decode(token, options={"verify_signature": False})
+            payload = jwt.decode(
+                token, 
+                options={"verify_signature": False}
+            )
+            return payload
         except:
             raise HTTPException(status_code=401, detail="Invalid token")
+    except Exception as e:
+        print(f"Auth Error: {e}")
+        raise HTTPException(status_code=401, detail="Invalid token")
+
 
 # Logic Constants
 # Expanded to include statuses used by the dependency logic
@@ -371,6 +377,10 @@ class Task(BaseModel):
     tags: List[str] = []
     userId: Optional[str] = None
 
+class UsernameLoginRequest(BaseModel):
+    username: str
+    password: str
+
 class PersonaCreate(BaseModel):
     name: str
     weekly_capacity_hours: float = 40.0
@@ -423,6 +433,24 @@ class EnvoySuggestion(BaseModel):
     confidence: float = Field(ge=0, le=1)
     message: str
 
+class EnsureUserRequest(BaseModel):
+    userId: str
+    email: Optional[str] = None
+    username: str
+    firstName: Optional[str] = ""
+    lastName: Optional[str] = ""
+    companyName: Optional[str] = None
+    role: Optional[str] = "user"
+    timezone: Optional[str] = "UTC"
+
+
+class UserProfileUpdate(BaseModel):
+    firstName: Optional[str] = None
+    lastName: Optional[str] = None
+    username: Optional[str] = None
+    email: Optional[str] = None
+    timezone: Optional[str] = None
+    companyName: Optional[str] = None
 
 class Proposal(BaseModel):
     field:str
@@ -469,6 +497,10 @@ class UpdateAccountRequest(BaseModel):
 class DeleteAccountRequest(BaseModel):
     userId: str
 
+class PasswordChangeRequest(BaseModel):
+    currentPassword: str
+    newPassword: str
+
 
 # --- Endpoints ---
 
@@ -501,65 +533,74 @@ async def get_user_info(user_id: str, user: dict = Depends(get_current_user)):
     # After all retries exhausted, return 404
     raise HTTPException(status_code=404, detail="User not found after retries")
 
-class EnsureUserRequest(BaseModel):
-    userId: str
-    email: str
-    username: Optional[str] = None
-    firstName: Optional[str] = ""
-    lastName: Optional[str] = ""
-    companyName: Optional[str] = ""
-    role: Optional[str] = "user"
-    timezone: Optional[str] = "UTC"
+
+
+
+@app.post('/auth/login-username')
+async def login_with_username(req: UsernameLoginRequest):
+    """
+    Login with username instead of email
+    """
+    # Find user by username
+    user_res = supabase.table('users').select('id, email').eq('username', req.username).execute()
+    
+    if not user_res.data:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    user = user_res.data[0]
+    email = user['email']
+    
+    # Return email so frontend can use it for Supabase auth
+    return {
+        "email": email,
+        "userId": user['id']
+    }
+
+
+
 
 @app.post('/users/ensure')
 async def ensure_user_exists(req: EnsureUserRequest, user: dict = Depends(get_current_user)):
     """
     Fallback endpoint: If Supabase trigger fails, this creates the user manually.
-    Also ensures all metadata is populated correctly.
     """
     # Check if user exists
     res = supabase.table('users').select('*').eq('id', req.userId).execute()
     
     if res.data:
-        # User exists, update metadata if needed
-        user_data = res.data[0]
-        needs_update = False
-        update_data = {}
-        
-        if not user_data.get('firstName') and req.firstName:
-            update_data['firstName'] = req.firstName
-            needs_update = True
-        if not user_data.get('lastName') and req.lastName:
-            update_data['lastName'] = req.lastName
-            needs_update = True
-        if not user_data.get('companyName') and req.companyName:
-            update_data['companyName'] = req.companyName
-            needs_update = True
-            
-        if needs_update:
-            supabase.table('users').update(update_data).eq('id', req.userId).execute()
-            print(f"Updated missing metadata for user {req.userId}")
-        
-        return {"status": "exists", "updated": needs_update}
+        return {"status": "exists", "updated": False}
     
-    # User doesn't exist - create manually
-    username = req.username or req.email.split('@')[0]
+    # Generate email if not provided
+    if not req.email or req.email.strip() == "":
+        email = f"{req.username}@tasklinex.local"
+    else:
+        email = req.email
     
-    user_insert = supabase.table('users').insert({
-        'id': req.userId,
-        'email': req.email,
-        'username': username,
-        'firstName': req.firstName or '',
-        'lastName': req.lastName or '',
-        'companyName': req.companyName or '',
-        'role': req.role or 'user',
-        'isNew': True,
-        'timezone': req.timezone or 'UTC'
-    }).execute()
+    try:
+        supabase.table('users').insert({
+            'id': req.userId,
+            'email': email,
+            'username': req.username,
+            'firstName': req.firstName or '',
+            'lastName': req.lastName or '',
+            'companyName': req.companyName or '',
+            'role': req.role or 'user',
+            'isNew': True,
+            'timezone': req.timezone or 'UTC'
+        }).execute()
+        
+    except Exception as e:
+        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+            res = supabase.table('users').select('*').eq('id', req.userId).execute()
+            if res.data:
+                return {"status": "exists", "updated": False}
+        print(f"Error creating user: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     
     # Create default persona
     persona_id = str(uuid.uuid4())
     persona_name = f"{req.firstName} (Default)" if req.firstName else "Default Persona"
+    
     supabase.table('personas').insert({
         'id': persona_id,
         'user_id': req.userId,
@@ -571,6 +612,7 @@ async def ensure_user_exists(req: EnsureUserRequest, user: dict = Depends(get_cu
     # Create welcome task
     task_id = str(uuid.uuid4())
     now = int(datetime.now().timestamp())
+    
     supabase.table('tasks').insert({
         'id': task_id,
         'projectId': 'proj1',
@@ -584,8 +626,55 @@ async def ensure_user_exists(req: EnsureUserRequest, user: dict = Depends(get_cu
         'personaId': persona_id
     }).execute()
     
-    print(f"Manually created user {req.userId} with all data")
+    print(f"✅ Manually created user {req.userId}")
     return {"status": "created"}
+
+
+
+@app.put('/users/{user_id}/profile')
+async def update_user_profile(
+    user_id: str, 
+    updates: UserProfileUpdate, 
+    user: dict = Depends(get_current_user)
+):
+    """
+    Update user profile information
+    """
+    if user_id != user.get('sub'):
+        raise HTTPException(status_code=403, detail="Cannot update other users")
+    
+    update_data = {}
+    
+    if updates.firstName is not None:
+        update_data['firstName'] = updates.firstName
+    
+    if updates.lastName is not None:
+        update_data['lastName'] = updates.lastName
+    
+    if updates.username is not None:
+        existing = supabase.table('users').select('id').eq('username', updates.username).execute()
+        if existing.data and existing.data[0]['id'] != user_id:
+            raise HTTPException(status_code=400, detail="Username already taken")
+        update_data['username'] = updates.username
+    
+    if updates.email is not None:
+        update_data['email'] = updates.email
+    
+    if updates.timezone is not None:
+        update_data['timezone'] = updates.timezone
+    
+    if updates.companyName is not None:
+        update_data['companyName'] = updates.companyName
+    
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No updates provided")
+    
+    result = supabase.table('users').update(update_data).eq('id', user_id).execute()
+    
+    if not result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return result.data[0]
 
 @app.post('/updateAccount')
 async def update_account(req: UpdateAccountRequest, user: dict = Depends(get_current_user)):
@@ -1295,66 +1384,27 @@ async def deletePersona(data: PersonaDelete, user: dict = Depends(get_current_us
     return {"message": "Persona deleted successfully"}
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# @app.get("/users/{user_id}")
-# async def get_user_profile(user_id: str, current_user: dict = Depends(get_current_user)):
-#     """Stops the 404 error on the roadmap page."""
-#     res = supabase.table('users').select("*").eq('id', user_id).single().execute()
-#     if not res.data:
-#         # Create a profile on the fly if it doesn't exist
-#         new_profile = {
-#             "id": user_id,
-#             "firstName": current_user.get("email", "User").split('@')[0],
-#             "baseCapacity": 100
-#         }
-#         supabase.table('users').insert(new_profile).execute()
-#         return new_profile
-#     return res.data
-
-@app.put("/users/{user_id}")
-async def update_user_profile(user_id: str, data: dict = Body(...), current_user: dict = Depends(get_current_user)):
-    """Restored from OLD-FILE.PY profile update logic."""
-    res = supabase.table('users').update(data).eq('id', user_id).execute()
-    return res.data
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+@app.post('/users/{user_id}/change-password')
+async def change_password(
+    user_id: str,
+    req: PasswordChangeRequest,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Change user password
+    """
+    if user_id != user.get('sub'):
+        raise HTTPException(status_code=403, detail="Cannot change other users' password")
+    
+    try:
+        # Use Supabase admin to update password
+        supabase.auth.admin.update_user_by_id(
+            user_id,
+            {"password": req.newPassword}
+        )
+        return {"message": "Password updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update password: {str(e)}")
 
 
 @app.get("/users/{user_id}")

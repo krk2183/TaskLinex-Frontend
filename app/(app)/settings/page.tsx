@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../providers/AuthContext';
 
+import { api } from '@/lib/api';
+
 // ==========================================
 // 1. DATA MODELS (Backend Schema)
 // ==========================================
@@ -302,7 +304,8 @@ const EnvoySection = ({ data, onUpdate }: { data: EnvoySettings, onUpdate: (d: E
 
 export default function SettingsPage() {
     // Default Page State
-    const { userId } = useAuth();
+    const { userId, jwt } = useAuth();
+
     const [activeTab, setActiveTab] = useState<'personas' | 'envoy' | 'visuals'>('personas');
     const [settings, setSettings] = useState<UserSettings | null>(null);
     const [loading, setLoading] = useState(true);
@@ -310,47 +313,41 @@ export default function SettingsPage() {
 
     // Initial Fetch
     useEffect(() => {
-        if (!userId) return;
-        const PORT_SUFFIX = process.env.NEXT_PUBLIC_NPM_PORT;
-        const API_URL = PORT_SUFFIX ? `http://192.168.0.${PORT_SUFFIX}:8000` : 'http://localhost:8000';
-
-        fetch(`${API_URL}/settings/${userId}`)
-        .then(res => res.json())
-        .then(data => {
-            setSettings(data);
-            setLoading(false);
-        })
-        .catch(err => console.error("Failed to load settings", err));
-    }, [userId]);
+        if (!userId || !jwt) return;
+        
+        // Load user settings
+        api.get(`/users/${userId}`, jwt)
+            .then(user => {
+                // populate settings form
+            })
+            .catch(err => console.error(err));
+    }, [userId, jwt]);
 
     const handleUpdate = useCallback(async (section: keyof UserSettings, newData: any) => {
-        if (!settings || !userId) return;
+        if (!settings || !userId || !jwt) return;
         
+        // 1. Rollback point: Store data before change
         const previousData = settings[section];
         
+        // 2. Optimistic Update: Update UI instantly so it feels fast
         setSettings(prev => prev ? ({ ...prev, [section]: newData }) : null);
         setSyncState('saving');
 
         try {
-            // API Call
-            const PORT_SUFFIX = process.env.NEXT_PUBLIC_NPM_PORT;
-            const API_URL = PORT_SUFFIX ? `http://192.168.0.${PORT_SUFFIX}:8000` : 'http://localhost:8000';
+            // 3. NEW LOGIC: Use the secure api helper with JWT
+            // This targets the specific user and the settings section being changed
+            await api.put(`/users/${userId}/settings/${section}`, newData, jwt);
             
-            const res = await fetch(`${API_URL}/settings/${userId}/${section}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newData)
-            });
-            if (!res.ok) throw new Error("Failed to save");
             setSyncState('saved');
             setTimeout(() => setSyncState('idle'), 2000);
         } catch (err) {
-            // Rollback on failure
-            console.error(err);
+            console.error("Failed to save settings:", err);
+            
+            // 4. Fallback: If server rejects (or 404s), undo the UI change
             setSettings(prev => prev ? ({ ...prev, [section]: previousData }) : null);
             setSyncState('error');
         }
-    }, [settings, userId]);
+    }, [settings, userId, jwt]); // Ensure jwt is in the dependency array
 
     if (loading) return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">

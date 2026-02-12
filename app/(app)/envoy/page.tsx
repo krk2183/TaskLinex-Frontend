@@ -22,9 +22,13 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../providers/AuthContext';
 
+import { api } from '@/lib/api';
+
 const EnvoyConsole = () => {
+    const { userId, jwt } = useAuth();
+
     // --- STATE ---
-    const { userId } = useAuth();
+    // const { userId } = useAuth();
     const [activePersona, setActivePersona] = useState('Builder');
     const [optimizationMode, setOptimizationMode] = useState('stability');
     
@@ -35,6 +39,7 @@ const EnvoyConsole = () => {
     const [isSimulatingProcess, setIsSimulatingProcess] = useState(false);
     const [tasks, setTasks] = useState<any[]>([]);
     const [personalInterventions, setPersonalInterventions] = useState<any[]>([]);
+    const [suggestions, setSuggestions] = useState<any[]>([]); // - New state for suggestions
 
     // Initial Data: Default Static Personas
     const [personas, setPersonas] = useState([
@@ -104,6 +109,17 @@ const EnvoyConsole = () => {
         fetchTasks();
         fetchInterventions();
     }, [userId]);
+
+    // - New Effect to load AI suggestions
+    useEffect(() => {
+        if (!userId || !jwt) return;
+        
+        api.get(`/envoy/suggest?userId=${userId}`, jwt)
+            .then(data => {
+                setSuggestions(data);
+            })
+            .catch(err => console.error("Failed to load envoy suggestions:", err));
+    }, [userId, jwt]);
 
     // --- SESSION STORAGE HELPERS ---
     const addToSession = (name: string) => {
@@ -475,7 +491,6 @@ const EnvoyConsole = () => {
                             )}
                         </div>
                     </section>
-
                     {/* SECTION 2: Envoy Proposals */}
                     <section>
                         <div className="flex items-center justify-between mb-4">
@@ -483,91 +498,39 @@ const EnvoyConsole = () => {
                                 <Zap className="w-4 h-4 text-violet-700" />
                                 Optimization Proposals
                             </h2>
-                            <span className="text-xs font-mono text-gray-600">Generated 2m ago</span>
+                            <span className="text-xs font-mono text-gray-600">Real-time Analysis</span>
                         </div>
 
                         <div className="space-y-4">
-                            {/* Personal Interventions (Dynamic) */}
-                            {personalInterventions.map((intervention, idx) => (
-                                <div key={idx} className="border border-violet-900/50 bg-[#121214] p-0 rounded-[12px] flex relative overflow-hidden">
+                            {/* - Dynamically rendered suggestions from the backend */}
+                            {suggestions.map((suggestion, idx) => (
+                                <div key={idx} className="border border-violet-900/50 bg-[#121214] p-0 rounded-[12px] flex relative overflow-hidden animate-in fade-in slide-in-from-bottom-2">
                                     <div className="w-1 bg-violet-500"></div>
                                     <div className="p-5 flex-1">
-                                        <div className="flex justify-between items-start mb-2">
+                                        <div className="flex justify-between items-start mb-3">
                                             <h3 className="text-white font-medium font-mono text-sm uppercase">
-                                                ATTENTION_ALERT
+                                                {suggestion.type || 'ENVOY_PROPOSAL'}
                                             </h3>
+                                            <span className="text-xs bg-violet-900/30 text-violet-300 px-2 py-1 rounded font-mono border border-violet-900/50">
+                                                {suggestion.priority || 'NEW'}
+                                            </span>
                                         </div>
-                                        <p className="text-sm text-gray-400 mb-2">
-                                            {intervention.message}
+                                        <p className="text-sm text-gray-400 mb-4 leading-relaxed">
+                                            {suggestion.message}
                                         </p>
+                                        <div className="flex gap-3">
+                                            <button className="flex items-center gap-2 px-4 py-2 bg-violet-700 hover:bg-violet-600 text-white text-xs font-bold uppercase tracking-wide rounded-[12px] transition-colors">
+                                                <CheckCircle className="w-3 h-3" /> Accept
+                                            </button>
+                                            <button className="text-xs text-gray-500 hover:text-gray-300 font-mono transition-colors">
+                                                Dismiss
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
 
-
-                            {/* Proposal Card 1 */}
-                            <div className="border border-gray-700 bg-[#18181b] p-0 rounded-[12px] flex relative overflow-hidden">
-                                <div className="w-1 bg-violet-700"></div>
-                                <div className="p-5 flex-1 z-10">
-                                    <div className="flex justify-between items-start mb-3">
-                                        <h3 className="text-white font-medium font-mono text-sm">
-                                            OFFLOAD :: [Builder] &rarr; [Operator]
-                                        </h3>
-                                        <span className="text-xs bg-violet-900/30 text-violet-300 px-2 py-1 rounded font-mono border border-violet-900/50">
-                                            HIGH PRIORITY
-                                        </span>
-                                    </div>
-                                    <p className="text-sm text-gray-400 mb-4 leading-relaxed">
-                                        Detected fragmentation in deep work blocks. Routine maintenance tasks are interrupting 'Builder' flow state. Proposal: Batch administrative tasks to 'Operator' compartment.
-                                    </p>
-
-                                    {/* Visual Preview of Change */}
-                                    <div className="bg-[#0c0c0e] p-3 rounded mb-4 border border-gray-800 grid grid-cols-2 gap-4">
-                                        <div>
-                                            <span className="text-xs text-gray-500 block mb-1">BUILDER LOAD</span>
-                                            <div className="flex items-center gap-2 text-sm font-mono text-gray-300">
-                                                85% <ArrowRight className="w-3 h-3 text-gray-600" /> <span className="text-violet-400">65%</span>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <span className="text-xs text-gray-500 block mb-1">OPERATOR LOAD</span>
-                                            <div className="flex items-center gap-2 text-sm font-mono text-gray-300">
-                                                62% <ArrowRight className="w-3 h-3 text-gray-600" /> <span className="text-white">78%</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex gap-3">
-                                        <button className="flex items-center gap-2 px-4 py-2 bg-violet-700 hover:bg-violet-600 text-white text-xs font-bold uppercase tracking-wide rounded-[12px] transition-colors">
-                                            <CheckCircle className="w-3 h-3" /> Commit
-                                        </button>
-                                        <button className="flex items-center gap-2 px-4 py-2 border border-gray-700 hover:bg-gray-800 text-gray-400 text-xs font-bold uppercase tracking-wide rounded-[12px] transition-colors">
-                                            <Sliders className="w-3 h-3" /> Modify
-                                        </button>
-                                        <button className="flex items-center gap-2 px-4 py-2 border border-transparent hover:text-gray-300 text-gray-500 text-xs font-bold uppercase tracking-wide transition-colors">
-                                            Ignore
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Proposal Card 2 (Passive) */}
-                            <div className="border border-gray-800 bg-[#121214] p-0 rounded-[12px] flex opacity-60 hover:opacity-100 transition-opacity">
-                                <div className="w-1 bg-gray-700"></div>
-                                <div className="p-5 flex-1">
-                                    <div className="flex justify-between items-start mb-2">
-                                        <h3 className="text-gray-300 font-medium font-mono text-sm">
-                                            SCHEDULE_LOCK :: [Scout]
-                                        </h3>
-                                    </div>
-                                    <p className="text-sm text-gray-500 mb-4">
-                                        Exploration capacity is underutilized. Reserve 2h block for R&D to prevent stagnation.
-                                    </p>
-                                    <div className="flex gap-3">
-                                        <button className="text-xs text-gray-400 hover:text-white font-mono underline decoration-gray-600">Review Details</button>
-                                    </div>
-                                </div>
-                            </div>
+                            {/* Your existing hardcoded cards can remain below or be removed */}
                         </div>
                     </section>
 

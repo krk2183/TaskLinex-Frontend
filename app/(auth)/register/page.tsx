@@ -135,16 +135,19 @@ export default function SignupPage() {
     try {
       console.log('🚀 Starting registration process...');
 
-      // Step 1: Sign up with Supabase anonymous auth
+      // Generate unique email if not provided (for username-only signup)
+      const email = Data.email || `${Data.username}@tasklinex.local`;
+      
+      // Step 1: Sign up with Supabase
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: Data.email,
+        email: email,
         password: Data.password,
         options: {
           data: {
             username: Data.username,
             firstName: Data.firstName,
             lastName: Data.lastName,
-            companyName: Data.companyName,
+            companyName: Data.companyName || '',  // ✅ Empty string if None
             role: Data.role,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
           }
@@ -196,11 +199,11 @@ export default function SignupPage() {
           },
           body: JSON.stringify({
             userId,
-            email: Data.email,
+            email: email,
             username: Data.username,
             firstName: Data.firstName,
             lastName: Data.lastName,
-            companyName: Data.companyName,
+            companyName: Data.companyName || null,  // ✅ null if empty
             role: Data.role,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
           })
@@ -365,14 +368,14 @@ export default function SignupPage() {
             )}
 
             <InputField 
-              label="Work Email" 
-              type="email" 
+              label={isLogin ? "Email or Username" : "Work Email (Optional)"} 
+              type={isLogin ? "text" : "email"}
               name="email"
               value={Data.email}
               onChange={handleChange}
-              placeholder="jane@company.com" 
+              placeholder={isLogin ? "email@company.com or username" : "jane@company.com (optional)"} 
               icon={Mail}
-              // required
+              required={isLogin}
             />
 
             <InputField 
@@ -425,14 +428,14 @@ export default function SignupPage() {
 
             {!isLogin && (
             <InputField 
-              label="Company Name" 
+              label="Company Name (Optional)" 
               type="text" 
               name="companyName"
               value={Data.companyName}
               onChange={handleChange}
-              placeholder="Acme Inc." 
+              placeholder="Leave blank for personal use" 
               icon={Briefcase} 
-              required
+              required={false}
             />
             )}
 

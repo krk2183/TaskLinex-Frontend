@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../providers/AuthContext';
 
+import { api } from '@/lib/api';
+
 // --- 1. MOCK DATA & TYPES (Based on your provided Schema) ---
 
 const MOCK_USERS = [
@@ -89,6 +91,7 @@ const SidebarItem = ({ icon: Icon, label, active }) => (
 const RippleGraph = ({ tasks, onHoverNode }) => {
   // Simple layout calculation for demo purposes (Layers based on dependencies)
   // In production, use D3 or Dagre
+
   const layers = [
     tasks.filter(t => t.dependencies.length === 0),
     tasks.filter(t => t.dependencies.length > 0 && t.downstream.length > 0),
@@ -244,6 +247,7 @@ const CommunicationLeakage: React.FC<CommunicationLeakageProps> = ({ tasks }) =>
 
 // D. Heatmap Cell
 const HeatmapCell = ({ load }) => {
+  
   let bgClass = "bg-slate-800/50";
   if (load > 0) bgClass = "bg-blue-900/30";
   if (load > 50) bgClass = "bg-blue-600/40";
@@ -270,28 +274,22 @@ const HeatmapCell = ({ load }) => {
 // --- 3. MAIN PAGE COMPONENT ---
 
 export default function AnalyticsPage() {
-  const { userId } = useAuth();
+  const { userId, jwt } = useAuth();
+
   const [activeTab, setActiveTab] = useState("Analytics");
   const [hoveredNode, setHoveredNode] = useState(null);
   const [showEnvoy, setShowEnvoy] = useState(false);
   const [analytics, setAnalytics] = useState<any>(null);
 
   useEffect(() => {
-    if (!userId) return;
-    const fetchAnalytics = async () => {
-        try {
-            const port = process.env.NEXT_PUBLIC_SERVER_PORT || 8000;
-            const res = await fetch(`http://localhost:${port}/analytics/${userId}`);
-            if (res.ok) {
-                const data = await res.json();
-                setAnalytics(data);
-            }
-        } catch (error) {
-            console.error("Failed to fetch analytics", error);
-        }
-    };
-    fetchAnalytics();
-  }, [userId]);
+      if (!userId || !jwt) return;
+      
+      api.get(`/analytics/${userId}`, jwt)
+          .then(data => {
+              // process analytics data
+          })
+          .catch(err => console.error(err));
+  }, [userId, jwt]);
 
   const velocityTrendDisplay = useMemo(() => {
       if (!analytics?.velocityTrend || analytics.velocityTrend.length < 2) return "+0%";
