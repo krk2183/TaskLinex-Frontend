@@ -1,0 +1,275 @@
+-- ==========================================
+-- 0. CLEANUP EVERYTHING
+-- ==========================================
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
+
+DROP TABLE IF EXISTS team_members CASCADE;
+DROP TABLE IF EXISTS activity_log CASCADE;
+DROP TABLE IF EXISTS task_persona_assignments CASCADE;
+DROP TABLE IF EXISTS interventions CASCADE;
+DROP TABLE IF EXISTS dependencies CASCADE;
+DROP TABLE IF EXISTS tasks CASCADE;
+DROP TABLE IF EXISTS personas CASCADE;
+DROP TABLE IF EXISTS projects CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+
+-- ==========================================
+-- 1. USERS TABLE
+-- ==========================================
+CREATE TABLE users (
+    pk BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    id TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL UNIQUE,
+    username TEXT NOT NULL UNIQUE,
+    "firstName" TEXT DEFAULT '',
+    "lastName" TEXT DEFAULT '',
+    "companyName" TEXT DEFAULT '',
+    password TEXT DEFAULT 'external',
+    role TEXT DEFAULT 'user',
+    level INTEGER DEFAULT 1,
+    "isNew" BOOLEAN DEFAULT true,
+    timezone TEXT DEFAULT 'UTC',
+    settings JSONB DEFAULT '{}',
+    skills JSONB DEFAULT '[]',
+    avg_task_completion_time REAL DEFAULT 0,
+    completed_tasks_count INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ==========================================
+-- 2. PROJECTS TABLE
+-- ==========================================
+CREATE TABLE projects (
+    pk BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    visible BOOLEAN DEFAULT true
+);
+
+-- ==========================================
+-- 3. PERSONAS TABLE
+-- ==========================================
+CREATE TABLE personas (
+    pk BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    id TEXT NOT NULL UNIQUE,
+    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    weekly_capacity_hours REAL NOT NULL,
+    role TEXT DEFAULT 'Member',
+    color TEXT DEFAULT '#6366f1',
+    allow_overload BOOLEAN DEFAULT false
+);
+
+-- ==========================================
+-- 4. TASKS TABLE
+-- ==========================================
+CREATE TABLE tasks (
+    pk BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    id TEXT NOT NULL UNIQUE,
+    "projectId" TEXT REFERENCES projects(id),
+    title TEXT NOT NULL,
+    status TEXT NOT NULL,
+    priority TEXT NOT NULL,
+    "ownerId" TEXT REFERENCES users(id) ON DELETE CASCADE,
+    "startDate" BIGINT NOT NULL,
+    duration BIGINT NOT NULL,
+    "plannedDuration" BIGINT NOT NULL,
+    progress INTEGER DEFAULT 0,
+    "personaId" TEXT,
+    "dependencyIds" JSONB DEFAULT '[]',
+    tags JSONB DEFAULT '[]',
+    "completedAt" BIGINT
+);
+
+-- ==========================================
+-- 5. TASK-PERSONA ASSIGNMENTS
+-- ==========================================
+CREATE TABLE task_persona_assignments (
+    pk BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    id TEXT NOT NULL UNIQUE,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    persona_id TEXT NOT NULL REFERENCES personas(id) ON DELETE CASCADE
+);
+
+-- ==========================================
+-- 6. DEPENDENCIES TABLE
+-- ==========================================
+CREATE TABLE dependencies (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
+    from_task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+    to_task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    created_at BIGINT NOT NULL
+);
+
+-- ==========================================
+-- 7. INTERVENTIONS TABLE
+-- ==========================================
+CREATE TABLE interventions (
+    pk BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    id TEXT NOT NULL UNIQUE,
+    team_id TEXT,
+    user_id TEXT,
+    type TEXT,
+    message TEXT,
+    status TEXT DEFAULT 'pending',
+    created_at BIGINT
+);
+
+-- ==========================================
+-- 8. ACTIVITY LOG TABLE
+-- ==========================================
+CREATE TABLE activity_log (
+    pk BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    id UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+    "userId" TEXT NOT NULL,
+    type TEXT NOT NULL,
+    "targetTask" TEXT,
+    "targetLink" TEXT DEFAULT '#',
+    details TEXT,
+    timestamp BIGINT
+);
+
+-- ==========================================
+-- 9. TEAM MEMBERS TABLE
+-- ==========================================
+CREATE TABLE team_members (
+    pk BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    id TEXT NOT NULL UNIQUE DEFAULT gen_random_uuid()::text,
+    owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    member_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    added_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(owner_id, member_id),
+    CHECK (owner_id != member_id)
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_team_members_owner ON team_members(owner_id);
+CREATE INDEX IF NOT EXISTS idx_team_members_member ON team_members(member_id);
+
+-- ==========================================
+-- 10. TRIGGER: HANDLE NEW USER
+-- ==========================================
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    default_persona_id TEXT;
+    default_task_id TEXT;
+    v_username TEXT;
+    v_firstname TEXT;
+    v_lastname TEXT;
+    v_companyname TEXT;
+    v_role TEXT;
+    v_timezone TEXT;
+BEGIN
+    v_username := COALESCE(
+        NEW.raw_user_meta_data->>'username',
+        split_part(NEW.email, '@', 1) || '_' || substr(md5(random()::text), 1, 4)
+    );
+    v_firstname := COALESCE(NEW.raw_user_meta_data->>'firstName', '');
+    v_lastname := COALESCE(NEW.raw_user_meta_data->>'lastName', '');
+    v_companyname := COALESCE(NEW.raw_user_meta_data->>'companyName', '');
+    v_role := COALESCE(NEW.raw_user_meta_data->>'role', 'user');
+    v_timezone := COALESCE(NEW.raw_user_meta_data->>'timezone', 'UTC');
+
+    INSERT INTO users (
+        id, email, username, "firstName", "lastName", "companyName", role, "isNew", timezone
+    )
+    VALUES (
+        NEW.id::text, NEW.email, v_username, v_firstname, v_lastname, v_companyname, v_role, true, v_timezone
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        email = EXCLUDED.email,
+        username = EXCLUDED.username,
+        "firstName" = EXCLUDED."firstName",
+        "lastName" = EXCLUDED."lastName",
+        "companyName" = EXCLUDED."companyName",
+        role = EXCLUDED.role,
+        timezone = EXCLUDED.timezone;
+
+    default_persona_id := gen_random_uuid()::text;
+    INSERT INTO personas (id, user_id, name, weekly_capacity_hours, role)
+    VALUES (default_persona_id, NEW.id::text, COALESCE(v_firstname || ' (Default)', 'Default Persona'), 40, 'Member')
+    ON CONFLICT DO NOTHING;
+
+    default_task_id := gen_random_uuid()::text;
+    INSERT INTO tasks (
+        id, "projectId", title, status, priority, "ownerId", "startDate", duration, "plannedDuration", "personaId"
+    )
+    VALUES (
+        default_task_id, 'proj1', '🎉 Welcome to TaskLinex!', 'Todo', 'Medium', NEW.id::text, extract(epoch from now())::bigint, 3600, 3600, default_persona_id
+    )
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO activity_log ("userId", type, "targetTask", "targetLink", details, timestamp)
+    VALUES (NEW.id::text, 'user_joined', '🎉 Welcome to TaskLinex!', '/roadmap', 'Account created successfully', extract(epoch from now())::bigint);
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER on_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- ==========================================
+-- 11. ROW LEVEL SECURITY
+-- ==========================================
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE personas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE team_members ENABLE ROW LEVEL SECURITY;
+
+-- Policies
+CREATE POLICY "Users: Self Access" ON users 
+    FOR ALL TO authenticated 
+    USING (id = (auth.jwt() ->> 'sub'));
+
+CREATE POLICY "Projects: Read All" ON projects 
+    FOR SELECT TO authenticated 
+    USING (true);
+
+CREATE POLICY "Personas: Self Access" ON personas 
+    FOR ALL TO authenticated 
+    USING (user_id = (auth.jwt() ->> 'sub'));
+
+CREATE POLICY "Tasks: Self Access" ON tasks 
+    FOR ALL TO authenticated 
+    USING ("ownerId" = (auth.jwt() ->> 'sub'));
+
+CREATE POLICY "Logs: Self Access" ON activity_log 
+    FOR ALL TO authenticated 
+    USING ("userId" = (auth.jwt() ->> 'sub'));
+
+CREATE POLICY "Team Members: Owner Access" ON team_members
+    FOR ALL TO authenticated
+    USING (owner_id = (auth.jwt() ->> 'sub'));
+
+CREATE POLICY "Team Members: Member Read" ON team_members
+    FOR SELECT TO authenticated
+    USING (member_id = (auth.jwt() ->> 'sub'));
+
+-- ==========================================
+-- 12. PERMISSIONS
+-- ==========================================
+GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+
+-- ==========================================
+-- 13. SEED DATA
+-- ==========================================
+INSERT INTO projects (id, name)
+VALUES 
+    ('proj1', 'Forge.AI Core'), 
+    ('proj2', 'Web Dashboard V2'),
+    ('proj3', 'Mobile App'),
+    ('proj4', 'API Integration')
+ON CONFLICT (id) DO NOTHING;
