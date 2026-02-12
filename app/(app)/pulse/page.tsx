@@ -179,289 +179,263 @@ const WorkloadIndicator = ({ level }: { level: number }) => {
 // --- CORE COMPONENTS ---
 
 const PulseInsights = ({ data, isNewUser }: { data: ProjectHealth, isNewUser: boolean }) => {
-    const velocityColors = {
-        High: 'text-emerald-500',
-        Medium: 'text-amber-500',
-        Low: 'text-rose-500'
+    const isBlocker = data.blockers?.type === 'blocker';
+    const velocityStyles = {
+        High: { color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/20', iconColor: 'text-emerald-600', textSize: 'text-xl' },
+        Medium: { color: 'text-amber-500', bg: 'bg-amber-100 dark:bg-amber-900/20', iconColor: 'text-amber-600', textSize: 'text-lg' },
+        Low: { color: 'text-rose-500', bg: 'bg-rose-100 dark:bg-rose-900/20', iconColor: 'text-rose-600', textSize: 'text-xl' }
     };
 
-    const velocityIcons = {
-        High: <TrendingUp className="w-5 h-5" />,
-        Medium: <BarChart3 className="w-5 h-5" />,
-        Low: <TrendingDown className="w-5 h-5" />
-    };
+    const status = velocityStyles[data.velocity] || velocityStyles.Medium;
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            {/* Velocity */}
-            <div className={`bg-slate-900 border border-slate-800 p-4 rounded-xl shadow-sm group hover:border-indigo-600 transition-all duration-300 ${isNewUser ? 'opacity-75' : ''}`}>
-                <p className="text-xs text-slate-400 uppercase tracking-widest font-bold mb-2">Team Velocity</p>
-                <div className="flex items-center justify-between">
-                    <span className={`text-2xl font-extrabold ${velocityColors[data.velocity]}`}>{data.velocity}</span>
-                    <div className={velocityColors[data.velocity]}>
-                        {velocityIcons[data.velocity]}
+        <>
+        {isNewUser && (
+            <div className="mb-6 bg-violet-900/20 border border-violet-500/30 p-3 rounded-lg flex items-center gap-3 text-sm text-violet-200">
+                <Info className="w-4 h-4 text-violet-400" />
+                Insights populate as your team starts working.
+            </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div className={`bg-slate-900 border border-slate-800 p-4 rounded-xl shadow-sm flex items-center justify-between ${isNewUser ? 'opacity-75' : ''}`}>
+                <div>
+                    <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold">Team Velocity</p>
+                    <div className="flex items-center gap-2 mt-1">
+                        <span className={`${status.textSize} font-black text-slate-200`}>
+                            {isNewUser ? '—' : data.velocity}
+                        </span>
+                        <TrendingUp className={`w-5 h-5 ${status.color}`} />
                     </div>
                 </div>
-                {isNewUser && <p className="text-xs text-slate-500 mt-2">Complete tasks to track velocity</p>}
-            </div>
-
-            {/* Blockers */}
-            <div className={`bg-slate-900 border border-slate-800 p-4 rounded-xl shadow-sm group hover:border-rose-600 transition-all duration-300 ${isNewUser ? 'opacity-75' : ''}`}>
-                <p className="text-xs text-slate-400 uppercase tracking-widest font-bold mb-2">Active Blockers</p>
-                <div className="flex items-center justify-between">
-                    <span className="text-2xl font-extrabold text-rose-500">{data.blockers?.count ?? 0}</span>
-                    <AlertTriangle className="w-5 h-5 text-rose-500" />
+                <div className={`h-10 w-10 ${status.bg} rounded-lg flex items-center justify-center`}>
+                    <Zap className={`w-5 h-5 ${status.iconColor}`} />
                 </div>
-                <p className="text-xs text-slate-500 mt-2">Urgent {data.blockers?.type ?? 'issues'}</p>
             </div>
+            
+            {((data.blockers?.count ?? 0) > 0 || isNewUser) && (
+                <div className={`bg-slate-900 border ${isBlocker ? 'border-rose-200 dark:border-rose-900/50' : 'border-amber-200 dark:border-amber-900/50'} p-4 rounded-xl shadow-sm flex items-center justify-between relative overflow-hidden`}>
+                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${isBlocker ? 'bg-rose-500' : 'bg-amber-500'}`} />
+                    <div>
+                        <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold">
+                            {isBlocker ? 'Active Blockers' : 'External Dependencies'}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                            <span className={`text-2xl font-black ${isBlocker ? 'text-rose-600' : 'text-amber-600'}`}>
+                                {isNewUser ? '0 (sample)' : `${data.blockers?.count ?? 0} ${(data.blockers?.count ?? 0) === 1 ? 'Issue' : 'Issues'}`}
+                            </span>
+                        </div>
+                    </div>
+                        <a href="/analytics" 
+                       className={`
+                            text-xs px-4 py-2 rounded-lg font-bold
+                            transition-all duration-200 ease-out
+                            cursor-pointer outline-none active:scale-95                            
+                            border border-slate-700/50 
+                            
+                            ${isBlocker 
+                                ? `bg-rose-900/80 text-rose-100 hover:bg-rose-800 
+                                hover:border-rose-500/50
+                                shadow-[0_4px_12px_-4px_rgba(225,29,72,0.6)]` 
+                                : `bg-slate-800 text-slate-300 hover:bg-slate-700
+                                hover:text-slate-100
+                                hover:border-slate-500/50
+                                shadow-[0_4px_12px_-4px_rgba(0,0,0,0.5)]`
+                            }
+                        `}>
+                            View
+                        </a>
+                </div>
+            )}
 
-            {/* Sprint Health */}
-            <SprintHealthCard data={data} isNewUser={isNewUser} />
+            {/* SPRINT HEALTH FIELD */}
+
+            {((data.sprint?.daysLeft ?? 0) > 0 || isNewUser) && (
+                <SprintHealthCard data={data} isNewUser={isNewUser} />
+            )}
         </div>
+        </>
     );
 };
+
 
 const TeamSidebar = ({ members, isNewUser }: { members: TeamMember[], isNewUser: boolean }) => {
     return (
-        <div className={`bg-slate-900 border border-slate-800 p-5 rounded-2xl sticky top-8 ${isNewUser ? 'opacity-75' : ''}`}>
-            <div className="flex items-center justify-between mb-5">
-                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide flex items-center gap-2">
-                    <Users className="w-4 h-4" /> Team ({members.length})
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 h-fit sticky top-6 shadow-lg">
+            <div className="flex items-center justify-between mb-6">
+                <h3 className="font-bold text-slate-200 flex items-center gap-2">
+                    <Users className="w-4 h-4 text-indigo-500" /> Team Pulse
                 </h3>
-                <button className="text-xs text-indigo-500 hover:text-indigo-400 transition-colors">View All</button>
+                <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-400">{members.filter(member => member.status === 'online').length} Online</span>
             </div>
 
-            {isNewUser && (
-                <div className="mb-4 p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-lg">
-                    <p className="text-xs text-indigo-300">👥 Sample team members shown</p>
-                    <p className="text-xs text-slate-400 mt-1">Invite colleagues to see real team data</p>
-                </div>
-            )}
-
-            <div className="space-y-3">
-                {members.map(member => (
-                    <div key={member.id} className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-800/50 transition-all cursor-pointer group">
-                        <div className="relative">
-                            <img src={member.avatar} alt={member.name} className="w-10 h-10 rounded-full" />
-                            <div className="absolute -bottom-0.5 -right-0.5">
-                                <StatusPill status={member.status} />
-                            </div>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-slate-200 truncate group-hover:text-white transition-colors">{member.name}</p>
-                            <p className="text-xs text-slate-500 truncate">{member.role}</p>
-                            <div className="mt-1.5 flex items-center gap-2">
-                                <WorkloadIndicator level={member.workload} />
-                                <span className="text-[10px] text-slate-500 font-mono">{member.workload}%</span>
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {members.length === 0 && !isNewUser && (
-                <div className="text-center py-8">
-                    <User className="w-12 h-12 mx-auto mb-3 text-slate-700" />
-                    <p className="text-sm text-slate-500">No team members yet</p>
-                    <button className="mt-3 text-xs text-indigo-500 hover:text-indigo-400">Invite teammates</button>
-                </div>
-            )}
-        </div>
-    );
-};
-
-const ActivityStream = ({ events, isNewUser }: { events: PulseEvent[], isNewUser: boolean }) => {
-    const eventTypeLabels = {
-        status_change: '📝 Status Update',
-        comment: '💬 Comment',
-        blocker: '🚫 Blocker',
-        milestone: '🎯 Milestone',
-        handoff: '🔄 Handoff'
-    };
-
-    const eventTypeColors = {
-        status_change: 'border-indigo-500/30 bg-indigo-500/5',
-        comment: 'border-blue-500/30 bg-blue-500/5',
-        blocker: 'border-rose-500/30 bg-rose-500/5',
-        milestone: 'border-emerald-500/30 bg-emerald-500/5',
-        handoff: 'border-amber-500/30 bg-amber-500/5'
-    };
-
-    return (
-        <div className={`bg-slate-900 border border-slate-800 p-5 rounded-2xl ${isNewUser ? 'opacity-75' : ''}`}>
-            <div className="flex items-center justify-between mb-5">
-                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide flex items-center gap-2">
-                    <Activity className="w-4 h-4" /> Activity Stream
-                </h3>
-                <div className="flex items-center gap-2">
-                    <button className="p-1.5 rounded-lg hover:bg-slate-800 transition-colors">
-                        <Filter className="w-4 h-4 text-slate-500" />
-                    </button>
-                    <button className="p-1.5 rounded-lg hover:bg-slate-800 transition-colors">
-                        <Search className="w-4 h-4 text-slate-500" />
-                    </button>
-                </div>
-            </div>
-
-            {isNewUser && (
-                <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-                    <p className="text-xs text-amber-300">📊 Sample activity shown</p>
-                    <p className="text-xs text-slate-400 mt-1">Your real activity will appear here as you work</p>
-                </div>
-            )}
-
-            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
-                {events.map((event, index) => (
-                    <div 
-                        key={event.id} 
-                        className={`border rounded-xl p-4 ${eventTypeColors[event.type]} hover:border-opacity-60 transition-all duration-300 group`}
-                        style={{ 
-                            animation: `slideInFromRight 0.4s ease-out ${index * 0.05}s both`
-                        }}
-                    >
+            <div className={`space-y-5 ${isNewUser ? 'opacity-60' : ''}`}>
+                {members.map((member) => (
+                    <div key={member.id} className="group relative">
                         <div className="flex items-start gap-3">
-                            <img src={event.actor.avatar} alt={event.actor.name} className="w-9 h-9 rounded-full flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-start justify-between mb-1.5">
-                                    <div>
-                                        <span className="text-sm font-semibold text-slate-200 group-hover:text-white transition-colors">
-                                            {event.actor.name}
-                                        </span>
-                                        <span className="text-xs text-slate-500 ml-2">{event.actor.role}</span>
-                                    </div>
-                                    <span className="text-xs text-slate-500 font-mono">{event.timestamp}</span>
+                            <div className="relative">
+                                <img src={member.avatar} alt={member.name} className="w-10 h-10 rounded-full object-cover border-2 border-slate-800" />
+                                <div className="absolute -bottom-1 -right-1">
+                                    <StatusPill status={member.status} />
                                 </div>
-
-                                <p className="text-xs text-slate-400 mb-2 flex items-center gap-1.5">
-                                    <span className="inline-block">{eventTypeLabels[event.type]}</span>
-                                    <ArrowRight className="w-3 h-3 flex-shrink-0" />
-                                    <a href={event.targetLink} className="text-indigo-400 hover:text-indigo-300 hover:underline transition-colors truncate">
-                                        {event.targetTask}
-                                    </a>
-                                </p>
-
-                                <p className="text-sm text-slate-300 leading-relaxed">{event.details}</p>
-
-                                {event.actionRequired && (
-                                    <div className="mt-3 pt-3 border-t border-slate-700/50">
-                                        <button className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 transition-colors">
-                                            <Flag className="w-3 h-3" /> Review Required
-                                        </button>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex justify-between items-center mb-0.5">
+                                    <h4 className="text-sm font-bold text-slate-200">{member.name}</h4>
+                                    <div className="flex items-center gap-1">
+                                        {isNewUser && <span className="text-[9px] bg-slate-800 px-1 rounded text-slate-500">Sample</span>}
+                                        <span className="text-[10px] text-slate-500">{member.role}</span>
                                     </div>
+                                </div>
+                                <WorkloadIndicator level={member.workload} />
+                                {member.currentTask && (
+                                    <p className="text-xs text-slate-400 mt-1 truncate group-hover:text-indigo-500 transition-colors">
+                                        <Activity className="w-3 h-3 inline mr-1 text-slate-500" />
+                                        {member.currentTask}
+                                    </p>
                                 )}
                             </div>
                         </div>
                     </div>
                 ))}
             </div>
-
-            {events.length === 0 && !isNewUser && (
-                <div className="text-center py-12">
-                    <Activity className="w-16 h-16 mx-auto mb-4 text-slate-700" />
-                    <p className="text-sm text-slate-500">No activity yet</p>
-                    <p className="text-xs text-slate-600 mt-1">Updates will appear here as you work</p>
-                </div>
-            )}
-
-            <style jsx>{`
-                @keyframes slideInFromRight {
-                    from {
-                        opacity: 0;
-                        transform: translateX(20px);
-                    }
-                    to {
-                        opacity: 1;
-                        transform: translateX(0);
-                    }
-                }
-                .custom-scrollbar::-webkit-scrollbar {
-                    width: 6px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-track {
-                    background: rgb(15 23 42 / 0.5);
-                    border-radius: 10px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb {
-                    background: rgb(71 85 105 / 0.8);
-                    border-radius: 10px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                    background: rgb(100 116 139);
-                }
-            `}</style>
+            
+            <div className="mt-6 pt-6 border-t border-slate-800 text-center">
+                {isNewUser ? (
+                    <button className="text-sm text-violet-400 font-semibold hover:underline">Invite teammates to replace these placeholders</button>
+                ) : (
+                    <button className="text-sm text-indigo-400 font-semibold hover:underline">View Schedule</button>
+                )}
+            </div>
         </div>
     );
 };
 
-const PulseFocusComponent = ({ 
-    currentTask, 
-    nextTask, 
-    rationale, 
-    isNewUser 
-}: { 
-    currentTask: any; 
-    nextTask: any; 
-    rationale: string | null; 
-    isNewUser: boolean;
-}) => {
+// Feed Sections Main Content
+const FeedItem = ({ event, isSample }: { event: PulseEvent, isSample?: boolean }) => {
+    // COLOR SCHEME AND ICONOGRAPHY
+    const getStyles = (type: EventType) => {
+        switch(type) {
+            case 'blocker':
+                return { icon: AlertTriangle, color: 'text-rose-500', bg: 'bg-rose-50 dark:bg-rose-900/20', border: 'border-rose-200 dark:border-rose-900' };
+            case 'status_change':
+                return { icon: ArrowRight, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-200 dark:border-emerald-900' };
+            case 'handoff':
+                return { icon: User, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20', border: 'border-blue-200 dark:border-blue-900' };
+            default:
+                return { icon: MessageSquare, color: 'text-gray-500', bg: 'bg-gray-50 dark:bg-gray-800', border: 'border-gray-200 dark:border-gray-800' };
+          }
+    };
+
+    const style = getStyles(event.type);
+    const Icon = style.icon;
+
     return (
-        <div className={`bg-slate-900 border border-slate-800 p-5 rounded-2xl sticky top-8 ${isNewUser ? 'opacity-75' : ''}`}>
-            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide mb-5 flex items-center gap-2">
-                <Zap className="w-4 h-4" /> My Focus
-            </h3>
+        <div className="flex gap-3 sm:gap-4 relative pb-8 last:pb-0">
+            {/* Timeline Line */}
+            <div className={`absolute left-[19px] top-10 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-800 last:hidden ${isSample ? 'opacity-50' : ''}`} />
 
-            {isNewUser && (
-                <div className="mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-                    <p className="text-xs text-purple-300">🎯 Sample focus shown</p>
-                    <p className="text-xs text-slate-400 mt-1">Create tasks to see your real focus</p>
+            {/* Avatar */}
+            <div className="relative z-10">
+                <img 
+                    src={event.actor.avatar} 
+                    alt={event.actor.name} 
+                    className="w-10 h-10 rounded-full border-4 border-gray-50 dark:border-gray-950 object-cover shadow-sm" 
+                />
+                <div className={`absolute -bottom-1 -right-1 p-0.5 rounded-full bg-white dark:bg-gray-900 ${style.color}`}>
+                    <Icon className="w-3 h-3" />
                 </div>
-            )}
-
-            {/* Current Task */}
-            <div className="mb-6">
-                <p className="text-xs text-slate-500 uppercase font-bold mb-2 flex items-center gap-1.5">
-                    <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Current
-                </p>
-                {currentTask ? (
-                    <div className="bg-slate-800/50 border border-slate-700 p-4 rounded-xl hover:border-indigo-600 transition-all group">
-                        <h4 className="font-semibold text-slate-200 mb-2 group-hover:text-white transition-colors">{currentTask.title}</h4>
-                        <div className="flex items-center gap-2 text-xs">
-                            <span className="px-2 py-1 bg-indigo-500/20 text-indigo-300 rounded-md border border-indigo-500/30">{currentTask.status}</span>
-                            <span className="px-2 py-1 bg-amber-500/20 text-amber-300 rounded-md border border-amber-500/30">{currentTask.priority}</span>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="bg-slate-800/30 border border-dashed border-slate-700 p-4 rounded-xl text-center">
-                        <XCircle className="w-8 h-8 mx-auto mb-2 text-slate-600" />
-                        <p className="text-xs text-slate-500">No task in progress</p>
-                    </div>
-                )}
             </div>
 
-            {/* Next Recommended */}
-            <div>
-                <p className="text-xs text-slate-500 uppercase font-bold mb-2">Up Next</p>
-                {nextTask ? (
-                    <div className="bg-slate-800/30 border border-slate-700 p-4 rounded-xl hover:border-indigo-600 transition-all group">
-                        <h4 className="font-semibold text-slate-300 mb-2 group-hover:text-white transition-colors">{nextTask.title}</h4>
-                        <div className="flex items-center gap-2 text-xs mb-3">
-                            <span className="px-2 py-1 bg-slate-700/50 text-slate-400 rounded-md">{nextTask.status}</span>
-                            <span className="px-2 py-1 bg-amber-500/20 text-amber-300 rounded-md border border-amber-500/30">{nextTask.priority}</span>
-                        </div>
-                        {rationale && (
-                            <div className="pt-3 border-t border-slate-700/50">
-                                <p className="text-xs text-slate-400 flex items-start gap-2">
-                                    <Info className="w-3 h-3 mt-0.5 flex-shrink-0 text-indigo-500" />
-                                    <span className="leading-relaxed">{rationale}</span>
-                                </p>
-                            </div>
-                        )}
+            {/* Content Card */}
+            <div className={`flex-1 p-3 sm:p-4 rounded-xl border ${style.border} ${style.bg} relative group transition-all hover:shadow-md ${isSample ? 'opacity-80' : ''}`}>
+                <div className="flex flex-col sm:flex-row sm:justify-between items-start mb-1 gap-1 sm:gap-0">
+                    <p className="text-sm text-slate-200">
+                        <span className="font-bold">{event.actor.name}</span> <span className="text-slate-400 font-normal">{event.details}</span> <span className="font-semibold text-indigo-400 hover:underline cursor-pointer">"{event.targetTask}"</span>
+                        {isSample && <span className="ml-2 text-[10px] bg-slate-800/50 px-1.5 py-0.5 rounded text-slate-400 border border-slate-700">Sample</span>}
+                    </p>
+                    <span className="text-xs text-slate-500 whitespace-nowrap ml-0 sm:ml-2">{event.timestamp}</span>
+                </div>
+
+                {/* Metadata / Details */}
+                {/* WHEN OBSTACLE */}
+                {event.metadata?.blockerReason && (
+                    <div className="mt-2 p-2 bg-rose-100 dark:bg-rose-950/50 rounded-lg text-xs text-rose-800 dark:text-rose-200 font-medium flex items-start gap-2">
+                        <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                        "{event.metadata.blockerReason}"
+                    </div>
+                )}
+                {/* WHEN CONTINUING */}
+                {event.metadata?.from && (
+                    <div className="mt-2 flex items-center gap-2 text-xs font-mono text-slate-400">
+                        {/* TASK FROM */}
+                        <span className="px-2 py-0.5 bg-slate-800/50 rounded">{event.metadata.from}</span>
+                        <ArrowRight className="w-3 h-3" />
+                        {/* TASK TO */}
+                        <span className="px-2 py-0.5 bg-slate-800/50 rounded font-bold text-slate-200">{event.metadata.to}</span>
+                    </div>
+                )}
+
+                {/* Action Options */}
+                <div className="mt-3 flex gap-3 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                    {event.actionRequired ? (
+                        <button className="text-xs flex items-center gap-1 bg-slate-900 px-3 py-1.5 rounded-full border border-slate-700 shadow-sm text-slate-200 hover:text-emerald-500 font-semibold">
+                            <CheckCircle className="w-3 h-3" /> Resolve
+                        </button>
+                    ) : (
+                         <button className="text-xs flex items-center gap-1 bg-transparent hover:bg-slate-800/50 px-2 py-1 rounded text-slate-400">
+                            <MessageSquare className="w-3 h-3" /> Reply
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const ActivityStream = ({ events, isNewUser }: { events: PulseEvent[], isNewUser: boolean }) => {
+    const safeEvents = Array.isArray(events) ? events : [];
+    return (
+        <div className="bg-slate-950 rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-800 h-[600px] flex flex-col">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 sm:mb-8 gap-4 sm:gap-0 shrink-0">
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-200 flex items-center gap-2">
+                    Activity Stream
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                </h2>
+                
+                {/* 🔎🔎SEARCH FIELD 🔎🔎 */}
+                <div className="flex gap-2 w-full sm:w-auto">
+                     <div className="relative flex-1 sm:flex-none">
+                        <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+                        <input 
+                            type="text" 
+                            placeholder="Filter feed..." 
+                            className="pl-9 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none w-full sm:w-48 transition-all focus:w-full sm:focus:w-64"
+                        />
+                    </div>
+                    <button className="p-2 border border-slate-700 rounded-lg hover:bg-slate-800 text-slate-400">
+                        <Filter className="w-4 h-4" />
+                    </button>
+                </div>
+            </div>
+
+            {/* EVENT FIELD */}
+            <div className="pl-2 flex-1 overflow-y-auto pr-2">
+                {safeEvents.map(event => (
+                    <FeedItem key={event.id} event={event} isSample={isNewUser} />
+                ))}
+
+                {isNewUser ? (
+                    <div className="mt-8 p-4 bg-slate-900/50 border border-dashed border-slate-800 rounded-xl text-center">
+                        <p className="text-sm text-slate-400 mb-2">Try creating a task, commenting, or changing a status to see how activity appears here.</p>
+                        <button className="text-xs text-indigo-400 font-semibold hover:text-indigo-300">
+                            Create your first task &rarr;
+                        </button>
                     </div>
                 ) : (
-                    <div className="bg-slate-800/30 border border-dashed border-slate-700 p-4 rounded-xl text-center">
-                        <CheckCircle className="w-8 h-8 mx-auto mb-2 text-slate-600" />
-                        <p className="text-xs text-slate-500">All caught up!</p>
+                    <div className="mt-8 text-center pb-4">
+                        <button className="text-sm text-slate-400 hover:text-indigo-400 transition-colors flex items-center justify-center w-full gap-2">
+                            <Clock className="w-3 h-3" /> Load previous updates
+                        </button>
                     </div>
                 )}
             </div>
@@ -469,11 +443,92 @@ const PulseFocusComponent = ({
     );
 };
 
-// --- MAIN COMPONENT ---
+// --- Pulse Focus ---
+const PulseFocusComponent = ({ currentTask, nextTask, rationale, isNewUser }: { currentTask: any, nextTask: any, rationale: string, isNewUser: boolean }) => {
+    if (!currentTask && !nextTask) {
+        return (
+            isNewUser ? (
+            <div className="bg-slate-950 text-white p-6 rounded-2xl shadow-2xl border border-slate-800 relative lg:sticky lg:top-6 flex flex-col items-center justify-center text-center min-h-[300px]">
+                <h2 className="text-xl font-bold mb-2 text-violet-200">Your Focus will appear here</h2>
+                <p className="text-slate-400 text-sm mb-6">When you create tasks, TaskLinex highlights what matters most.</p>
+                <a href='/roadmap' className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg font-bold text-sm mb-3 w-full transition-colors">Create your first task</a>
+                <button className="text-violet-400 hover:text-violet-300 text-xs font-medium">Let Envoy generate a demo task</button>
+            </div>
+            ) : (
+            <div className="bg-slate-950 text-white p-6 rounded-2xl shadow-2xl border border-slate-800 relative lg:sticky lg:top-6 flex flex-col items-center justify-center text-center min-h-[300px]">
+                <div className="bg-slate-900 p-4 rounded-full mb-4">
+                    <CheckCircle className="w-8 h-8 text-emerald-500" />
+                </div>
+                <h2 className="text-xl font-bold mb-2">All Caught Up!</h2>
+                <p className="text-slate-400 text-sm">You have no active tasks. Take a breather or pick something from the backlog.</p>
+            </div>
+            )
+        );
+    }
+
+    return (
+        <div className="bg-slate-950 text-white p-6 rounded-2xl shadow-2xl border border-indigo-500/30 relative lg:sticky lg:top-6">
+            <div className="flex justify-between items-start mb-6">
+                <div>
+                    <h3 className="text-sm text-slate-400 uppercase tracking-widest font-bold mb-1">My Focus</h3>
+                    <h2 className="text-xl font-bold truncate max-w-[200px]">{currentTask ? currentTask.title : "Ready for next"}</h2>
+                </div>
+                {currentTask && (
+                    <div className="bg-indigo-600 animate-pulse px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                        <Activity className="w-3 h-3" /> Active
+                    </div>
+                )}
+            </div>
+
+            <div className="space-y-4">
+                {currentTask ? (
+                    <div className="bg-slate-800/50 p-4 rounded-xl border-l-4 border-indigo-500">
+                        <div className="flex justify-between text-xs text-slate-400 mb-2">
+                            <span>Progress</span>
+                            <span>{currentTask.progress}%</span>
+                        </div>
+                        <p className="font-medium text-sm">{currentTask.title}</p>
+                        <div className="w-full bg-slate-700 h-1.5 rounded-full mt-3 overflow-hidden">
+                            <div className="bg-indigo-500 h-full transition-all duration-1000" style={{ width: `${currentTask.progress}%` }} />
+                        </div>
+                    </div>
+                ) : (
+                    <div className="bg-slate-800/30 p-4 rounded-xl border border-dashed border-slate-700 text-center">
+                        <p className="text-sm text-slate-400">No active task selected.</p>
+                    </div>
+                )}
+
+                <div className="space-y-2">
+                    <p className="text-xs font-bold text-slate-400 uppercase">Up Next</p>
+                    {nextTask && (
+                        <div className={`flex items-center justify-between p-3 ${nextTask.priority === 'High' ? 'bg-rose-900/30' : 'bg-slate-800/30'} rounded-lg hover:bg-slate-800 transition cursor-pointer group`}>
+                            <div className="flex items-center gap-3">
+                                <CheckCircle className="w-4 h-4 text-slate-500 group-hover:text-indigo-400" />
+                                <span className="text-sm text-slate-300">{nextTask.title}</span>
+                            </div>
+                            {nextTask.priority === 'High' && <Zap className="w-3 h-3 text-red-400" />}
+                        </div>
+                    )}
+                    {rationale && (
+                        <div className="p-3 bg-indigo-900/20 rounded-lg border border-indigo-500/20">
+                            <p className="text-xs text-indigo-300 italic">"{rationale}"</p>
+                        </div>
+                    )}
+                </div>
+
+            </div>
+
+            <button className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 py-3 rounded-xl font-bold text-sm shadow-lg shadow-indigo-900/50 transition-all transform hover:scale-[1.02]">
+                Resume Context
+            </button>
+        </div>
+    );
+};
+
+// --- MAIN PAGE LAYOUT ---
 
 export default function PulsePage() {
     const { userId, jwt } = useAuth();
-
     const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
     const [activityEvents, setActivityEvents] = useState<PulseEvent[]>([]);
     const [focusData, setFocusData] = useState<any>({ currentTask: null, nextTask: null, rationale: null });
@@ -500,7 +555,7 @@ export default function PulsePage() {
             navigator.clipboard.writeText(textToCopy).then(() => {
                 alert("Invite link copied!");
             }).catch(err => {
-                console.error("Error: ", err);
+                console.error("Fehler: ", err);
             });
         } else {
             const textArea = document.createElement("textarea");
@@ -527,57 +582,56 @@ export default function PulsePage() {
     }
 
     useEffect(() => {
-        if (!userId || !jwt) return;
+            if (!userId || !jwt) return;
 
-        const fetchData = async () => {
-            try {
-                const [teamData, activityData, focusData, statsData] = await Promise.all([
-                    api.get(`/team/members?userId=${userId}`, jwt),
-                    // FIXED: Changed from /pulse/events to /pulse/activity with userId parameter
-                    api.get(`/pulse/activity?userId=${userId}`, jwt),
-                    api.get(`/pulse/${userId}`, jwt),
-                    api.get(`/pulse/stats?userId=${userId}`, jwt),
-                ]);
+            const fetchData = async () => {
+                try {
+                    const [teamData, activityData, focusData, statsData] = await Promise.all([
+                        api.get(`/team/members?userId=${userId}`, jwt),
+                        api.get(`/pulse/events`, jwt),
+                        api.get(`/pulse/${userId}`, jwt), // Ensure this endpoint exists in backend!
+                        api.get(`/pulse/stats?userId=${userId}`, jwt),
+                    ]);
 
-                const mappedTeam: TeamMember[] = Array.isArray(teamData) ? teamData.map((m: any) => ({
-                    id: m.id,
-                    name: m.name,
-                    role: m.role,
-                    avatar: `https://ui-avatars.com/api/?name=${m.name}&background=random`,
-                    status: m.status || 'offline',
-                    workload: m.workload || Math.floor(Math.random() * 100),
-                    currentTask: m.currentTask
-                })) : [];
-                
-                setTeamMembers(mappedTeam);
-                if (mappedTeam.length > 0) setHasSeenActivity(true);
+                    const mappedTeam: TeamMember[] = Array.isArray(teamData) ? teamData.map((m: any) => ({
+                        id: m.id,
+                        name: m.name,
+                        role: m.role,
+                        avatar: `https://ui-avatars.com/api/?name=${m.name}&background=random`,
+                        status: m.status || 'offline',
+                        workload: m.workload || Math.floor(Math.random() * 100),
+                        currentTask: m.currentTask
+                    })) : [];
+                    
+                    setTeamMembers(mappedTeam);
+                    if (mappedTeam.length > 0) setHasSeenActivity(true);
 
-                const events = Array.isArray(activityData) ? activityData : [];
-                setActivityEvents(events);
-                if (events.length > 0) setHasSeenActivity(true);
+                    const events = Array.isArray(activityData) ? activityData : [];
+                    setActivityEvents(events);
+                    if (events.length > 0) setHasSeenActivity(true);
 
-                if (focusData) {
-                    setFocusData(focusData);
+                    if (focusData) {
+                        setFocusData(focusData);
+                    }
+
+                    if (statsData) {
+                        setStats(statsData);
+                    }
+
+                } catch (error) {
+                    console.error("Failed to fetch pulse data", error);
+                } finally {
+                    setLoading(false);
                 }
+            };
 
-                if (statsData) {
-                    setStats(statsData);
-                }
-
-            } catch (error) {
-                console.error("Failed to fetch pulse data", error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchData();
+            fetchData();
+            
+            // Poll for updates every 5 seconds
+            const interval = setInterval(fetchData, 5000);
+            return () => clearInterval(interval);
+        }, [userId, jwt]);
         
-        // Poll for updates every 5 seconds
-        const interval = setInterval(fetchData, 5000);
-        return () => clearInterval(interval);
-    }, [userId, jwt]);
-    
     return (
         <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans selection:bg-indigo-500/30">
             {/* Header Area */}
@@ -595,11 +649,7 @@ export default function PulsePage() {
                          {teamMembers.slice(0, 5).map(m => (
                              <img key={m.id} src={m.avatar} className="w-8 h-8 rounded-full border-2 border-slate-950" />
                          ))}
-                         {teamMembers.length > 5 && (
-                             <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold border-2 border-slate-950">
-                                 +{teamMembers.length - 5}
-                             </div>
-                         )}
+                         <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold border-2 border-slate-950">+2</div>
                     </div>
                     <button 
                         onClick={copyToClipboard} 

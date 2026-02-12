@@ -509,10 +509,16 @@ class Persona(BaseModel):
         return self.current_load_hours / self.weekly_capacity_hours
 
 class EnvoySuggestion(BaseModel):
-    task_id: str
+    task_id: Optional[str] = None
     suggestion_type: str
     confidence: float = Field(ge=0, le=1)
     message: str
+
+
+class EnvoySuggestRequest(BaseModel):
+    task_id: Optional[str] = None  # Made optional - can be null for global suggestions
+    context_text: str
+    all: bool = False
 
 class EnsureUserRequest(BaseModel):
     userId: str
@@ -538,11 +544,43 @@ class Proposal(BaseModel):
     suggested:str
     reason:Optional[str]=None
 
+
+class PersonaDefinition(BaseModel):
+    id: Optional[str] = None
+    name: str
+    role: str
+    color: str
+    description: str = ""  # NEW: AI uses this to understand persona goals
+    capacity_limit: int = 40
+    allow_overload: bool = False
+
+class TaskWithPersona(BaseModel):
+    id: str
+    title: str
+    persona_id: Optional[str] = None
+    status: str
+    start_date: Optional[str] = None
+    due_date: Optional[str] = None
+    dependencies: List[str] = []
+    working_on: bool = False  # NEW: Track if task is being worked on
+
 class EnvoyRequest(BaseModel):
-    task_id:str
-    all:Optional[bool]=False
-    context_text: Optional[str]=None
-    proposals:Optional[List[Proposal]] = None
+    task_id: Optional[str] = None 
+    all: bool = False
+    context_text: Optional[str] = None
+    proposals: Optional[List['Proposal']] = None
+
+
+class ActivityLog(BaseModel):
+    id: Optional[str] = None
+    user_id: str
+    action: str
+    entity_type: str
+    entity_id: str
+    metadata: dict = {}
+    created_at: Optional[str] = None
+    persona_id: Optional[str] = None  # NEW: Track which persona made the change
+
 
 class DeleteRequest(BaseModel):
     id:str
@@ -818,64 +856,64 @@ async def delete_account(req: DeleteAccountRequest, user: dict = Depends(get_cur
 
     return {"message": "Account deleted successfully"}
 
-@app.get('/settings/{user_id}')
-async def get_user_settings(user_id: str, user: dict = Depends(get_current_user)):
-    res_user = supabase.table('users').select('*').eq('id', user_id).execute()
-    if not res_user.data:
-        raise HTTPException(status_code=404, detail="User not found")
-    user = res_user.data[0]
+# @app.get('/settings/{user_id}')
+# async def get_user_settings(user_id: str, user: dict = Depends(get_current_user)):
+#     res_user = supabase.table('users').select('*').eq('id', user_id).execute()
+#     if not res_user.data:
+#         raise HTTPException(status_code=404, detail="User not found")
+#     user = res_user.data[0]
 
-    # Handle settings JSON
-    raw_settings = user.get('settings')
-    if isinstance(raw_settings, str):
-        saved_settings = json.loads(raw_settings)
-    else:
-        saved_settings = raw_settings if raw_settings else {}
+#     # Handle settings JSON
+#     raw_settings = user.get('settings')
+#     if isinstance(raw_settings, str):
+#         saved_settings = json.loads(raw_settings)
+#     else:
+#         saved_settings = raw_settings if raw_settings else {}
 
-    res_personas = supabase.table('personas').select('*').eq('user_id', user_id).execute()
-    active_personas = []
-    for row in res_personas.data:
-        active_personas.append({
-            "id": row['id'],
-            "name": row['name'],
-            "role": row.get('role', 'Member'),
-            "color": row.get('color', '#6366f1'),
-            "capacityLimit": row['weekly_capacity_hours'],
-            "allowOverload": bool(row.get('allow_overload', False))
-        })
+#     res_personas = supabase.table('personas').select('*').eq('user_id', user_id).execute()
+#     active_personas = []
+#     for row in res_personas.data:
+#         active_personas.append({
+#             "id": row['id'],
+#             "name": row['name'],
+#             "role": row.get('role', 'Member'),
+#             "color": row.get('color', '#6366f1'),
+#             "capacityLimit": row['weekly_capacity_hours'],
+#             "allowOverload": bool(row.get('allow_overload', False))
+#         })
 
-    response = {
-        "account": {
-            "displayName": f"{user.get('firstName') or ''} {user.get('lastName') or ''}".strip(),
-            "email": user['email'],
-            "avatarUrl": f"https://ui-avatars.com/api/?name={user.get('firstName')}+{user.get('lastName')}&background=random",
-            "accountType": user.get('role') if user.get('role') else 'Individual',
-            "language": "en-US",
-            "twoFactorEnabled": False
-        },
-        "personas": {
-            "enableVirtualTeammates": saved_settings.get('personas', {}).get('enableVirtualTeammates', True),
-            "activePersonas": active_personas
-        },
-        "envoy": saved_settings.get('envoy', {
-            "suggestionsEnabled": True,
-            "autoDetectDependencies": True,
-            "communicationStyle": 'Concise',
-            "sensitivityLevel": 7,
-            "permissions": { "canDraftNotes": True, "canProposeHandoffs": True, "canModifyDates": False }
-        }),
-        "visuals": saved_settings.get('visuals', {
-            "defaultTimelineScale": 'Week',
-            "showGhostBars": True,
-            "showDependencyLines": True,
-            "uiDensity": 'Comfortable'
-        }),
-        "experimental": saved_settings.get('experimental', {
-            "enableJQL": False,
-            "usegpuAcceleration": True
-        })
-    }
-    return response
+#     response = {
+#         "account": {
+#             "displayName": f"{user.get('firstName') or ''} {user.get('lastName') or ''}".strip(),
+#             "email": user['email'],
+#             "avatarUrl": f"https://ui-avatars.com/api/?name={user.get('firstName')}+{user.get('lastName')}&background=random",
+#             "accountType": user.get('role') if user.get('role') else 'Individual',
+#             "language": "en-US",
+#             "twoFactorEnabled": False
+#         },
+#         "personas": {
+#             "enableVirtualTeammates": saved_settings.get('personas', {}).get('enableVirtualTeammates', True),
+#             "activePersonas": active_personas
+#         },
+#         "envoy": saved_settings.get('envoy', {
+#             "suggestionsEnabled": True,
+#             "autoDetectDependencies": True,
+#             "communicationStyle": 'Concise',
+#             "sensitivityLevel": 7,
+#             "permissions": { "canDraftNotes": True, "canProposeHandoffs": True, "canModifyDates": False }
+#         }),
+#         "visuals": saved_settings.get('visuals', {
+#             "defaultTimelineScale": 'Week',
+#             "showGhostBars": True,
+#             "showDependencyLines": True,
+#             "uiDensity": 'Comfortable'
+#         }),
+#         "experimental": saved_settings.get('experimental', {
+#             "enableJQL": False,
+#             "usegpuAcceleration": True
+#         })
+#     }
+#     return response
 
 @app.post('/settings/{user_id}/{section}')
 async def update_user_settings_section(user_id: str, section: str, payload: dict = Body(...), user: dict = Depends(get_current_user)):
@@ -1327,31 +1365,28 @@ async def get_envoy_friction(task_id: str, user: dict = Depends(get_current_user
 
 @app.post("/envoy/suggest")
 async def suggest(req: EnvoyRequest, request: Request, user: dict = Depends(get_current_user)):
-    user_identifier = request.client.host
     user_id = user['sub']
-    if is_rate_limited(user_identifier):
-        raise HTTPException(
-            status_code=429,
-            detail="Too many AI requests. Please wait a minute before trying again."
-        )
 
     rows = []
-    if req.all:
-        res_pid = supabase.table('tasks').select('projectId').eq('id', req.task_id).execute()
-        if res_pid.data:
-            pid = res_pid.data[0]['projectId']
-            res_t = supabase.table('tasks').select('id, title, status, priority, plannedDuration, dependencyIds').eq('projectId', pid).execute()
-            rows = res_t.data
+    if req.all or not req.task_id:
+        # fetch all tasks for this user
+        res_t = supabase.table('tasks').select(
+            'id, title, status, priority, plannedDuration, dependencyIds'
+        ).eq('ownerId', user_id).execute()
+        rows = res_t.data
     else:
-        res_t = supabase.table('tasks').select('id, title, status, priority, plannedDuration, dependencyIds').eq('id', req.task_id).execute()
+        # single task
+        res_t = supabase.table('tasks').select(
+            'id, title, status, priority, plannedDuration, dependencyIds'
+        ).eq('id', req.task_id).execute()
         rows = res_t.data
 
+    # parse dependencies
     tasks_list = []
     for row in rows:
         dep_ids = row.get('dependencyIds')
         if isinstance(dep_ids, str):
             dep_ids = safe_json_loads(dep_ids) or []
-
         tasks_list.append({
             "id": row['id'],
             "title": row['title'],
@@ -1361,30 +1396,21 @@ async def suggest(req: EnvoyRequest, request: Request, user: dict = Depends(get_
             "dependencyIds": dep_ids
         })
 
-    try:
-        parsed = await generate_envoy_proposals(tasks_list, req.context_text)
-    except Exception as e:
-        print("Envoy AI failed:", e)
-        return {"error": "Envoy AI engine failed. Please try again."}
+    parsed = await generate_envoy_proposals(tasks_list, req.context_text)
 
-    proposals = []
-    if isinstance(parsed, list):
-        for p in parsed:
-            if isinstance(p, dict):
-                proposals.append({
-                    "id": str(uuid.uuid4()),
-                    "field": p.get("field", ""),
-                    "suggested": p.get("suggested", ""),
-                    "reason": p.get("reason", "")
-                })
+    proposals = [
+        {
+            "id": str(uuid.uuid4()),
+            "field": p.get("field", ""),
+            "suggested": p.get("suggested", ""),
+            "reason": p.get("reason", "")
+        }
+        for p in parsed if isinstance(p, dict)
+    ]
 
-    # Log to Supabase
-    log_event(user_id, "ai_call", "envoy_suggest", f"Requested suggestions for task {req.task_id}")
+    log_event(user_id, "ai_call", "envoy_suggest", f"Requested suggestions for {len(tasks_list)} task(s)")
 
-    return {
-        "task_id": req.task_id,
-        "proposals": proposals
-    }
+    return {"task_id": req.task_id, "proposals": proposals}
 
 @app.post("/envoy/apply")
 def apply(req: EnvoyRequest, user: dict = Depends(get_current_user)):
@@ -1438,16 +1464,18 @@ def apply(req: EnvoyRequest, user: dict = Depends(get_current_user)):
         print(f"Apply Error: {e}")
         return {"error": str(e)}
 
-
 @app.get('/renderPersona')
-async def renderPersona(user: dict = Depends(get_current_user)):
-    res = supabase.table('personas').select('*').execute()
-    personas = []
-    for row in res.data:
-        p = dict(row)
-        if 'pk' in p: del p['pk']
-        personas.append(p)
-    return personas
+async def get_personas(user: dict = Depends(get_current_user)):
+    """Get ONLY the current user's personas"""
+    user_id = user.get('sub')
+    
+    try:
+        # FIXED: Only fetch personas belonging to the current user
+        res = supabase.table('personas').select('*').eq('user_id', user_id).execute()
+        return res.data
+    except Exception as e:
+        print(f"Error fetching personas: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post('/createPersona')
 async def createPersona(p: PersonaCreate, user: dict = Depends(get_current_user)):
@@ -1570,34 +1598,161 @@ async def team_overview(userId: str, user: dict = Depends(get_current_user)):
         "dependencyRisk": "High"
     }
 
+# ==========================================
+# TEAM MANAGEMENT ENDPOINTS - COMPLETE
+# ==========================================
+
+class AddTeamMemberRequest(BaseModel):
+    userId: str
+    username: str
+
+class RemoveTeamMemberRequest(BaseModel):
+    userId: str
+    memberId: str
+
 @app.get('/team/members')
-async def team_members(userId: str, user: dict = Depends(get_current_user)):
-    res_u = supabase.table('users').select('companyName').eq('id', userId).execute()
-    if not res_u.data or not res_u.data[0].get('companyName'):
-        return []
+async def get_team_members(userId: str, user: dict = Depends(get_current_user)):
+    """
+    Get all team members for the current user
+    Returns: Current user + all users they've added to their team
+    """
+    try:
+        # Get the current user's info
+        res_owner = supabase.table('users').select('id, firstName, lastName, role, skills').eq('id', userId).execute()
+        if not res_owner.data:
+            return []
+        
+        owner_data = res_owner.data[0]
+        
+        # Get all team members added by this user
+        res_team = supabase.table('team_members').select('member_id').eq('owner_id', userId).execute()
+        member_ids = [tm['member_id'] for tm in res_team.data]
+        
+        # Fetch details for all team members
+        team_members_list = []
+        if member_ids:
+            res_members = supabase.table('users').select('id, firstName, lastName, role, skills').in_('id', member_ids).execute()
+            team_members_list = res_members.data
+        
+        # Combine owner + team members
+        all_members = [owner_data] + team_members_list
+        
+        # Format the response
+        result = []
+        for member in all_members:
+            fname = member.get('firstName', '')
+            lname = member.get('lastName', '')
+            skills = member.get('skills', [])
+            if isinstance(skills, str):
+                try:
+                    skills = json.loads(skills)
+                except:
+                    skills = []
+            
+            result.append({
+                'id': member['id'],
+                'name': f"{fname} {lname}".strip() or "User",
+                'role': member.get('role', 'Member'),
+                'skills': skills,
+                'attentionScore': 75,  # Mock data - calculate based on tasks
+                'dependencyLoad': 0,    # Mock data - calculate based on dependencies
+                'status': 'online',
+                'workload': 0,
+                'currentTask': None
+            })
+        
+        return result
+    except Exception as e:
+        print(f"Error fetching team members: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    company = res_u.data[0]['companyName']
-    res_m = supabase.table('users').select('id, firstName, lastName, role, avg_task_completion_time, completed_tasks_count, skills').eq('companyName', company).execute()
+@app.post('/team/add_member')
+async def add_team_member(req: AddTeamMemberRequest, user: dict = Depends(get_current_user)):
+    """
+    Add a team member by their username
+    """
+    try:
+        # Validate that the requester matches the userId
+        if user.get('sub') != req.userId:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        
+        # Find user by username
+        res_user = supabase.table('users').select('id, username').eq('username', req.username).execute()
+        
+        if not res_user.data:
+            raise HTTPException(status_code=404, detail=f"User '{req.username}' not found")
+        
+        target_user = res_user.data[0]
+        target_user_id = target_user['id']
+        
+        # Prevent adding yourself
+        if target_user_id == req.userId:
+            raise HTTPException(status_code=400, detail="Cannot add yourself to your team")
+        
+        # Check if already added
+        res_existing = supabase.table('team_members').select('id').eq('owner_id', req.userId).eq('member_id', target_user_id).execute()
+        
+        if res_existing.data:
+            raise HTTPException(status_code=400, detail=f"'{req.username}' is already on your team")
+        
+        # Add team member
+        supabase.table('team_members').insert({
+            'owner_id': req.userId,
+            'member_id': target_user_id
+        }).execute()
+        
+        # Log the event
+        log_event(req.userId, 'team_member_added', f"Added {req.username} to team", f"Added team member: {req.username}")
+        
+        return {"message": f"Successfully added {req.username} to your team"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error adding team member: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    members = []
-    for row in res_m.data:
-        raw_skills = row.get('skills')
-        try:
-            skills = json.loads(raw_skills) if isinstance(raw_skills, str) else (raw_skills or [])
-        except:
-            skills = []
+@app.post('/team/remove_member')
+async def remove_team_member(req: RemoveTeamMemberRequest, user: dict = Depends(get_current_user)):
+    """
+    Remove a team member
+    """
+    try:
+        # Validate that the requester matches the userId
+        if user.get('sub') != req.userId:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        
+        # Prevent removing yourself (though you can't add yourself anyway)
+        if req.memberId == req.userId:
+            raise HTTPException(status_code=400, detail="Cannot remove yourself")
+        
+        # Get member info for logging
+        res_member = supabase.table('users').select('username, firstName, lastName').eq('id', req.memberId).execute()
+        if res_member.data:
+            member_data = res_member.data[0]
+            member_name = f"{member_data.get('firstName', '')} {member_data.get('lastName', '')}".strip() or member_data.get('username', 'Unknown')
+        else:
+            member_name = "Unknown"
+        
+        # Delete team member relationship
+        res = supabase.table('team_members').delete().eq('owner_id', req.userId).eq('member_id', req.memberId).execute()
+        
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Team member not found")
+        
+        # Log the event
+        log_event(req.userId, 'team_member_removed', f"Removed {member_name} from team", f"Removed team member: {member_name}")
+        
+        return {"message": f"Successfully removed {member_name} from your team"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error removing team member: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-        members.append({
-            "id": row['id'],
-            "name": f"{row['firstName']} {row['lastName']}",
-            "role": row['role'],
-            "skills": skills,
-            "avgTime": row['avg_task_completion_time'],
-            "completedCount": row['completed_tasks_count'],
-            "attentionScore": 85,
-            "dependencyLoad": 3
-        })
-    return members
+
+
 
 @app.get('/pulse/events')
 async def get_pulse_events(user: dict = Depends(get_current_user)):
@@ -1803,60 +1958,65 @@ async def get_pulse(user_id: str, user: dict = Depends(get_current_user)):
 
 @app.get('/pulse/activity')
 async def get_pulse_activity(userId: str, user: dict = Depends(get_current_user)):
-    res_u = supabase.table('users').select('companyName').eq('id', userId).execute()
-    company = res_u.data[0]['companyName'] if res_u.data else None
-
-    rows = []
-    if company:
-        # Get users in company
-        res_c = supabase.table('users').select('id').eq('companyName', company).execute()
-        u_ids = [u['id'] for u in res_c.data]
-        res_a = supabase.table('activity_log').select('*').in_('userId', u_ids).order('timestamp', desc=True).limit(50).execute()
-        rows = res_a.data
-    else:
+    """
+    FIXED: Get activity ONLY for the current user (no team concept yet)
+    In a real team app, you'd query a team_members table to get the team
+    """
+    try:
+        # FIXED: Only show the current user's activity
         res_a = supabase.table('activity_log').select('*').eq('userId', userId).order('timestamp', desc=True).limit(50).execute()
         rows = res_a.data
 
-    # Map User Info
-    u_ids = list(set(l['userId'] for l in rows))
-    u_map = {}
-    if u_ids:
-        res_users = supabase.table('users').select('id, firstName, lastName, role').in_('id', u_ids).execute()
-        u_map = {u['id']: u for u in res_users.data}
+        # Get user info
+        res_user = supabase.table('users').select('id, firstName, lastName, role').eq('id', userId).execute()
+        user_data = res_user.data[0] if res_user.data else {}
+        
+        fname = user_data.get('firstName', '')
+        lname = user_data.get('lastName', '')
+        role = user_data.get('role', 'Member')
 
-    events = []
-    for t in rows:
-        u = u_map.get(t['userId'])
-        fname = u['firstName'] if u else ""
-        lname = u['lastName'] if u else ""
-        role = u['role'] if u else "Member"
+        events = []
+        for t in rows:
+            avatar = f"https://ui-avatars.com/api/?name={fname}+{lname}&background=random"
 
-        avatar = f"https://ui-avatars.com/api/?name={fname}+{lname}&background=random"
+            events.append({
+                "id": f"evt_{t['id']}",
+                "type": t['type'],
+                "actor": {
+                    "id": userId,
+                    "name": f"{fname} {lname}".strip() or "User",
+                    "role": role,
+                    "avatar": avatar
+                },
+                "targetTask": t['targetTask'],
+                "targetLink": t.get('targetLink', '#'),
+                "details": t['details'],
+                "timestamp": time_ago(t['timestamp']),
+                "actionRequired": False
+            })
 
+        # Add welcome event
         events.append({
-            "id": f"evt_{t['id']}",
-            "type": t['type'],
-            "actor": {
-                "id": t['userId'],
-                "name": f"{fname} {lname}",
-                "role": role or 'Member',
-                "avatar": avatar
+            "id": 'se1', 
+            "type": 'status_change',
+            "actor": { 
+                "id": 'sys', 
+                "name": 'System', 
+                "role": 'Bot', 
+                "avatar": 'https://ui-avatars.com/api/?name=System&background=000&color=fff', 
+                "status": 'online', 
+                "workload": 0 
             },
-            "targetTask": t['targetTask'],
-            "targetLink": t['targetLink'] if t['targetLink'] else "#",
-            "details": t['details'],
-            "timestamp": time_ago(t['timestamp']),
-            "actionRequired": False
+            "targetTask": 'Welcome to TaskLinex', 
+            "targetLink": '#',
+            "details": 'Your TaskLinex account has been created.', 
+            "timestamp": 'Joined'
         })
 
-    events.append({
-        "id": 'se1', "type": 'status_change',
-        "actor": { "id": 'sys', "name": 'System', "role": 'Bot', "avatar": 'https://ui-avatars.com/api/?name=System&background=000&color=fff', "status": 'online', "workload": 0 },
-        "targetTask": 'Welcome to TaskLinex', "targetLink": '#',
-        "details": 'Your TaskLinex account has been created.', "timestamp": 'Joined'
-    })
-
-    return events
+        return events
+    except Exception as e:
+        print(f"Error fetching activity: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get('/pulse/stats')
 async def get_pulse_stats(userId: str, user: dict = Depends(get_current_user)):
