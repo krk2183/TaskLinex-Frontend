@@ -69,7 +69,7 @@ export default function TeamPage() {
 
                 setOverview(ovData);
                 setMembers(memData);
-                setInterventions(intData.filter((i: any) => i.scope === 'team'));
+                setInterventions(intData.filter((i: Intervention) => i.scope === 'team'));
                 setUserRole(userData.role);
             } catch (e) {
                 console.error("Failed to load team data", e);
@@ -97,9 +97,10 @@ export default function TeamPage() {
             setIsAdding(false);
             setNewUsername("");
             
-        } catch (e: any) {
+        } catch (e) {
             console.error("Failed to add member:", e);
-            alert(e.message || "Failed to add team member. Please check the username and try again.");
+            const errorMessage = e instanceof Error ? e.message : "Failed to add team member. Please check the username and try again.";
+            alert(errorMessage);
         }
     };
 
@@ -160,7 +161,7 @@ export default function TeamPage() {
             <div className="min-h-screen bg-slate-950 flex items-center justify-center">
                 <div className="text-center">
                     <Loader2 className="w-8 h-8 text-violet-500 animate-spin mx-auto mb-4" />
-                    <p className="text-slate-400">Loading Team Intelligence...</p>
+                    <p className="text-slate-400">Loading team data...</p>
                 </div>
             </div>
         );
@@ -170,11 +171,11 @@ export default function TeamPage() {
         return (
             <div className="min-h-screen bg-slate-950 flex items-center justify-center">
                 <div className="text-center">
-                    <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto mb-4" />
+                    <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-4" />
                     <p className="text-slate-400">{error}</p>
                     <button 
                         onClick={() => window.location.reload()}
-                        className="mt-4 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
+                        className="mt-4 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors"
                     >
                         Retry
                     </button>
@@ -183,53 +184,64 @@ export default function TeamPage() {
         );
     }
 
-    return (
-        <div className="min-h-screen bg-slate-950 text-slate-200 p-6 font-sans">
-            <header className="mb-8">
-                <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-                    <Users className="w-8 h-8 text-violet-500" />
-                    Team Operations
-                </h1>
-                <p className="text-slate-400 mt-2">Operational intelligence and coordination health.</p>
-            </header>
+    const filteredSkills = AVAILABLE_SKILLS.filter(s => 
+        s.toLowerCase().includes(skillSearch.toLowerCase())
+    );
 
-            {/* SKILLS MODAL */}
+    return (
+        <div className="min-h-screen bg-slate-950 text-slate-200 p-6">
+            <div className="max-w-7xl mx-auto">
+                <div className="mb-8">
+                    <h1 className="text-3xl font-bold text-white mb-2">Team Intelligence</h1>
+                    <p className="text-slate-400">Real-time coordination health & predictive intervention signals.</p>
+                </div>
+
+            {/* Skills Modal */}
             {editingMember && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                    <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-xl shadow-2xl overflow-hidden">
-                        <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-950">
-                            <h3 className="font-bold text-white">Manage Skills: {editingMember.name}</h3>
-                            <button onClick={() => setEditingMember(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto">
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                <h3 className="text-xl font-bold text-white">{editingMember.name}</h3>
+                                <p className="text-sm text-slate-400">Edit Skills</p>
+                            </div>
+                            <button onClick={() => setEditingMember(null)} className="text-slate-400 hover:text-white">
+                                <X className="w-5 h-5" />
+                            </button>
                         </div>
-                        <div className="p-6">
-                            <div className="relative mb-4">
-                                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
-                                <input 
-                                    type="text" 
-                                    placeholder="Search skills..." 
+
+                        {/* Search */}
+                        <div className="mb-4">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                                <input
+                                    type="text"
+                                    placeholder="Search skills..."
                                     value={skillSearch}
                                     onChange={(e) => setSkillSearch(e.target.value)}
-                                    className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:ring-2 focus:ring-violet-500 outline-none"
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-sm text-white focus:ring-2 focus:ring-violet-500 outline-none"
                                 />
                             </div>
-                            <div className="flex flex-wrap gap-2 max-h-60 overflow-y-auto custom-scrollbar">
-                                {AVAILABLE_SKILLS.filter(s => s.toLowerCase().includes(skillSearch.toLowerCase())).map(skill => {
-                                    const isActive = editingMember.skills?.includes(skill);
-                                    return (
-                                        <button
-                                            key={skill}
-                                            onClick={() => toggleSkill(skill)}
-                                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                                                isActive 
-                                                ? 'bg-violet-600 border-violet-500 text-white' 
-                                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
-                                            }`}
-                                        >
-                                            {skill}
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                        </div>
+
+                        {/* Skills Grid */}
+                        <div className="flex flex-wrap gap-2">
+                            {filteredSkills.map((skill) => {
+                                const isSelected = editingMember.skills?.includes(skill);
+                                return (
+                                    <button
+                                        key={skill}
+                                        onClick={() => toggleSkill(skill)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                                            isSelected 
+                                            ? 'bg-violet-600 text-white border border-violet-500' 
+                                            : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700'
+                                        }`}
+                                    >
+                                        {skill}
+                                    </button>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
@@ -251,7 +263,7 @@ export default function TeamPage() {
                                             {m.skills?.slice(0, 3).map(s => (
                                                 <span key={s} className="text-[9px] bg-slate-800 px-1 rounded text-slate-400">{s}</span>
                                             ))}
-                                            {m.skills?.length > 3 && <span className="text-[9px] text-slate-500">+{m.skills.length - 3}</span>}
+                                            {(m.skills?.length ?? 0) > 3 && <span className="text-[9px] text-slate-500">+{(m.skills?.length ?? 0) - 3}</span>}
                                         </div>
                                     </div>
                                     <div className="text-right">
@@ -340,7 +352,7 @@ export default function TeamPage() {
                         </div>
 
                         <div className="space-y-4">
-                            {interventions.map((item, idx) => (
+                            {interventions.map((item) => (
                                 <div key={item.id} className="bg-slate-950 border border-slate-800 p-3 rounded-lg relative group">
                                     <div className="flex items-start gap-3">
                                         {item.type === 'critical' ? (
@@ -385,6 +397,7 @@ export default function TeamPage() {
                 </div>
 
             </div>
+        </div>
         </div>
     );
 }
