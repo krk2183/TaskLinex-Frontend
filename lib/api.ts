@@ -2,6 +2,7 @@
 // Universal API helper for making authenticated requests
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://192.168.0.113:8000';
+
 interface RequestOptions {
   method: string;
   headers: HeadersInit;
@@ -86,6 +87,35 @@ export const api = {
       method: 'PUT',
       headers,
       body: JSON.stringify(data)
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `API Error: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * PATCH request
+   * @param endpoint - API endpoint
+   * @param data - Request body data
+   * @param token - JWT token for authentication
+   */
+  patch: async (endpoint: string, data: any, token?: string | null) => {
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(data),
     });
 
     if (!response.ok) {

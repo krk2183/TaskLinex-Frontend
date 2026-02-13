@@ -18,6 +18,7 @@
 /.next/
 /out/
 
+/backend
 # production
 # /backend
 
@@ -41,6 +42,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 
-/backend
+
 #Self
 # ngrok.yml
