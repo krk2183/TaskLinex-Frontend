@@ -13,7 +13,7 @@ import { api } from '@/lib/api';
 
 // --- TYPES & INTERFACES ---
 
-type EventType = 'status_change' | 'comment' | 'blocker' | 'milestone' | 'handoff';
+type EventType = 'status_change' | 'comment' | 'blocker' | 'milestone' | 'handoff' | 'task_deleted';
 
 interface TeamMember {
     id: string;
@@ -80,10 +80,10 @@ const SYSTEM_EVENTS: PulseEvent[] = [
 ];
 
 // Sprint Health Graph
-const SprintHealthCard  = ({ data, isNewUser }: { data: ProjectHealth, isNewUser?: boolean }) => {
+const SprintHealthCard  = ({ data, isNewUser }: { data: ProjectHealth; isNewUser?: boolean }) => {
     const totalSlots = 25;
 
-    var totalTasks = (data?.sprint?.completed ?? 0) + (data?.sprint?.remaining ?? 0);
+    const totalTasks = (data?.sprint?.completed ?? 0) + (data?.sprint?.remaining ?? 0);
 
     const currentDayIndex = 15; // Example: we are at bar 15 of 25
     const hasData = totalTasks > 0;
@@ -178,7 +178,7 @@ const WorkloadIndicator = ({ level }: { level: number }) => {
 
 // --- CORE COMPONENTS ---
 
-const PulseInsights = ({ data, isNewUser }: { data: ProjectHealth, isNewUser: boolean }) => {
+const PulseInsights = ({ data, isNewUser }: { data: ProjectHealth; isNewUser: boolean }) => {
     const isBlocker = data.blockers?.type === 'blocker';
     const velocityStyles = {
         High: { color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/20', iconColor: 'text-emerald-600', textSize: 'text-xl' },
@@ -258,7 +258,7 @@ const PulseInsights = ({ data, isNewUser }: { data: ProjectHealth, isNewUser: bo
 };
 
 
-const TeamSidebar = ({ members, isNewUser }: { members: TeamMember[], isNewUser: boolean }) => {
+const TeamSidebar = ({ members, isNewUser }: { members: TeamMember[]; isNewUser: boolean }) => {
     return (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 h-fit sticky top-6 shadow-lg">
             <div className="flex items-center justify-between mb-6">
@@ -311,12 +311,19 @@ const TeamSidebar = ({ members, isNewUser }: { members: TeamMember[], isNewUser:
 };
 
 // Feed Sections Main Content
-const FeedItem = ({ event, isSample }: { event: PulseEvent, isSample?: boolean }) => {
+const FeedItem = ({ event, isSample }: { event: PulseEvent; isSample?: boolean }) => {
     // COLOR SCHEME AND ICONOGRAPHY
     const getStyles = (event: PulseEvent) => {
-        if (event.details === 'Task Deleted') {
-            return { icon: XCircle, color: 'text-rose-500', bg: 'bg-rose-50 dark:bg-rose-900/20', border: 'border-rose-200 dark:border-rose-900' };
+        // Check for deleted task
+        if (event.type === 'task_deleted' || event.details.toLowerCase().includes('deleted')) {
+            return { 
+                icon: XCircle, 
+                color: 'text-purple-500', 
+                bg: 'bg-purple-50 dark:bg-purple-900/20', 
+                border: 'border-purple-200 dark:border-purple-900' 
+            };
         }
+        
         switch(event.type) {
             case 'blocker':
                 return { icon: AlertTriangle, color: 'text-rose-500', bg: 'bg-rose-50 dark:bg-rose-900/20', border: 'border-rose-200 dark:border-rose-900' };
@@ -331,7 +338,7 @@ const FeedItem = ({ event, isSample }: { event: PulseEvent, isSample?: boolean }
 
     const style = getStyles(event);
     const Icon = style.icon;
-    const isDeleted = event.details === 'Task Deleted';
+    const isDeleted = event.type === 'task_deleted' || event.details.toLowerCase().includes('deleted');
     
     return (
         <div className="flex gap-3 sm:gap-4 relative pb-8 last:pb-0">
@@ -354,7 +361,7 @@ const FeedItem = ({ event, isSample }: { event: PulseEvent, isSample?: boolean }
             <div className={`flex-1 p-3 sm:p-4 rounded-xl border ${style.border} ${style.bg} relative group transition-all hover:shadow-md ${isSample ? 'opacity-80' : ''}`}>
                 <div className="flex flex-col sm:flex-row sm:justify-between items-start mb-1 gap-1 sm:gap-0">
                     <p className="text-sm text-slate-200">
-                        <span className="font-bold">{event.actor.name}</span> <span className="text-slate-400 font-normal">{event.details}</span> <span className={`font-semibold ${isDeleted ? 'text-rose-400' : 'text-indigo-400 hover:underline cursor-pointer'}`}>"{event.targetTask}"</span>
+                        <span className="font-bold">{event.actor.name}</span> <span className="text-slate-400 font-normal">{event.details}</span> <span className={`font-semibold ${isDeleted ? 'text-purple-400' : 'text-indigo-400 hover:underline cursor-pointer'}`}>&quot;{event.targetTask}&quot;</span>
                         {isSample && <span className="ml-2 text-[10px] bg-slate-800/50 px-1.5 py-0.5 rounded text-slate-400 border border-slate-700">Sample</span>}
                     </p>
                     <span className="text-xs text-slate-500 whitespace-nowrap ml-0 sm:ml-2">{event.timestamp}</span>
@@ -365,7 +372,7 @@ const FeedItem = ({ event, isSample }: { event: PulseEvent, isSample?: boolean }
                 {event.metadata?.blockerReason && (
                     <div className="mt-2 p-2 bg-rose-100 dark:bg-rose-950/50 rounded-lg text-xs text-rose-800 dark:text-rose-200 font-medium flex items-start gap-2">
                         <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
-                        "{event.metadata.blockerReason}"
+                        &quot;{event.metadata.blockerReason}&quot;
                     </div>
                 )}
                 {/* WHEN CONTINUING */}
@@ -396,7 +403,7 @@ const FeedItem = ({ event, isSample }: { event: PulseEvent, isSample?: boolean }
     );
 };
 
-const ActivityStream = ({ events, isNewUser }: { events: PulseEvent[], isNewUser: boolean }) => {
+const ActivityStream = ({ events, isNewUser }: { events: PulseEvent[]; isNewUser: boolean }) => {
     const safeEvents = Array.isArray(events) ? events : [];
     return (
         <div className="bg-slate-950 rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-800 h-[600px] flex flex-col">
@@ -448,94 +455,83 @@ const ActivityStream = ({ events, isNewUser }: { events: PulseEvent[], isNewUser
 };
 
 // --- Pulse Focus ---
-const PulseFocusComponent = ({ currentTask, nextTask, rationale, isNewUser }: { currentTask: any, nextTask: any, rationale: string, isNewUser: boolean }) => {
-    if (!currentTask && !nextTask) {
-        return (
-            isNewUser ? (
-            <div className="bg-slate-950 text-white p-6 rounded-2xl shadow-2xl border border-slate-800 relative lg:sticky lg:top-6 flex flex-col items-center justify-center text-center min-h-[300px]">
-                <h2 className="text-xl font-bold mb-2 text-violet-200">Your Focus will appear here</h2>
-                <p className="text-slate-400 text-sm mb-6">When you create tasks, TaskLinex highlights what matters most.</p>
-                <a href='/roadmap' className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg font-bold text-sm mb-3 w-full transition-colors">Create your first task</a>
-                <button className="text-violet-400 hover:text-violet-300 text-xs font-medium">Let Envoy generate a demo task</button>
-            </div>
-            ) : (
-            <div className="bg-slate-950 text-white p-6 rounded-2xl shadow-2xl border border-slate-800 relative lg:sticky lg:top-6 flex flex-col items-center justify-center text-center min-h-[300px]">
-                <div className="bg-slate-900 p-4 rounded-full mb-4">
-                    <CheckCircle className="w-8 h-8 text-emerald-500" />
-                </div>
-                <h2 className="text-xl font-bold mb-2">All Caught Up!</h2>
-                <p className="text-slate-400 text-sm">You have no active tasks. Take a breather or pick something from the backlog.</p>
-            </div>
-            )
-        );
-    }
-
+const PulseFocusComponent = ({ 
+    currentTask, 
+    nextTask, 
+    rationale, 
+    isNewUser 
+}: { 
+    currentTask: string | null; 
+    nextTask: string | null; 
+    rationale: string | null; 
+    isNewUser: boolean;
+}) => {
     return (
-        <div className="bg-slate-950 text-white p-6 rounded-2xl shadow-2xl border border-indigo-500/30 relative lg:sticky lg:top-6">
-            <div className="flex justify-between items-start mb-6">
-                <div>
-                    <h3 className="text-sm text-slate-400 uppercase tracking-widest font-bold mb-1">My Focus</h3>
-                    <h2 className="text-xl font-bold truncate max-w-[200px]">{currentTask ? currentTask.title : "Ready for next"}</h2>
-                </div>
-                {currentTask && (
-                    <div className="bg-indigo-600 animate-pulse px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
-                        <Activity className="w-3 h-3" /> Active
-                    </div>
-                )}
+        <div className="bg-slate-900 border border-indigo-900/30 rounded-2xl p-5 shadow-lg sticky top-6">
+            <div className="flex items-center justify-between mb-6">
+                <h3 className="font-bold text-slate-200 flex items-center gap-2">
+                    <Flag className="w-5 h-5 text-indigo-500" /> My Focus
+                </h3>
+                <span className="text-[10px] bg-indigo-900/30 text-indigo-300 px-2 py-1 rounded-full font-semibold border border-indigo-700/50">AI Suggested</span>
             </div>
 
-            <div className="space-y-4">
-                {currentTask ? (
-                    <div className="bg-slate-800/50 p-4 rounded-xl border-l-4 border-indigo-500">
-                        <div className="flex justify-between text-xs text-slate-400 mb-2">
-                            <span>Progress</span>
-                            <span>{currentTask.progress}%</span>
-                        </div>
-                        <p className="font-medium text-sm">{currentTask.title}</p>
-                        <div className="w-full bg-slate-700 h-1.5 rounded-full mt-3 overflow-hidden">
-                            <div className="bg-indigo-500 h-full transition-all duration-1000" style={{ width: `${currentTask.progress}%` }} />
+            {isNewUser ? (
+                <div className="space-y-4 opacity-60">
+                    <div>
+                        <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Right Now</p>
+                        <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+                            <p className="text-sm text-slate-400 italic">Create tasks to see AI-powered focus suggestions</p>
                         </div>
                     </div>
-                ) : (
-                    <div className="bg-slate-800/30 p-4 rounded-xl border border-dashed border-slate-700 text-center">
-                        <p className="text-sm text-slate-400">No active task selected.</p>
-                    </div>
-                )}
-
-                <div className="space-y-2">
-                    <p className="text-xs font-bold text-slate-400 uppercase">Up Next</p>
-                    {nextTask && (
-                        <div className={`flex items-center justify-between p-3 ${nextTask.priority === 'High' ? 'bg-rose-900/30' : 'bg-slate-800/30'} rounded-lg hover:bg-slate-800 transition cursor-pointer group`}>
-                            <div className="flex items-center gap-3">
-                                <CheckCircle className="w-4 h-4 text-slate-500 group-hover:text-indigo-400" />
-                                <span className="text-sm text-slate-300">{nextTask.title}</span>
+                </div>
+            ) : (
+                <>
+                    <div className="space-y-4">
+                        {currentTask && (
+                            <div>
+                                <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Right Now</p>
+                                <div className="p-3 bg-indigo-900/20 rounded-lg border border-indigo-700/30">
+                                    <p className="text-sm font-semibold text-slate-200">{currentTask}</p>
+                                </div>
                             </div>
-                            {nextTask.priority === 'High' && <Zap className="w-3 h-3 text-red-400" />}
-                        </div>
-                    )}
+                        )}
+
+                        {nextTask && (
+                            <div>
+                                <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Up Next</p>
+                                <div className="p-3 bg-slate-800/30 rounded-lg border border-slate-700/50">
+                                    <p className="text-sm font-medium text-slate-300">{nextTask}</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                     {rationale && (
-                        <div className="p-3 bg-indigo-900/20 rounded-lg border border-indigo-500/20">
-                            <p className="text-xs text-indigo-300 italic">"{rationale}"</p>
+                        <div className="mt-6 pt-6 border-t border-slate-800">
+                            <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Envoy Rationale</p>
+                            <p className="text-xs text-slate-400 leading-relaxed">{rationale}</p>
                         </div>
                     )}
-                </div>
 
-            </div>
-
-            <button className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 py-3 rounded-xl font-bold text-sm shadow-lg shadow-indigo-900/50 transition-all transform hover:scale-[1.02]">
-                Resume Context
-            </button>
+                    {!currentTask && !nextTask && (
+                        <div className="text-center py-8">
+                            <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-20" />
+                            <p className="text-sm text-slate-400">All caught up!</p>
+                        </div>
+                    )}
+                </>
+            )}
         </div>
     );
 };
 
-// --- MAIN PAGE LAYOUT ---
+// --- MAIN COMPONENT ---
 
 export default function PulsePage() {
     const { userId, jwt } = useAuth();
     const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
     const [activityEvents, setActivityEvents] = useState<PulseEvent[]>([]);
-    const [focusData, setFocusData] = useState<any>({ currentTask: null, nextTask: null, rationale: null });
+    const [focusData, setFocusData] = useState<{ currentTask: string | null; nextTask: string | null; rationale: string | null }>({ currentTask: null, nextTask: null, rationale: null });
     const [stats, setStats] = useState<ProjectHealth>({
         velocity: 'Medium',
         blockers: { count: 0, type: 'blocker' },
@@ -559,7 +555,7 @@ export default function PulsePage() {
             navigator.clipboard.writeText(textToCopy).then(() => {
                 alert("Invite link copied!");
             }).catch(err => {
-                console.error("Fehler: ", err);
+                console.error("Error: ", err);
             });
         } else {
             const textArea = document.createElement("textarea");
@@ -592,12 +588,12 @@ export default function PulsePage() {
                 try {
                     const [teamData, activityData, focusData, statsData] = await Promise.all([
                         api.get(`/team/members?userId=${userId}`, jwt),
-                        api.get(`/pulse/events`, jwt),
-                        api.get(`/pulse/${userId}`, jwt), // Ensure this endpoint exists in backend!
+                        api.get(`/pulse/events?userId=${userId}`, jwt), // Pass userId to filter
+                        api.get(`/pulse/${userId}`, jwt),
                         api.get(`/pulse/stats?userId=${userId}`, jwt),
                     ]);
 
-                    const mappedTeam: TeamMember[] = Array.isArray(teamData) ? teamData.map((m: any) => ({
+                    const mappedTeam: TeamMember[] = Array.isArray(teamData) ? teamData.map((m: { id: string; name: string; role: string; status?: string; workload?: number; currentTask?: string }) => ({
                         id: m.id,
                         name: m.name,
                         role: m.role,
@@ -651,7 +647,7 @@ export default function PulsePage() {
                 <div className="flex items-center gap-3">
                     <div className="flex -space-x-3">
                          {teamMembers.slice(0, 5).map(m => (
-                             <img key={m.id} src={m.avatar} className="w-8 h-8 rounded-full border-2 border-slate-950" />
+                             <img key={m.id} src={m.avatar} alt={m.name} className="w-8 h-8 rounded-full border-2 border-slate-950" />
                          ))}
                          <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold border-2 border-slate-950">+2</div>
                     </div>
