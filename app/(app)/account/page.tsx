@@ -1,6 +1,6 @@
 "use client";
 
-import { User, Shield, Globe, Clock, Monitor, LogOut, Download, Trash2, CheckCircle, Save, X, Loader2, Smartphone as LucideIcon } from 'lucide-react';
+import { User, Shield, Globe, Clock, Monitor, LogOut, Download, Trash2, CheckCircle, Save, X, Loader2, Smartphone} from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../providers/AuthContext';
 import { useRouter } from 'next/navigation';
