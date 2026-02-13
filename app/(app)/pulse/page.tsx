@@ -593,12 +593,19 @@ export default function PulsePage() {
                         api.get(`/pulse/stats?userId=${userId}`, jwt),
                     ]);
 
-                    const mappedTeam: TeamMember[] = Array.isArray(teamData) ? teamData.map((m: { id: string; name: string; role: string; status?: string; workload?: number; currentTask?: string }) => ({
+                    const mappedTeam: TeamMember[] = Array.isArray(teamData) ? teamData.map((m: { 
+                        id: string; 
+                        name: string; 
+                        role: string; 
+                        status?: string; 
+                        workload?: number; 
+                        currentTask?: string 
+                    }) => ({
                         id: m.id,
                         name: m.name,
                         role: m.role,
                         avatar: `https://ui-avatars.com/api/?name=${m.name}&background=random`,
-                        status: m.status || 'offline',
+                        status: (m.status || 'offline') as TeamMember['status'], 
                         workload: m.workload || Math.floor(Math.random() * 100),
                         currentTask: m.currentTask
                     })) : [];
