@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { Home, Settings,FolderKanban,UsersRound, ChevronLeft, LayoutDashboard, BarChart3, Sun, Moon, BadgePlus, MapPinCheck, UserRound } from 'lucide-react';
+import { Home, Settings, FolderKanban, UsersRound, ChevronLeft, LayoutDashboard, BarChart3, Sun, Moon, BadgePlus, MapPinCheck, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { useLayout } from './LayoutContext'; 
 import { useAuth, supabase } from '../app/providers/AuthContext';
@@ -15,10 +15,16 @@ const navItems = [
     { name: 'Envoy', href: '/envoy', icon: FolderKanban },
 ];
 
+interface UserData {
+    name: string;
+    initials: string;
+    role: string;
+}
+
 export default function Sidebar() {
     const { isExpanded, toggleSidebar } = useLayout();
     const { userId } = useAuth();
-    const [user, setUser] = useState<{ name: string; initials: string; role: string } | null>(null);
+    const [user, setUser] = useState<UserData | null>(null);
 
     useEffect(() => {
         if (!userId) return;
@@ -94,7 +100,7 @@ export default function Sidebar() {
                         <Link
                             key={item.name}
                             href={item.href}
-                            className={`flex items-center relative overflow-hidden  text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-gray-700 hover:text-indigo-600 dark:hover:text-white rounded-lg py-2 px-2 md:py-3 md:px-3 transition-all duration-300 group ${isExpanded ? 'justify-start' : 'justify-center'}`}
+                            className={`flex items-center relative overflow-hidden text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-gray-700 hover:text-indigo-600 dark:hover:text-white rounded-lg py-2 px-2 md:py-3 md:px-3 transition-all duration-300 group ${isExpanded ? 'justify-start' : 'justify-center'}`}
                         >
                             <item.icon size={24} className="flex-shrink-0" />
                             <span
