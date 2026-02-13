@@ -34,10 +34,6 @@ Each page is designed to specialize in one responsibility only.
 | :--- | :--- | :--- |
 | **Pulse (Home)** | ✅ Complete | Execution-focused overview and active task management. |
 | **Dashboard** | ✅ Complete | Broader task and project overview. |
-| **Analytics** | ✅ Complete | Performance insights and progress patterns (no vanity metrics). |
-| **Settings** | ✅ Complete | User preferences and configuration. |
-=======
-| **Pulse (Home)** | ✅ Complete | Execution-focused overview and active task management. |
 | **Roadmap** | ✅ Complete | Broader task and project overview. |
 | **Analytics** | ✅ Complete | Performance insights and progress patterns (no vanity metrics). |
 | **Settings** | ✅ Complete | User Account and Envoy Settings customization . |
