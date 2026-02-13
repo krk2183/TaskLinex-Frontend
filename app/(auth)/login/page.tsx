@@ -4,7 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowRight, Lock, Mail, Github, Chrome, ShieldCheck, ArrowLeft, AlertCircle } from "lucide-react";
-import { useAuth } from "@/app/providers/AuthContext";
+import { useAuth, supabase } from "@/app/providers/AuthContext";
 
 // --- COMPONENTS ---
 
@@ -70,12 +70,13 @@ const BackButton = () => (
     </Link>
   </motion.div>
 );
+
 // --- PAGE ---
 
 export default function LoginPage() {
   const { login } = useAuth();
   const [data, setData] = React.useState({
-    email: "",
+    emailOrUsername: "",
     password: "",
     rememberMe: false,
   });
@@ -92,11 +93,42 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setLoading(true);
+    
     try {
-      await login(data.email, data.password);
+      const identifier = data.emailOrUsername.trim();
+      
+      // Check if identifier is an email or username
+      const isEmail = identifier.includes('@');
+      
+      let emailToUse = identifier;
+      
+      // If it's a username, we need to find the associated email
+      if (!isEmail) {
+        try {
+          // Query the users table to find the email associated with this username
+          const { data: userData, error: queryError } = await supabase
+            .from('users')
+            .select('email')
+            .eq('username', identifier)
+            .single();
+          
+          if (queryError || !userData) {
+            throw new Error('Username not found. Please check your credentials.');
+          }
+          
+          emailToUse = userData.email;
+        } catch (err: any) {
+          throw new Error(err.message || 'Unable to find account with that username.');
+        }
+      }
+      
+      // Now login with the email
+      await login(emailToUse, data.password);
       // Redirect is now handled by AuthContext upon successful login
+      
     } catch (err: any) {
-      setError(err.message || "An unexpected error occurred.");
+      console.error("Login error:", err);
+      setError(err.message || "Invalid credentials. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -128,12 +160,12 @@ export default function LoginPage() {
               </div>
             )}
             <InputField 
-              label="Work Email" 
-              type="email" 
-              placeholder="name@company.com" 
+              label="Email or Username" 
+              type="text" 
+              placeholder="name@company.com or username" 
               icon={Mail} 
-              name="email"
-              value={data.email}
+              name="emailOrUsername"
+              value={data.emailOrUsername}
               onChange={handleChange}
             />
 
@@ -254,7 +286,7 @@ export default function LoginPage() {
                         <span className="text-violet-500">➜</span> establishing_secure_tunnel...
                      </motion.div>
                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9 }} className="text-slate-200 animate-pulse">
-                        <span className="text-emerald-500">✔</span> ready_for_auth
+                        <span className="text-emerald-500">✓</span> ready_for_auth
                      </motion.div>
                  </div>
 

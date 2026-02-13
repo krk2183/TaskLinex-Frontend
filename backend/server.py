@@ -75,7 +75,7 @@ app = FastAPI(lifespan=lifespan)
 
 # --- Constants ---
 GEMINI_API = os.getenv('GEMINI_API_KEY')
-VERCEL_DOMAIN = "https://your-vercel-domain.vercel.app" # CHANGE THIS
+VERCEL_DOMAIN = os.getenv("FRONTEND_URL", "https://your-vercel-domain.vercel.app")
 MODEL_ORDER = os.getenv("ENVOY_MODEL_ORDER", "asus,gemini,mini").split(",")
 SERVER_PORT = int(os.getenv("BACKEND_PORT", 8000))
 
@@ -267,16 +267,20 @@ def is_rate_limited(user_id: str) -> bool:
     return False
 
 async def call_external_model(url: str, prompt_text: str):
+    """Call external AI model with timeout handling"""
     try:
         async with httpx.AsyncClient(timeout=AI_TIMEOUT) as client:
             res = await client.post(url, json={"prompt": prompt_text})
             res.raise_for_status()
             data = res.json()
             return data.get("output") or data.get("suggestion")
-    except Exception:
+    except Exception as e:
+        print(f"❌ External model at {url} failed: {e}")
         return None
 
+
 async def call_gemini(prompt_text: str):
+    """Call Gemini API with error handling"""
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API}"
         payload = {
@@ -286,15 +290,16 @@ async def call_gemini(prompt_text: str):
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()
-            # Extract text from Gemini response structure
             if "candidates" in data and data["candidates"]:
                 return data["candidates"][0]["content"]["parts"][0]["text"]
             return None
     except Exception as e:
-        print("Gemini failed:", e)
+        print(f"❌ Gemini failed: {e}")
         return None
 
-async def generate_envoy_proposals(tasks_list, context_text: str):
+
+async def generate_envoy_proposals(tasks_list, context_text: str, preferred_engine: str = "gemini"):
+    """Generate task proposals with fallback support"""
     prompt_text = f"""
         You are 'Envoy', an intelligent project management assistant.
         Analyze the following tasks and user context to suggest improvements.
@@ -318,22 +323,16 @@ async def generate_envoy_proposals(tasks_list, context_text: str):
             }}
         ]
     """
-    for provider in MODEL_ORDER:
-        if provider == "asus":
-            raw = await call_external_model(ASUS_LOCAL_URL, prompt_text)
-        elif provider == "gemini":
-            raw = await call_gemini(prompt_text)
-        elif provider == "mini":
-            raw = await call_external_model(MINI_ONLINE_URL, prompt_text)
-        else:
-            continue
-
-        if raw:
-            parsed = safe_json_loads(raw)
-            if parsed and isinstance(parsed, list):
-                return parsed
-
-    raise HTTPException(status_code=503, detail="All AI engines failed or returned invalid format")
+    
+    raw, engine_used = await call_ai_with_fallback(prompt_text, preferred_engine)
+    
+    if raw:
+        parsed = safe_json_loads(raw)
+        if parsed and isinstance(parsed, list):
+            print(f"✅ Proposals generated using {engine_used}")
+            return parsed
+    
+    raise HTTPException(status_code=503, detail="AI returned invalid format")
 
 # --- CORS Middleware ---
 def get_local_ip():
@@ -516,9 +515,10 @@ class EnvoySuggestion(BaseModel):
 
 
 class EnvoySuggestRequest(BaseModel):
-    task_id: Optional[str] = None  # Made optional - can be null for global suggestions
+    task_id: Optional[str] = None
     context_text: str
     all: bool = False
+    preferred_engine: Optional[str] = "gemini" 
 
 class EnsureUserRequest(BaseModel):
     userId: str
@@ -1369,33 +1369,35 @@ async def get_envoy_friction(task_id: str, user: dict = Depends(get_current_user
         soft_dependencies = [t['title'] for t in res_t.data]
 
     return { "blockers": blockers, "external_waits": external_waits, "soft_dependencies": soft_dependencies }
-
+    
 @app.post("/envoy/suggest")
-async def suggest(req: EnvoyRequest, request: Request, user: dict = Depends(get_current_user)):
-    """Generate AI-powered task optimization suggestions"""
-    user_id = user['sub']
-
+async def envoy_suggest(req: EnvoySuggestRequest, user: dict = Depends(get_current_user)):
+    user_id = user.get('sub')
+    
+    if is_rate_limited(user_id):
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Please try again in a minute."
+        )
+    
     try:
-        rows = []
-        if req.all or not req.task_id:
-            # fetch all tasks for this user
-            res_t = supabase.table('tasks').select(
+        tasks_list = []
+        
+        if req.all:
+            res = supabase.table('tasks').select(
                 'id, title, status, priority, plannedDuration, dependencyIds'
             ).eq('ownerId', user_id).execute()
-            rows = res_t.data
-        else:
-            # single task
-            res_t = supabase.table('tasks').select(
+        elif req.task_id:
+            res = supabase.table('tasks').select(
                 'id, title, status, priority, plannedDuration, dependencyIds'
             ).eq('id', req.task_id).execute()
-            rows = res_t.data
-
-        if not rows:
-            return {"task_id": req.task_id, "proposals": []}
-
-        # parse dependencies
-        tasks_list = []
-        for row in rows:
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Either task_id or all=true must be provided"
+            )
+        
+        for row in res.data:
             dep_ids = row.get('dependencyIds')
             if isinstance(dep_ids, str):
                 dep_ids = safe_json_loads(dep_ids) or []
@@ -1408,7 +1410,12 @@ async def suggest(req: EnvoyRequest, request: Request, user: dict = Depends(get_
                 "dependencyIds": dep_ids
             })
 
-        parsed = await generate_envoy_proposals(tasks_list, req.context_text or "optimize workflow")
+        # CHANGED: Use fallback system with user's preferred engine
+        parsed = await generate_envoy_proposals(
+            tasks_list,
+            req.context_text or "optimize workflow",
+            req.preferred_engine or "gemini"
+        )
 
         proposals = [
             {
@@ -1509,12 +1516,73 @@ async def persona_switch(req: dict, user: dict = Depends(get_current_user)):
         # Don't fail the request if logging fails
         return {"status": "warning", "message": "Switch succeeded but logging failed"}
 
+async def call_ai_with_fallback(prompt_text: str, preferred_engine: str = "gemini"):
+    """
+    ROBUST FALLBACK SYSTEM
+    """
+    engine_map = {
+        'Envoy Mega': 'gemini',
+        'Envoy Pulse': 'asus',
+        'Envoy Nano': 'mini',
+        'gemini': 'gemini',
+        'asus': 'asus',
+        'mini': 'mini'
+    }
+    
+    preferred = engine_map.get(preferred_engine, preferred_engine)
+    
+    if preferred == "asus":
+        fallback_order = ["asus", "gemini", "mini"]
+    elif preferred == "mini":
+        fallback_order = ["mini", "asus", "gemini"]
+    else:
+        fallback_order = ["gemini", "asus", "mini"]
+    
+    print(f"🤖 AI Call: Preferred={preferred}, Fallback order={fallback_order}")
+    
+    for engine in fallback_order:
+        try:
+            print(f"⚡ Trying {engine}...")
+            
+            if engine == "asus":
+                response = await call_external_model(ASUS_LOCAL_URL, prompt_text)
+                if response:
+                    print(f"✅ ASUS model responded")
+                    return response, "asus"
+                    
+            elif engine == "gemini":
+                response = await call_gemini(prompt_text)
+                if response:
+                    print(f"✅ Gemini API responded")
+                    return response, "gemini"
+                    
+            elif engine == "mini":
+                response = await call_external_model(MINI_ONLINE_URL, prompt_text)
+                if response:
+                    print(f"✅ Mini model responded")
+                    return response, "mini"
+                    
+        except Exception as e:
+            print(f"❌ {engine} failed with exception: {e}")
+            continue
+    
+    raise HTTPException(
+        status_code=503,
+        detail="All AI models failed. Please try again later."
+    )
+
 @app.post("/envoy/decompose")
 async def decompose_tasks(req: dict, user: dict = Depends(get_current_user)):
     """
     Run the task decomposer/assignment engine with specified settings.
     Reassigns tasks based on optimization mode and AI engine preference.
     """
+    engine_map = {
+        'Envoy Mega': 'gemini',
+        'Envoy Pulse': 'asus',
+        'Envoy Nano': 'mini'
+    }
+    preferred_engine = engine_map.get(assignment_engine, assignment_engine)
     user_id = user.get('sub')
     
     try:
@@ -1584,20 +1652,23 @@ async def decompose_tasks(req: dict, user: dict = Depends(get_current_user)):
             Consider the optimization mode when making assignments. Don't reassign if current assignment is already optimal.
             """
                     
+        raw_response, engine_used = await call_ai_with_fallback(prompt, preferred_engine)
         # Call AI engine based on preference
-        raw_response = None
-        if assignment_engine == "gemini":
-            raw_response = await call_gemini(prompt)
-        elif assignment_engine == "asus":
-            raw_response = await call_external_model(ASUS_LOCAL_URL, prompt)
-        elif assignment_engine == "mini":
-            raw_response = await call_external_model(MINI_ONLINE_URL, prompt)
+        # raw_response = None
+        # if assignment_engine == "gemini":
+        #     raw_response = await call_gemini(prompt)
+        # elif assignment_engine == "asus":
+        #     raw_response = await call_external_model(ASUS_LOCAL_URL, prompt)
+        # elif assignment_engine == "mini":
+        #     raw_response = await call_external_model(MINI_ONLINE_URL, prompt)
         
         if not raw_response:
             raise HTTPException(
                 status_code=503,
                 detail=f"AI engine '{assignment_engine}' failed to respond"
             )
+
+            
         
         # Parse response
         assignments = safe_json_loads(raw_response)
@@ -1646,7 +1717,7 @@ async def decompose_tasks(req: dict, user: dict = Depends(get_current_user)):
             "message": f"Successfully processed {len(assignments)} assignments",
             "reassigned": reassigned_count,
             "total_tasks": len(tasks),
-            "engine_used": assignment_engine,
+            "engine_used": engine_map,
             "mode": optimization_mode
         }
         
@@ -1658,6 +1729,8 @@ async def decompose_tasks(req: dict, user: dict = Depends(get_current_user)):
             status_code=500,
             detail=f"Task decomposition failed: {str(e)}"
         )
+
+
 
 @app.get('/renderPersona')
 async def get_personas(user: dict = Depends(get_current_user)):

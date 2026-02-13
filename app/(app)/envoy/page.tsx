@@ -31,9 +31,10 @@ const EnvoyConsole = () => {
     // --- STATE ---
     const [activePersona, setActivePersona] = useState('Builder');
     const [optimizationMode, setOptimizationMode] = useState('stability');
-    const [assignmentEngine, setAssignmentEngine] = useState<'gemini' | 'asus' | 'mini'>('gemini');
     
-    // UI State für Modals & Loading
+    // UPDATED: Map UI names to backend engine names
+    const [assignmentEngine, setAssignmentEngine] = useState<'Envoy Mega' | 'Envoy Pulse' | 'Envoy Nano'>('Envoy Mega');
+    
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState<{id: string, name: string} | null>(null);
     const [newPersonaName, setNewPersonaName] = useState('');
@@ -43,8 +44,10 @@ const EnvoyConsole = () => {
     const [suggestions, setSuggestions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    
+    // NEW: Track which engine was actually used (for feedback)
+    const [lastEngineUsed, setLastEngineUsed] = useState<string | null>(null);
 
-    // Initial Data: Default Static Personas
     const [personas, setPersonas] = useState([
         {
             id: 'Builder',
@@ -64,7 +67,6 @@ const EnvoyConsole = () => {
         try {
             const data = await api.get('/renderPersona', jwt);
             
-            // Map the personas from the database
             const dbPersonas = data.map((p: any) => ({
                 id: p.id, 
                 name: p.name,
@@ -75,7 +77,6 @@ const EnvoyConsole = () => {
                 delta: '0%'
             }));
 
-            // Merge with static personas
             setPersonas(prev => {
                 const staticPersonas = prev.filter(p => p.locked || ['Builder', 'Architect', 'Operator', 'Scout'].includes(p.id));
                 const existingIds = new Set(staticPersonas.map(x => x.id));
@@ -115,17 +116,24 @@ const EnvoyConsole = () => {
         if (!jwt || !userId) return;
 
         try {
+            // UPDATED: Pass preferred engine to backend
             const data = await api.post('/envoy/suggest', {
                 all: true,
-                context_text: `optimize my workflow with ${optimizationMode} mode and ${assignmentEngine} engine`
+                context_text: `optimize my workflow with ${optimizationMode} mode and ${assignmentEngine} engine`,
+                preferred_engine: assignmentEngine  // NEW: Send user preference
             }, jwt);
 
             setSuggestions(Array.isArray(data.proposals) ? data.proposals : []);
+            
+            // Track which engine was used if returned by backend
+            if (data.engine_used) {
+                setLastEngineUsed(data.engine_used);
+            }
         } catch (err: any) {
             console.error("Failed to load envoy suggestions:", err);
             setSuggestions([]);
         }
-    }, [jwt, userId, optimizationMode, assignmentEngine, api]); 
+    }, [jwt, userId, optimizationMode, assignmentEngine]); 
 
 
 
@@ -153,433 +161,248 @@ const EnvoyConsole = () => {
         loadData();
     }, [userId, jwt]);
 
-    // Fetch suggestions after tasks are loaded
-    useEffect(() => {
-        if (tasks.length > 0 && userId && jwt) {
-            fetchSuggestions();
-        }
-    }, [tasks, userId, jwt]);
-
-    // --- SESSION STORAGE HELPERS ---
-    const addToSession = (name: string) => {
-        if (typeof window === 'undefined') return;
-        const raw = sessionStorage.getItem('recent_personas') || '[]';
-        const recent = JSON.parse(raw);
-        if (!recent.includes(name)) {
-            recent.unshift(name);
-            sessionStorage.setItem('recent_personas', JSON.stringify(recent.slice(0, 5)));
-        }
-    };
-
-    const getRecentFromSession = (): string[] => {
-        if (typeof window === 'undefined') return [];
-        const raw = sessionStorage.getItem('recent_personas') || '[]';
-        return JSON.parse(raw);
-    };
-
-    const handlePersonaClick = async (name: string) => {
-        try {
-            setActivePersona(name);
-            addToSession(name);
-            
-            // Optional: Notify backend about persona switch
-            if (jwt && userId) {
-                await api.post('/envoy/persona-switch', {
-                    userId,
-                    personaName: name,
-                    timestamp: Date.now()
-                }, jwt).catch(err => console.warn('Failed to log persona switch:', err));
-            }
-        } catch (error) {
-            console.error('Error switching persona:', error);
-        }
-    };
-
-    // --- CREATE / DELETE PERSONAS ---
     const handleCreatePersona = async () => {
-        if (!newPersonaName.trim() || !jwt || !userId) return;
-
+        if (!newPersonaName.trim() || !userId) return;
+        
         try {
-            await api.post('/createPersona', {
-                user_id: userId,
-                name: newPersonaName.trim(),
-                weekly_capacity_hours: 40
+            const newPersona = await api.post('/createPersona', {
+                name: newPersonaName,
+                weekly_capacity_hours: 40,
+                user_id: userId
             }, jwt);
 
-            await fetchPersonas();
-            setShowCreateModal(false);
+            setPersonas(prev => [...prev, {
+                id: newPersona.id,
+                name: newPersona.name,
+                label: 'Custom Context',
+                load: 0,
+                icon: <Circle className="w-5 h-5" />,
+                locked: false,
+                delta: '0%'
+            }]);
+
             setNewPersonaName('');
-        } catch (err: any) {
-            console.error('Failed to create persona:', err);
-            setError(`Failed to create persona: ${err.message || 'Unknown error'}`);
-            alert(`Failed to create persona: ${err.message || 'Unknown error'}`);
+            setShowCreateModal(false);
+        } catch (error: any) {
+            console.error("Failed to create persona:", error);
+            alert(`Failed to create persona: ${error.message || 'Unknown error'}`);
         }
     };
 
-    const handleDeletePersona = async () => {
-        if (!showDeleteModal || !jwt) return;
+    const handleDeletePersona = async (personaId: string) => {
+        if (!userId) return;
 
         try {
-            await api.post('/deletePersona', {
-                id: showDeleteModal.id
-            }, jwt);
-            
-            await fetchPersonas();
+            await api.post('/deletePersona', { id: personaId }, jwt);
+            setPersonas(prev => prev.filter(p => p.id !== personaId));
             setShowDeleteModal(null);
-        } catch (err: any) {
-            console.error('Failed to delete persona:', err);
-            setError(`Failed to delete persona: ${err.message || 'Unknown error'}`);
-            alert(`Failed to delete persona: ${err.message || 'Unknown error'}`);
+        } catch (error: any) {
+            console.error("Failed to delete persona:", error);
+            alert(`Failed to delete persona: ${error.message || 'Unknown error'}`);
         }
     };
 
-    // --- SIMULATION / DECOMPOSITION ---
-    const runDecomposer = async () => {
-        // 1. SAFETY GUARD: If already running, or no auth, stop.
-        if (!jwt || !userId || isSimulatingProcess) return;
-        
-        setIsSimulatingProcess(true);
-        
-        try {
-            const response = await api.post('/envoy/decompose', {
-                userId,
-                optimizationMode,
-                assignmentEngine,
-                tasks: tasks.map(t => t.id)
-            }, jwt);
-            
-            setIsSimulatingProcess(false);
-            
-            // Refresh tasks
-            await fetchTasks();
-            
+    const handleAcceptSuggestion = async (suggestion: any, index: number) => {
+        if (!jwt) return;
 
-        } catch (error: any) {
-            setIsSimulatingProcess(false);
-            console.error('Decomposer error:', error);
-            // Keep alerts for errors so the user knows why it failed
-            alert(`Decomposer failed: ${error.message || 'Unknown error'}`);
-        }
-    };
-
-    const handleAcceptSuggestion = async (suggestion: any, idx: number) => {
-        if (!jwt || !userId) return;
-        
         try {
-            // Apply the suggestion via the backend
-            const response = await api.post('/envoy/apply', {
-                task_id: suggestion.task_id || null,
-                proposals: [suggestion]
+            await api.post('/envoy/apply', {
+                task_id: suggestion.task_id,
+                proposals: [
+                    {
+                        field: suggestion.field,
+                        suggested: suggestion.suggested,
+                        reason: suggestion.reason
+                    }
+                ]
             }, jwt);
-            
-            // Remove from UI
-            setSuggestions(prev => prev.filter((_, i) => i !== idx));
-            
-            // Refresh tasks to see the changes
+
+            setSuggestions(prev => prev.filter((_, i) => i !== index));
             await fetchTasks();
-            
-            alert(`Suggestion accepted!\n\nApplied: ${response.applied_fields?.join(', ') || 'changes'}\nSkipped: ${response.skipped_fields?.join(', ') || 'none'}`);
         } catch (error: any) {
-            console.error('Failed to accept suggestion:', error);
+            console.error("Failed to apply suggestion:", error);
             alert(`Failed to apply suggestion: ${error.message || 'Unknown error'}`);
         }
     };
 
-    const handleDismissSuggestion = (idx: number) => {
-        setSuggestions(prev => prev.filter((_, i) => i !== idx));
+    const handleDismissSuggestion = (index: number) => {
+        setSuggestions(prev => prev.filter((_, i) => i !== index));
     };
 
-    const recentPersonaNames = getRecentFromSession();
+    const runDecomposer = async () => {
+        if (!jwt || !userId || tasks.length === 0) return;
+
+        setIsSimulatingProcess(true);
+        setLastEngineUsed(null);  // Reset engine tracking
+        
+        try {
+            // UPDATED: Pass user's preferred engine to backend
+            const result = await api.post('/envoy/decompose', {
+                optimizationMode,
+                assignmentEngine,  // Send UI name, backend will map it
+                tasks: tasks.map(t => t.id)
+            }, jwt);
+
+            // Track which engine was actually used
+            if (result.engine_used) {
+                setLastEngineUsed(result.engine_used);
+            }
+
+            await fetchTasks();
+            await fetchSuggestions();
+
+            alert(`✅ Decomposition complete!\n\nReassigned: ${result.reassigned}/${result.total_tasks} tasks\nEngine used: ${result.engine_used || assignmentEngine}\nMode: ${result.mode}`);
+        } catch (error: any) {
+            console.error("Decomposition failed:", error);
+            
+            // Better error message showing fallback info
+            const errorMsg = error.message || 'Unknown error';
+            if (errorMsg.includes('All AI')) {
+                alert(`❌ All AI models failed. Please check:\n\n1. ASUS local model (http://127.0.0.1:8001)\n2. Gemini API key\n3. Mini online model\n\nError: ${errorMsg}`);
+            } else {
+                alert(`❌ Decomposition failed: ${errorMsg}`);
+            }
+        } finally {
+            setIsSimulatingProcess(false);
+        }
+    };
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-[#0c0c0e] flex items-center justify-center">
-                <div className="text-center">
-                    <Loader2 className="w-12 h-12 text-violet-500 animate-spin mx-auto mb-4" />
-                    <p className="text-gray-400 text-sm font-mono">Loading Envoy Console...</p>
-                </div>
+            <div className="min-h-screen bg-black flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-violet-500 animate-spin" />
             </div>
         );
     }
 
     return (
-        <div className="h-screen overflow-y-auto bg-[#0c0c0e] text-white font-mono">
-            {/* Create Persona Modal */}
-            {showCreateModal && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#121214] border border-gray-800 rounded-[12px] p-6 w-full max-w-md">
-                        <h3 className="text-lg font-bold text-white mb-4 uppercase">Create New Persona</h3>
-                        <input
-                            type="text"
-                            value={newPersonaName}
-                            onChange={(e) => setNewPersonaName(e.target.value)}
-                            placeholder="Persona name..."
-                            className="w-full bg-[#0c0c0e] border border-gray-800 text-gray-300 p-3 rounded-[12px] mb-4 focus:border-violet-700 focus:outline-none"
-                            onKeyDown={(e) => e.key === 'Enter' && handleCreatePersona()}
-                        />
-                        <div className="flex gap-3">
-                            <button
-                                onClick={handleCreatePersona}
-                                className="flex-1 bg-violet-700 hover:bg-violet-600 text-white py-2 px-4 rounded-[12px] font-bold uppercase text-sm"
-                            >
-                                Create
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setShowCreateModal(false);
-                                    setNewPersonaName('');
-                                }}
-                                className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 py-2 px-4 rounded-[12px] font-bold uppercase text-sm"
-                            >
-                                Cancel
-                            </button>
-                        </div>
+        <div className="min-h-screen bg-black text-white">
+            {/* Header */}
+            <header className="border-b border-gray-800 bg-[#0c0c0e]">
+                <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <Layers className="w-6 h-6 text-violet-500" />
+                        <h1 className="text-xl font-bold">Envoy Console</h1>
                     </div>
-                </div>
-            )}
-
-            {/* Delete Confirmation Modal */}
-            {showDeleteModal && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#121214] border border-red-900/50 rounded-[12px] p-6 w-full max-w-md">
-                        <div className="flex items-center gap-3 mb-4">
-                            <AlertTriangle className="w-6 h-6 text-red-500" />
-                            <h3 className="text-lg font-bold text-white uppercase">Delete Persona</h3>
+                    {lastEngineUsed && (
+                        <div className="flex items-center gap-2 px-3 py-1 bg-violet-900/30 border border-violet-700/50 rounded-lg">
+                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                            <span className="text-xs font-mono text-violet-300">
+                                Last used: {lastEngineUsed.toUpperCase()}
+                            </span>
                         </div>
-                        <p className="text-gray-400 mb-6">
-                            Are you sure you want to delete <span className="text-white font-bold">{showDeleteModal.name}</span>? This action cannot be undone.
-                        </p>
-                        <div className="flex gap-3">
-                            <button
-                                onClick={handleDeletePersona}
-                                className="flex-1 bg-red-700 hover:bg-red-600 text-white py-2 px-4 rounded-[12px] font-bold uppercase text-sm"
-                            >
-                                Delete
-                            </button>
-                            <button
-                                onClick={() => setShowDeleteModal(null)}
-                                className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 py-2 px-4 rounded-[12px] font-bold uppercase text-sm"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
+                    )}
                 </div>
-            )}
+            </header>
 
             {/* Main Content */}
             <main className="max-w-7xl mx-auto px-6 py-8">
-                {/* Header */}
-                <header className="mb-8 pb-6 border-b border-gray-800">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h1 className="text-3xl font-black uppercase tracking-tight mb-2">
-                                Envoy Console
-                            </h1>
-                            <p className="text-sm text-gray-500 font-sans">
-                                AI-powered context management and task orchestration
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2 bg-[#121214] px-4 py-2 rounded-[12px] border border-gray-800">
-                                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                                <span className="text-xs text-gray-400 uppercase">System Active</span>
-                            </div>
-                        </div>
-                    </div>
-                </header>
-
-                {/* Error Display */}
                 {error && (
-                    <div className="mb-6 bg-red-900/20 border border-red-900/50 p-4 rounded-[12px] flex items-start gap-3">
-                        <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                        <div className="flex-1">
-                            <p className="text-red-400 text-sm">{error}</p>
-                            <button 
-                                onClick={() => setError(null)}
-                                className="text-xs text-red-300 hover:text-red-200 mt-2 underline"
-                            >
-                                Dismiss
-                            </button>
+                    <div className="mb-6 p-4 bg-red-900/20 border border-red-700 rounded-lg flex items-start gap-3">
+                        <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                        <div>
+                            <p className="text-sm text-red-300 font-medium">Error</p>
+                            <p className="text-sm text-red-400 mt-1">{error}</p>
                         </div>
                     </div>
                 )}
 
-                {/* Persona Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-                    {/* LEFT: Active Persona Workbench */}
-                    <div className="lg:col-span-2 space-y-6">
-                        {/* Active Context Display */}
-                        <section className="bg-[#121214] border border-gray-800 p-6 rounded-[12px]">
-                            <div className="flex items-center justify-between mb-4">
-                                <h2 className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
-                                    <Cpu className="w-4 h-4 text-violet-700" />
-                                    Active Context
-                                </h2>
-                                <button className="text-xs text-gray-500 hover:text-gray-300 font-mono transition-colors">
-                                    Switch
-                                </button>
-                            </div>
-
-                            <div className="bg-[#0c0c0e] border border-violet-900/50 p-6 rounded-[12px] flex items-center gap-6">
-                                <div className="w-16 h-16 bg-violet-700/20 border border-violet-700/50 rounded-[12px] flex items-center justify-center">
-                                    {personas.find(p => p.id === activePersona)?.icon || <Square className="w-8 h-8 text-violet-500" />}
-                                </div>
-                                <div className="flex-1">
-                                    <h3 className="text-xl font-black text-white uppercase mb-1">{activePersona}</h3>
-                                    <p className="text-xs text-gray-500 uppercase">
-                                        {personas.find(p => p.id === activePersona)?.label || 'Context Layer'}
-                                    </p>
-                                </div>
-                                <div className="text-right">
-                                    <div className="text-2xl font-black text-violet-400">
-                                        {personas.find(p => p.id === activePersona)?.load || 0}%
-                                    </div>
-                                    <p className="text-xs text-gray-500">Cognitive Load</p>
-                                </div>
-                            </div>
-                        </section>
-
-                        {/* Recent Activity */}
-                        <section className="bg-[#121214] border border-gray-800 p-6 rounded-[12px]">
-                            <h2 className="text-sm font-bold text-gray-300 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                <Activity className="w-4 h-4 text-violet-700" />
-                                Recent Context Switches
-                            </h2>
-                            <div className="space-y-2">
-                                {recentPersonaNames.slice(0, 3).map((name, idx) => (
-                                    <div
-                                        key={idx}
-                                        className="bg-[#0c0c0e] border border-gray-800 p-3 rounded flex items-center justify-between hover:border-violet-900/50 transition-colors cursor-pointer"
-                                        onClick={() => handlePersonaClick(name)}
-                                    >
-                                        <span className="text-sm text-gray-300 font-medium">{name}</span>
-                                        <ArrowRight className="w-4 h-4 text-gray-600" />
-                                    </div>
-                                ))}
-                                {recentPersonaNames.length === 0 && (
-                                    <p className="text-gray-600 text-sm italic">No recent activity</p>
-                                )}
-                            </div>
-                        </section>
-                    </div>
-
-                    {/* RIGHT: Persona Registry */}
-                    <div>
-                        <section className="bg-[#121214] border border-gray-800 p-6 rounded-[12px] sticky top-8">
-                            <div className="flex items-center justify-between mb-4">
-                                <h2 className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
-                                    <Layers className="w-4 h-4 text-violet-700" />
-                                    Persona Registry ({personas.length})
-                                </h2>
-                                <button
-                                    onClick={() => setShowCreateModal(true)}
-                                    className="text-violet-400 hover:text-violet-300 transition-colors"
-                                >
-                                    <Plus className="w-5 h-5" />
-                                </button>
-                            </div>
-
-                            <div className="space-y-2 max-h-96 overflow-y-auto">
-                                {personas.map(persona => (
-                                    <div
-                                        key={persona.id}
-                                        onClick={() => !persona.locked && handlePersonaClick(persona.name)}
-                                        className={`bg-[#0c0c0e] border p-3 rounded-[12px] transition-all cursor-pointer flex items-center justify-between group
-                                            ${activePersona === persona.name
-                                                ? 'border-violet-700 shadow-[0_0_20px_rgba(109,40,217,0.3)]'
-                                                : 'border-gray-800 hover:border-violet-900/50'
-                                            }`}
-                                    >
-                                        <div className="flex items-center gap-3 flex-1">
-                                            <div className={`w-10 h-10 flex items-center justify-center rounded-[12px] border
-                                                ${activePersona === persona.name
-                                                    ? 'bg-violet-700/20 border-violet-700/50'
-                                                    : 'bg-gray-800/50 border-gray-800'
-                                                }`}>
-                                                {persona.icon}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2">
-                                                    <p className="text-sm font-bold text-white uppercase truncate">
-                                                        {persona.name}
-                                                    </p>
-                                                    {persona.locked && (
-                                                        <Lock className="w-3 h-3 text-gray-600 flex-shrink-0" />
-                                                    )}
-                                                </div>
-                                                <p className="text-xs text-gray-500">{persona.label}</p>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className="text-right">
-                                                <div className="text-sm font-bold text-violet-400">{persona.load}%</div>
-                                                {persona.delta && (
-                                                    <div className="text-xs text-emerald-500">{persona.delta}</div>
-                                                )}
-                                            </div>
-                                            {!persona.locked && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setShowDeleteModal({ id: persona.id, name: persona.name });
-                                                    }}
-                                                    className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-400 transition-all p-1"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                    </div>
-                </div>
-
-                {/* Bottom Sections */}
-                <div className="space-y-8">
-                    {/* SECTION 1: Task Inventory */}
+                <div className="space-y-12">
+                    {/* SECTION 1: Persona Management */}
                     <section>
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
-                                <BarChart3 className="w-4 h-4 text-violet-700" />
-                                Task Inventory ({tasks.length} tasks)
+                        <div className="flex items-center gap-2 mb-6">
+                            <Activity className="w-4 h-4 text-violet-700" />
+                            <h2 className="text-sm font-bold text-gray-300 uppercase tracking-widest">
+                                Persona Management
                             </h2>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {tasks.map(task => {
-                                const assignedPersona = personas.find(p => p.id === task.personaId);
-                                return (
-                                    <div key={task.id} className="bg-[#121214] border border-gray-800 p-3 rounded flex justify-between items-center">
-                                        <div>
-                                            <div className="text-sm text-white font-medium">{task.title}</div>
-                                            <div className="text-xs text-gray-500 font-mono mt-1">{task.status}</div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                            {personas.map((persona) => (
+                                <div
+                                    key={persona.id}
+                                    onClick={() => !persona.locked && setActivePersona(persona.id)}
+                                    className={`border rounded-[12px] p-5 cursor-pointer transition-all relative group
+                                        ${activePersona === persona.id
+                                            ? 'bg-violet-900/30 border-violet-700 shadow-[0_0_20px_rgba(109,40,217,0.3)]'
+                                            : 'bg-[#121214] border-gray-800 hover:border-gray-700'
+                                        }`}
+                                >
+                                    {persona.locked && (
+                                        <div className="absolute top-3 right-3">
+                                            <Lock className="w-3 h-3 text-gray-600" />
                                         </div>
-                                        <div className={`text-xs px-2 py-1 rounded border ${assignedPersona ? 'bg-violet-900/20 border-violet-900/50 text-violet-300' : 'bg-gray-800 border-gray-700 text-gray-500'}`}>
-                                            {assignedPersona ? assignedPersona.name : 'Unassigned'}
+                                    )}
+                                    
+                                    {!persona.locked && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setShowDeleteModal({ id: persona.id, name: persona.name });
+                                            }}
+                                            className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        >
+                                            <Trash2 className="w-3 h-3 text-red-500 hover:text-red-400" />
+                                        </button>
+                                    )}
+
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className="text-violet-500">{persona.icon}</div>
+                                        <div>
+                                            <h3 className="text-white font-semibold text-sm">{persona.name}</h3>
+                                            <p className="text-xs text-gray-500 font-mono">{persona.label}</p>
                                         </div>
                                     </div>
-                                );
-                            })}
-                            {tasks.length === 0 && (
-                                <div className="text-gray-500 text-sm italic p-4">No tasks found.</div>
-                            )}
+
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs text-gray-500 font-mono">LOAD</span>
+                                            <span className="text-xs font-bold text-white">{persona.load}%</span>
+                                        </div>
+                                        <div className="w-full bg-gray-800 rounded-full h-1.5">
+                                            <div
+                                                className={`h-1.5 rounded-full transition-all ${
+                                                    persona.load > 80 ? 'bg-red-500' :
+                                                    persona.load > 60 ? 'bg-yellow-500' :
+                                                    'bg-violet-500'
+                                                }`}
+                                                style={{ width: `${persona.load}%` }}
+                                            />
+                                        </div>
+                                        {persona.delta && (
+                                            <p className="text-xs text-gray-600 font-mono">{persona.delta} this week</p>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+
+                            {/* Add Persona Card */}
+                            <button
+                                onClick={() => setShowCreateModal(true)}
+                                className="border-2 border-dashed border-gray-800 rounded-[12px] p-5 flex flex-col items-center justify-center gap-3 hover:border-violet-700 hover:bg-violet-900/10 transition-all group"
+                            >
+                                <Plus className="w-8 h-8 text-gray-700 group-hover:text-violet-500 transition-colors" />
+                                <span className="text-sm text-gray-600 group-hover:text-gray-400 font-medium">
+                                    Add Persona
+                                </span>
+                            </button>
                         </div>
                     </section>
 
-                    {/* SECTION 2: Envoy Proposals */}
-                    <section>
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-sm font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
-                                <Zap className="w-4 h-4 text-violet-700" />
-                                AI Optimization Proposals
-                            </h2>
-                            <button 
+                    {/* SECTION 2: AI Suggestions */}
+                    <section className="border-t border-gray-800 pt-8">
+                        <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-2">
+                                <Cpu className="w-4 h-4 text-violet-700" />
+                                <h2 className="text-sm font-bold text-gray-300 uppercase tracking-widest">
+                                    AI Suggestions
+                                </h2>
+                            </div>
+                            <button
                                 onClick={fetchSuggestions}
-                                className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1"
+                                className="text-xs px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded font-mono transition-colors"
                             >
-                                <Activity className="w-3 h-3" /> Refresh
+                                Refresh
                             </button>
                         </div>
 
@@ -663,12 +486,14 @@ const EnvoyConsole = () => {
                                     </div>
                                     
                                     <div>
-                                        <label className="block text-xs font-mono text-gray-500 mb-2">AI ENGINE</label>
+                                        <label className="block text-xs font-mono text-gray-500 mb-2">
+                                            AI ENGINE (WITH FALLBACK)
+                                        </label>
                                         <div className="flex bg-[#0c0c0e] p-1 rounded-[12px] border border-gray-800">
-                                            {['Envoy Mega', 'Envoy Pulse', 'Envoy Nano'].map((engine) => (
+                                            {(['Envoy Mega', 'Envoy Pulse', 'Envoy Nano'] as const).map((engine) => (
                                                 <button
                                                     key={engine}
-                                                    onClick={() => setAssignmentEngine(engine as 'gemini' | 'asus' | 'mini')}
+                                                    onClick={() => setAssignmentEngine(engine)}
                                                     className={`flex-1 py-1.5 text-xs font-medium uppercase tracking-wide rounded-[12px] transition-all
                                                     ${assignmentEngine === engine
                                                             ? 'bg-violet-700 text-white shadow-sm'
@@ -679,6 +504,9 @@ const EnvoyConsole = () => {
                                                 </button>
                                             ))}
                                         </div>
+                                        <p className="text-xs text-gray-600 mt-2 font-mono">
+                                            Mega=Gemini, Pulse=ASUS, Nano=Mini • Auto-fallback enabled
+                                        </p>
                                     </div>
                                     
                                     <div>
@@ -695,7 +523,7 @@ const EnvoyConsole = () => {
                                 <div className="flex flex-col justify-end">
                                     <div className="mb-4 space-y-2">
                                         <div className="flex justify-between items-center">
-                                            <span className="text-xs font-mono text-gray-500">ACTIVE ENGINE</span>
+                                            <span className="text-xs font-mono text-gray-500">PREFERRED ENGINE</span>
                                             <span className="text-sm text-violet-400 font-mono uppercase">{assignmentEngine}</span>
                                         </div>
                                         <div className="flex justify-between items-center">
@@ -706,6 +534,12 @@ const EnvoyConsole = () => {
                                             <span className="text-xs font-mono text-gray-500">TASKS TO PROCESS</span>
                                             <span className="text-xl text-white font-mono">{tasks.length}</span>
                                         </div>
+                                        {lastEngineUsed && (
+                                            <div className="flex justify-between items-center pt-2 border-t border-gray-800">
+                                                <span className="text-xs font-mono text-gray-500">LAST ENGINE USED</span>
+                                                <span className="text-xs text-green-400 font-mono uppercase">{lastEngineUsed}</span>
+                                            </div>
+                                        )}
                                     </div>
                                     <button 
                                         onClick={runDecomposer}
@@ -732,6 +566,71 @@ const EnvoyConsole = () => {
                     </section>
                 </div>
             </main>
+
+            {/* Create Persona Modal */}
+            {showCreateModal && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+                    <div className="bg-[#0c0c0e] border border-gray-800 rounded-[12px] p-6 w-full max-w-md">
+                        <h3 className="text-lg font-bold mb-4">Create New Persona</h3>
+                        <input
+                            type="text"
+                            value={newPersonaName}
+                            onChange={(e) => setNewPersonaName(e.target.value)}
+                            placeholder="Persona name..."
+                            className="w-full bg-[#121214] border border-gray-800 text-white p-3 rounded-lg mb-4 focus:border-violet-700 focus:outline-none"
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleCreatePersona();
+                            }}
+                        />
+                        <div className="flex gap-3">
+                            <button
+                                onClick={handleCreatePersona}
+                                className="flex-1 bg-violet-700 hover:bg-violet-600 text-white py-2 rounded-lg font-bold transition-colors"
+                            >
+                                Create
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowCreateModal(false);
+                                    setNewPersonaName('');
+                                }}
+                                className="flex-1 bg-gray-800 hover:bg-gray-700 text-white py-2 rounded-lg font-bold transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Persona Modal */}
+            {showDeleteModal && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+                    <div className="bg-[#0c0c0e] border border-red-900/50 rounded-[12px] p-6 w-full max-w-md">
+                        <div className="flex items-center gap-3 mb-4">
+                            <AlertTriangle className="w-6 h-6 text-red-500" />
+                            <h3 className="text-lg font-bold">Delete Persona</h3>
+                        </div>
+                        <p className="text-gray-400 mb-4">
+                            Are you sure you want to delete <strong className="text-white">"{showDeleteModal.name}"</strong>? This action cannot be undone.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => handleDeletePersona(showDeleteModal.id)}
+                                className="flex-1 bg-red-700 hover:bg-red-600 text-white py-2 rounded-lg font-bold transition-colors"
+                            >
+                                Delete
+                            </button>
+                            <button
+                                onClick={() => setShowDeleteModal(null)}
+                                className="flex-1 bg-gray-800 hover:bg-gray-700 text-white py-2 rounded-lg font-bold transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

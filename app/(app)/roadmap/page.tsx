@@ -142,7 +142,6 @@ const MOCK_USERS: User[] = [
 ];
 
 const MOCK_PROJECTS: Project[] = [
-    { id: 'proj1', name: 'Forge.AI Core', visible: true },
     { id: 'proj2', name: 'Web Dashboard V2', visible: true }
 ];
 
@@ -421,44 +420,98 @@ const PortalTooltip = ({ text, rect }: { text: string, rect: DOMRect }) => {
     );
 };
 
-// NEW: Helper functions for timeline view calculations
+// NEW: Helper functions for timeline view calculations with proper date handling
 const getDateRangeForView = (timelineView: TimelineView, viewMode: ViewMode) => {
+    const now = new Date();
+    const startDate = new Date(now);
+    startDate.setHours(0, 0, 0, 0);
+    
     let totalUnits = 0;
-    let unitDuration = 0; // in days
+    let unitDuration = 0; // in milliseconds
+    let unitType: 'day' | 'week' | 'month' = 'day';
 
     if (timelineView === 'Daily') {
-        totalUnits = viewMode === 'Week' ? 7 : 30; // 7 days or 30 days
-        unitDuration = 1;
+        // Show 90 days for long scrolling
+        totalUnits = 90;
+        unitDuration = 24 * 60 * 60 * 1000; // 1 day in ms
+        unitType = 'day';
     } else if (timelineView === 'Weekly') {
-        totalUnits = viewMode === 'Week' ? 4 : 12; // 4 weeks or 12 weeks
-        unitDuration = 7;
+        // Show 52 weeks (1 year) for long scrolling
+        totalUnits = 52;
+        unitDuration = 7 * 24 * 60 * 60 * 1000; // 1 week in ms
+        unitType = 'week';
     } else { // Monthly
-        totalUnits = viewMode === 'Week' ? 3 : 12; // 3 months or 12 months
-        unitDuration = 30;
+        // Show 24 months (2 years) for long scrolling
+        totalUnits = 24;
+        unitType = 'month';
     }
 
-    return { totalUnits, unitDuration };
+    return { totalUnits, unitDuration, unitType, startDate };
 };
 
-const generateTimelineLabels = (timelineView: TimelineView, totalUnits: number): string[] => {
+const generateTimelineLabels = (timelineView: TimelineView, totalUnits: number, startDate: Date): string[] => {
     const labels: string[] = [];
-    const now = new Date();
 
     for (let i = 0; i < totalUnits; i++) {
+        const currentDate = new Date(startDate);
+        
         if (timelineView === 'Daily') {
-            const date = new Date(now);
-            date.setDate(date.getDate() + i);
-            labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+            currentDate.setDate(currentDate.getDate() + i);
+            labels.push(currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
         } else if (timelineView === 'Weekly') {
-            labels.push(`W${i + 1}`);
+            currentDate.setDate(currentDate.getDate() + (i * 7));
+            const weekEnd = new Date(currentDate);
+            weekEnd.setDate(weekEnd.getDate() + 6);
+            labels.push(`${currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`);
         } else { // Monthly
-            const date = new Date(now);
-            date.setMonth(date.getMonth() + i);
-            labels.push(date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }));
+            currentDate.setMonth(currentDate.getMonth() + i);
+            labels.push(currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
         }
     }
 
     return labels;
+};
+
+// Calculate task position based on actual dates
+const calculateTaskPosition = (
+    taskStartDate: number, // Unix timestamp in seconds
+    taskDuration: number, // Duration in seconds
+    timelineView: TimelineView,
+    startDate: Date,
+    totalUnits: number
+) => {
+    const taskStartMs = taskStartDate * 1000;
+    const taskEndMs = taskStartMs + (taskDuration * 1000);
+    const startMs = startDate.getTime();
+    
+    let cellWidth = 0;
+    let leftPosition = 0;
+    let widthUnits = 0;
+    
+    if (timelineView === 'Daily') {
+        cellWidth = 120; // px per day
+        const daysSinceStart = Math.floor((taskStartMs - startMs) / (24 * 60 * 60 * 1000));
+        const durationDays = Math.ceil(taskDuration / (24 * 60 * 60));
+        leftPosition = daysSinceStart * cellWidth;
+        widthUnits = durationDays * cellWidth;
+    } else if (timelineView === 'Weekly') {
+        cellWidth = 150; // px per week
+        const weeksSinceStart = Math.floor((taskStartMs - startMs) / (7 * 24 * 60 * 60 * 1000));
+        const durationWeeks = Math.ceil(taskDuration / (7 * 24 * 60 * 60));
+        leftPosition = weeksSinceStart * cellWidth;
+        widthUnits = durationWeeks * cellWidth;
+    } else { // Monthly
+        cellWidth = 200; // px per month
+        const startDateObj = new Date(startMs);
+        const taskStartDateObj = new Date(taskStartMs);
+        const monthsSinceStart = (taskStartDateObj.getFullYear() - startDateObj.getFullYear()) * 12 + 
+                                 (taskStartDateObj.getMonth() - startDateObj.getMonth());
+        const durationMonths = Math.ceil(taskDuration / (30 * 24 * 60 * 60));
+        leftPosition = monthsSinceStart * cellWidth;
+        widthUnits = durationMonths * cellWidth;
+    }
+    
+    return { leftPosition, widthUnits, cellWidth };
 };
 
 // 4. SUB-COMPONENTS
@@ -549,7 +602,7 @@ const DependencyBadge = ({ type, count, onClick }: { type: string, count: number
 // Task Item
 const TaskItem = ({ 
     task, user, dispatch, isEnvoyActive, onEdit, personas, onTaskDrop, level = 0, 
-    parentId, onToggleExpand, isExpanded, hasDependents 
+    parentId, onToggleExpand, isExpanded, hasDependents, timelineView, startDate, totalUnits
 }: { 
     task: Task, user: User | undefined, dispatch: any, isEnvoyActive: boolean,
     onEdit: (t: Task) => void, personas: Persona[], 
@@ -557,7 +610,10 @@ const TaskItem = ({
     parentId?: string | null,
     onToggleExpand?: () => void,
     isExpanded?: boolean,
-    hasDependents?: boolean
+    hasDependents?: boolean,
+    timelineView: TimelineView,
+    startDate: Date,
+    totalUnits: number
 }) => {
     const triggerRef = useRef<HTMLButtonElement>(null);
     const taskRef = useRef<HTMLDivElement>(null);
@@ -574,6 +630,15 @@ const TaskItem = ({
 
     const ownerName = user?.name || task.ownerName || 'Unknown';
     const ownerAvatar = user?.avatar || `https://ui-avatars.com/api/?name=${ownerName}&background=random`;
+
+    // Calculate position based on actual dates
+    const { leftPosition, widthUnits } = calculateTaskPosition(
+        task.startDate,
+        task.duration,
+        timelineView,
+        startDate,
+        totalUnits
+    );
 
     return (
         <div
@@ -603,11 +668,16 @@ const TaskItem = ({
             }}
             className="absolute top-1/2 -translate-y-1/2 group cursor-grab active:cursor-grabbing"
             style={{ 
-                left: `${(task.startDate - 1) * 8.33}%`, 
-                width: `${task.duration * 8.33}%`,
-                height: level > 0 ? '2rem' : '2.5rem'
+                left: `${leftPosition}px`, 
+                width: `${widthUnits}px`,
+                height: level > 0 ? '2rem' : '2.5rem',
+                minWidth: '60px'
             }}
         >
+                {/* width: `${task.duration * 8.33}%`,
+                height: level > 0 ? '2rem' : '2.5rem'
+            }}
+        > */}
             {/* Dependency Note Tooltip */}
             {task.dependencyNote && hoverRect && (
                 <PortalTooltip text={task.dependencyNote} rect={hoverRect} />
@@ -1212,55 +1282,193 @@ const DeleteProjectModal = ({ project, onClose, onConfirm }: { project: Project,
     );
 };
 
-// NEW: Project Visibility Dropdown Component
-const ProjectVisibilityDropdown: React.FC<{ state: AppState; dispatch: React.Dispatch<Action> }> = ({ state, dispatch }) => {
+
+
+const ProjectVisibilityDropdown: React.FC<{ 
+    state: AppState; 
+    dispatch: React.Dispatch<Action>;
+    onDeleteProject: (projectId: string) => void;
+}> = ({ state, dispatch, onDeleteProject }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const [expandedProject, setExpandedProject] = useState<string | null>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const [menuPosition, setMenuPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+
+    // Calculate position when opening
+    useEffect(() => {
+        if (isOpen && buttonRef.current) {
+            const rect = buttonRef.current.getBoundingClientRect();
+            setMenuPosition({
+                top: rect.bottom + window.scrollY + 4, // 4px gap
+                left: rect.left + window.scrollX,
+                width: rect.width,
+            });
+        } else {
+            setMenuPosition(null);
+        }
+    }, [isOpen]);
+
+    // Update position on scroll/resize
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleScrollResize = () => {
+            if (buttonRef.current) {
+                const rect = buttonRef.current.getBoundingClientRect();
+                setMenuPosition({
+                    top: rect.bottom + window.scrollY + 4,
+                    left: rect.left + window.scrollX,
+                    width: rect.width,
+                });
+            }
+        };
+        window.addEventListener('scroll', handleScrollResize, true);
+        window.addEventListener('resize', handleScrollResize);
+        return () => {
+            window.removeEventListener('scroll', handleScrollResize, true);
+            window.removeEventListener('resize', handleScrollResize);
+        };
+    }, [isOpen]);
 
     return (
         <div className="relative">
             <button
+                ref={buttonRef}
                 onClick={() => setIsOpen(!isOpen)}
                 className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
             >
-                <Eye className="w-4 h-4" />
-                Projects
+                <Layers className="w-4 h-4" />
+                Manage Projects
                 <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </button>
 
-            {isOpen && (
+            {isOpen && menuPosition && createPortal(
                 <>
-                    <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+                    {/* Backdrop to close */}
+                    <div 
+                        className="fixed inset-0 z-40" 
+                        onClick={() => setIsOpen(false)} 
+                    />
                     <motion.div
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="absolute top-full mt-2 right-0 z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl w-64 max-h-96 overflow-y-auto"
+                        style={{
+                            position: 'absolute',
+                            top: menuPosition.top,
+                            left: menuPosition.left,
+                            minWidth: menuPosition.width,
+                        }}
+                        className="z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl w-96 max-h-[600px] overflow-y-auto"
                     >
-                        <div className="p-2">
-                            <div className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700 mb-2">
-                                Show/Hide Projects
+                        {/* Rest of the dropdown content (unchanged) */}
+                        <div className="p-3">
+                            <div className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700 mb-3">
+                                Project Management
                             </div>
-                            {state.projects.map(project => {
-                                const isHidden = state.hiddenProjects.has(project.id);
-                                return (
-                                    <button
-                                        key={project.id}
-                                        onClick={() => dispatch({ type: 'TOGGLE_PROJECT_VISIBILITY', payload: project.id })}
-                                        className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-sm transition-colors"
-                                    >
-                                        <span className={`flex-1 text-left ${isHidden ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-300'}`}>
-                                            {project.name}
-                                        </span>
-                                        {isHidden ? (
-                                            <EyeOff className="w-4 h-4 text-slate-400" />
-                                        ) : (
-                                            <Eye className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-                                        )}
-                                    </button>
-                                );
-                            })}
+                            
+                            {state.projects.length === 0 ? (
+                                <div className="text-center py-8 text-slate-400 text-sm">
+                                    No projects yet. Create one to get started!
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {state.projects.map(project => {
+                                        const isHidden = state.hiddenProjects.has(project.id);
+                                        const isExpanded = expandedProject === project.id;
+                                        const projectTasks = state.tasks.filter(t => t.projectId === project.id);
+                                        
+                                        return (
+                                            <div 
+                                                key={project.id} 
+                                                className={`border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden ${isHidden ? 'opacity-60' : ''}`}
+                                            >
+                                                {/* Project Header */}
+                                                <div className="flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-900/50">
+                                                    <div className="flex items-center gap-2 flex-1">
+                                                        <button
+                                                            onClick={() => setExpandedProject(isExpanded ? null : project.id)}
+                                                            className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors"
+                                                        >
+                                                            <ChevronRight className={`w-4 h-4 text-slate-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                                        </button>
+                                                        <span className={`text-sm font-medium ${isHidden ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                            {project.name}
+                                                        </span>
+                                                        <span className="text-xs text-slate-400 bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded">
+                                                            {projectTasks.length}
+                                                        </span>
+                                                    </div>
+                                                    
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                dispatch({ type: 'TOGGLE_PROJECT_VISIBILITY', payload: project.id });
+                                                            }}
+                                                            className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                                                            title={isHidden ? "Show project" : "Hide project"}
+                                                        >
+                                                            {isHidden ? (
+                                                                <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                                                            ) : (
+                                                                <Eye className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
+                                                            )}
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setIsOpen(false);
+                                                                onDeleteProject(project.id);
+                                                            }}
+                                                            className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                                                            title="Delete project"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* Project Tasks */}
+                                                {isExpanded && (
+                                                    <div className="px-3 py-2 space-y-1 max-h-60 overflow-y-auto bg-white dark:bg-slate-800">
+                                                        {projectTasks.length === 0 ? (
+                                                            <div className="text-xs text-slate-400 text-center py-4">
+                                                                No tasks in this project
+                                                            </div>
+                                                        ) : (
+                                                            projectTasks.map(task => {
+                                                                const statusColors = {
+                                                                    'On Track': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+                                                                    'At Risk': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+                                                                    'Blocked': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+                                                                    'Completed': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                                                };
+                                                                
+                                                                return (
+                                                                    <div 
+                                                                        key={task.id} 
+                                                                        className="flex items-center justify-between px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-900/50 rounded text-xs"
+                                                                    >
+                                                                        <span className="text-slate-700 dark:text-slate-300 truncate flex-1">
+                                                                            {task.title}
+                                                                        </span>
+                                                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${statusColors[task.status]}`}>
+                                                                            {task.status}
+                                                                        </span>
+                                                                    </div>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     </motion.div>
-                </>
+                </>,
+                document.body
             )}
         </div>
     );
@@ -1800,7 +2008,7 @@ const SprintView = ({ tasks, users }: { tasks: Task[], users: User[] }) => {
     );
 };
 
-const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyActiveTaskId, personas, parentId }: {
+const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyActiveTaskId, personas, parentId, timelineView, startDate, totalUnits }: {
     task: Task;
     users: User[];
     level: number;
@@ -1810,6 +2018,9 @@ const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyAct
     envoyActiveTaskId: string | null;
     personas: Persona[];
     parentId?: string | null;
+    timelineView: TimelineView;
+    startDate: Date;
+    totalUnits: number;
 }) => {
     const [isExpanded, setIsExpanded] = useState(true);
     const dependents = task.dependents || [];
@@ -1834,30 +2045,54 @@ const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyAct
                     />
                 )}
                 <TaskItem 
-                    task={task} user={users.find(u => u.id === task.ownerId)} dispatch={dispatch} isEnvoyActive={envoyActiveTaskId === task.id} onEdit={onEdit} personas={personas} onTaskDrop={onTaskDrop} level={level} 
+                    task={task} 
+                    user={users.find(u => u.id === task.ownerId)} 
+                    dispatch={dispatch} 
+                    isEnvoyActive={envoyActiveTaskId === task.id} 
+                    onEdit={onEdit} 
+                    personas={personas} 
+                    onTaskDrop={onTaskDrop} 
+                    level={level} 
                     parentId={parentId}
                     onToggleExpand={() => setIsExpanded(!isExpanded)}
                     isExpanded={isExpanded}
                     hasDependents={dependents.length > 0}
+                    timelineView={timelineView}
+                    startDate={startDate}
+                    totalUnits={totalUnits}
                 />
             </div>
-            <AnimatePresence>
+            <AnimatePresence initial={false}>
                 {isExpanded && dependents.length > 0 && (
                     <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.3, ease: "easeInOut" }}
                         className="overflow-hidden"
                     >
-                        {dependents.map(dep => (
-                            <RoadmapRow 
+                        {dependents.map((dep, index) => (
+                            <motion.div
                                 key={dep.id}
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: index * 0.05 }}
+                            >
+                                <RoadmapRow 
                                 task={dep}
                                 users={users}
                                 level={level + 1}
-                                onEdit={onEdit} onTaskDrop={onTaskDrop} dispatch={dispatch} envoyActiveTaskId={envoyActiveTaskId} personas={personas}
+                                onEdit={onEdit} 
+                                onTaskDrop={onTaskDrop} 
+                                dispatch={dispatch} 
+                                envoyActiveTaskId={envoyActiveTaskId} 
+                                personas={personas}
                                 parentId={task.id}
-                            />
+                                timelineView={timelineView}
+                                startDate={startDate}
+                                totalUnits={totalUnits}
+                                />
+                            </motion.div>
                         ))}
                     </motion.div>
                 )}
@@ -1880,11 +2115,16 @@ export default function RoadmapPage() {
     const loading = state.isLoading;
     const { viewingDependenciesFor } = state;
     const personas = ['P1', 'P2', 'P3'] // Dummy
-    const [showPopUp, setShowPopUp] = useState(false);
+    const [popupMessage, setPopupMessage] = useState<string | null>(null);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
     
-    const triggerProjectPopup = () => {
-        setShowPopUp(true);
-        setTimeout(() => setShowPopUp(false), 3000);
+    const triggerPopup = (message: string) => {
+        setPopupMessage(message);
+        setTimeout(() => setPopupMessage(null), 3000);
     };
 
     // Initial Data Fetch
@@ -1989,6 +2229,11 @@ export default function RoadmapPage() {
 
     const handleDeleteProject = (projectId: string) => {
         const project = state.projects.find(p => p.id === projectId);
+        if (state.projects.length === 1) {
+            triggerPopup("Cannot delete the last project.");
+            setProjectToDelete(null);
+            return;
+        }
         if (project) {
             setProjectToDelete(project);
         }
@@ -2007,7 +2252,7 @@ export default function RoadmapPage() {
             const newProjects = state.projects.filter(p => p.id !== projectToDelete.id);
             const newTasks = state.tasks.filter(t => t.projectId !== projectToDelete.id);
             
-            dispatch({ type: 'INIT_DATA', payload: { projects: newProjects, tasks: newTasks } });
+            dispatch({ type: 'DELETE_PROJECT', payload: projectToDelete.id });
         } catch (e) {
             console.error(e);
             alert("Failed to delete project");
@@ -2034,6 +2279,23 @@ export default function RoadmapPage() {
             alert("Failed to create dependency");
         }
     };
+
+
+    function logDateAndQuarter(date = new Date()) {
+    const dateFormatter = new Intl.DateTimeFormat('en-US', {
+        // month: 'long', // Adjust if needed
+        // day: 'numeric',
+        year: 'numeric'
+    });
+    const formattedDate = dateFormatter.format(date);
+
+    const month = date.getMonth() + 1;
+    const quarter = Math.ceil(month / 3);
+
+    return(`${formattedDate} - Q${quarter}`)
+    }
+
+    // Usage:
 
     const [addVisible,setAVisible] = useState(false);
 
@@ -2067,14 +2329,13 @@ export default function RoadmapPage() {
                                 <div className="flex items-center gap-2 text-xs text-slate-500">
                                     <span className="flex items-center gap-1"><GitCommit className="w-3 h-3"/> v2.4.0</span>
                                     <span>•</span>
-                                    <span>Q1 2026 Deliverables</span>
+                                    <span>{logDateAndQuarter()}</span>
                                 </div>
                             </div>
                         </div>
 
                         {/* QUERY BUILDER / TOOLBAR */}
-                        <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto">
-                            <div className="relative group">
+                            <div className="flex items-center z-50 gap-3 bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto overflow-y-visible">                            <div className="relative group">
                                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                                 <input
                                     type="text"
@@ -2114,8 +2375,12 @@ export default function RoadmapPage() {
                                 <option value="Monthly">Monthly View</option>
                             </select>
 
-                            {/* Project Visibility Dropdown Component - Will be added below */}
-                            <ProjectVisibilityDropdown state={state} dispatch={dispatch} />
+                            {/* Project Visibility Dropdown Component */}
+                            <ProjectVisibilityDropdown 
+                                state={state} 
+                                dispatch={dispatch} 
+                                onDeleteProject={handleDeleteProject}
+                            />
 
                             <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
 
@@ -2155,38 +2420,35 @@ export default function RoadmapPage() {
                 <WorkloadHUD />
 
                 {/* GANTT CANVAS */}
-                {state.layoutMode === 'Roadmap' && (
-                    <div className="flex-1 overflow-auto relative custom-scrollbar bg-slate-50 dark:bg-[#0B1120]" onDragOver={(e) => e.preventDefault()} onDrop={handleBackgroundDrop}>
-                    <div className="min-w-[1400px] p-8">
+                {state.layoutMode === 'Roadmap' && (() => {
+                    const { totalUnits, startDate } = getDateRangeForView(state.timelineView, state.viewMode);
+                    const labels = generateTimelineLabels(state.timelineView, totalUnits, startDate);
+                    const cellWidth = state.timelineView === 'Daily' ? 120 : state.timelineView === 'Weekly' ? 150 : 200;
+                    const totalWidth = totalUnits * cellWidth;
+                    
+                    return (
+                    <div className="flex-1 overflow-x-auto overflow-y-auto relative custom-scrollbar bg-slate-50 dark:bg-[#0B1120]" onDragOver={(e) => e.preventDefault()} onDrop={handleBackgroundDrop}>
+                    <div style={{ minWidth: `${totalWidth}px` }} className="p-8">
 
                         {/* TIMELINE DATES */}
                         <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur border-b border-slate-200 dark:border-slate-800 mb-6">
                             <div className="flex gap-0">
-                                {(() => {
-                                    const { totalUnits } = getDateRangeForView(state.timelineView, state.viewMode);
-                                    const labels = generateTimelineLabels(state.timelineView, totalUnits);
-                                    const cellWidth = state.timelineView === 'Daily' ? '80px' : state.timelineView === 'Weekly' ? '120px' : '150px';
-                                    
-                                    return labels.map((label, i) => (
-                                        <div key={i} className="py-3 border-r border-slate-200 dark:border-slate-800/50 text-center" style={{ minWidth: cellWidth }}>
-                                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{label}</span>
-                                        </div>
-                                    ));
-                                })()}
+                                {labels.map((label, i) => (
+                                    <div key={i} className="py-3 border-r border-slate-200 dark:border-slate-800/50 text-center" style={{ minWidth: `${cellWidth}px`, width: `${cellWidth}px` }}>
+                                        <span className={`text-xs font-bold text-slate-400 uppercase ${state.timelineView === 'Monthly' ? 'tracking-normal' : 'tracking-widest'}`}>
+                                            {label}
+                                        </span>
+                                    </div>
+                                ))}
                             </div>
                         </div>
 
                         <div className="relative">
                             {/* BACKGROUND GRID */}
                             <div className="absolute inset-0 flex pointer-events-none z-0">
-                                {(() => {
-                                    const { totalUnits } = getDateRangeForView(state.timelineView, state.viewMode);
-                                    const cellWidth = state.timelineView === 'Daily' ? '80px' : state.timelineView === 'Weekly' ? '120px' : '150px';
-                                    
-                                    return Array.from({ length: totalUnits }).map((_, i) => (
-                                        <div key={i} className="border-r border-dashed border-slate-200 dark:border-slate-800 h-full" style={{ minWidth: cellWidth }} />
-                                    ));
-                                })()}
+                                {Array.from({ length: totalUnits }).map((_, i) => (
+                                    <div key={i} className="border-r border-dashed border-slate-200 dark:border-slate-800 h-full" style={{ minWidth: `${cellWidth}px`, width: `${cellWidth}px` }} />
+                                ))}
                             </div>
 
                             {/* SVG LINES OVERLAY */}
@@ -2208,7 +2470,7 @@ export default function RoadmapPage() {
                                             </div>
                                         ))}
                                     </div>
-                                ) : filteredTasks.length === 0 ? (
+                                ) : state.projects.filter(project => !state.hiddenProjects.has(project.id)).length === 0 ? (
                                     <div className="flex flex-col items-center justify-center h-96 text-center">
                                         <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-full mb-4">
                                             <Search className="w-8 h-8 text-slate-400" />
@@ -2289,6 +2551,9 @@ export default function RoadmapPage() {
                                                                         personas={state.personas}
                                                                         onTaskDrop={(s, t) => setDependencyModal({ sourceId: s, targetId: t })}
                                                                         parentId={null}
+                                                                        timelineView={state.timelineView}
+                                                                        startDate={startDate}
+                                                                        totalUnits={totalUnits}
                                                                     />
                                                                 ))
                                                             )}
@@ -2303,7 +2568,8 @@ export default function RoadmapPage() {
                         </div>
                     </div>
                     </div>
-                )}
+                    );
+                })()}
 
                 {/* BOARD & SPRINT VIEWS */}
                 {state.layoutMode === 'Board' && <BoardView tasks={filteredTasks} users={state.users} />}
@@ -2346,7 +2612,7 @@ export default function RoadmapPage() {
                     {addProjectVisible && (
                         <AddProjectModal 
                             onClose={() => setAddProjectVisible(false)} 
-                            onSuccess={triggerProjectPopup}
+                            onSuccess={() => triggerPopup("Project Created Successfully!")}
                         />
                     )}
 
@@ -2394,21 +2660,26 @@ export default function RoadmapPage() {
                     )}
 
                     {/* VIOLET SUCCESS POPUP */}
-                    <AnimatePresence>
-                        {showPopUp && (
-                            <motion.div 
-                                initial={{ opacity: 0, x: 20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: 20 }}
-                                className="fixed top-20 right-10 z-[9999] flex items-center gap-3 bg-violet-700 text-white px-6 py-4 rounded-xl shadow-2xl border border-violet-500/50"
-                            >
-                                <Sparkles className="w-5 h-5 text-white" />
-                                <div>
-                                    <p className="font-bold text-sm">Project Created Successfully!</p>
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
+                    {mounted && createPortal(
+                        <AnimatePresence>
+                            {popupMessage && (
+                                <motion.div 
+                                    key="success-popup"
+                                    initial={{ opacity: 0, x: 100 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: 100 }}
+                                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                                    className="fixed top-28 right-6 z-[9999] flex items-center gap-3 bg-violet-700 text-white px-6 py-4 rounded-xl shadow-2xl border-l-4 border-violet-400"
+                                >
+                                    <Sparkles className="w-5 h-5 text-violet-200" />
+                                    <div>
+                                        <p className="font-bold text-sm">{popupMessage}</p>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>,
+                        document.body
+                    )}
 
                 </div>
 

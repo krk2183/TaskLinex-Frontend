@@ -129,6 +129,11 @@ export default function SignupPage() {
       return;
     }
 
+    if (!Data.username.trim()) {
+      setError("Username is required");
+      return;
+    }
+
     setLoading(true);
     setError("");
     
@@ -136,7 +141,10 @@ export default function SignupPage() {
       console.log('🚀 Starting registration process...');
 
       // Generate unique email if not provided (for username-only signup)
-      const email = Data.email || `${Data.username}@tasklinex.local`;
+      const email = Data.email.trim() || `${Data.username}@tasklinex.local`;
+      
+      // Prepare companyName: only send if it has actual content
+      const companyNameValue = Data.companyName.trim() || null;
       
       // Step 1: Sign up with Supabase
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -144,10 +152,10 @@ export default function SignupPage() {
         password: Data.password,
         options: {
           data: {
-            username: Data.username,
-            firstName: Data.firstName,
-            lastName: Data.lastName,
-            companyName: Data.companyName || '',  // ✅ Empty string if None
+            username: Data.username.trim(),
+            firstName: Data.firstName.trim(),
+            lastName: Data.lastName.trim(),
+            companyName: companyNameValue,
             role: Data.role,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
           }
@@ -200,10 +208,10 @@ export default function SignupPage() {
           body: JSON.stringify({
             userId,
             email: email,
-            username: Data.username,
-            firstName: Data.firstName,
-            lastName: Data.lastName,
-            companyName: Data.companyName || null,  // ✅ null if empty
+            username: Data.username.trim(),
+            firstName: Data.firstName.trim(),
+            lastName: Data.lastName.trim(),
+            companyName: companyNameValue,
             role: Data.role,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
           })
@@ -214,58 +222,36 @@ export default function SignupPage() {
           throw new Error(errorData.detail || 'Failed to create user data');
         }
 
-        const result = await ensureResponse.json();
-        console.log('✅ User ensured:', result);
+        console.log('✅ User created via fallback');
       }
 
-      // Step 5: Final verification
-      console.log('🔍 Final verification...');
-      const finalCheck = await fetch(`${API_BASE_URL}/users/${userId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!finalCheck.ok) {
-        throw new Error('User data verification failed after creation');
-      }
-
-      const finalUserData = await finalCheck.json();
-      console.log('✅ Registration complete!', finalUserData);
+      console.log('✅ Registration complete, logging in...');
       
-      // Success! Redirect to roadmap
-      console.log('🎉 Redirecting to roadmap...');
-      router.push('/roadmap');
+      // Step 5: Log the user in
+      await login(email, Data.password);
+      
+      console.log('✅ Login successful, redirecting...');
 
     } catch (err: any) {
       console.error('❌ Registration error:', err);
-      setError(err.message || "Registration failed. Please try again.");
-      
-      // Clean up auth on error
-      try {
-        await supabase.auth.signOut();
-      } catch (signOutErr) {
-        console.error('Error signing out:', signOutErr);
-      }
+      setError(err.message || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen w-full flex bg-slate-950 text-slate-200 font-sans selection:bg-violet-500/30">
-      
-      <div className="hidden lg:flex w-5/12 relative bg-[#0B0F17] overflow-hidden border-r border-slate-800 flex-col p-12">
-           <div className="flex items-center gap-2 mb-12">
-            <span className="text-4xl font-bold tracking-tight select-none">
-              <span className="text-white">Task</span>
-              <span className="text-violet-500">Linex</span>
-            </span>
-          </div>
-         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_var(--tw-gradient-stops))] from-violet-900/20 via-slate-950 to-slate-950" />
+    <div className="min-h-screen w-full flex bg-slate-950 text-slate-200 font-sans selection:bg-violet-500/30 relative overflow-hidden">
+      {/* LEFT: Hero */}
+      <div className="hidden lg:flex lg:w-5/12 relative bg-[#0B0F17] border-r border-slate-800 flex-col justify-between p-12 xl:p-16">
+         <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:3rem_3rem] opacity-20" />
+         
          <div className="relative z-10">
-             <h2 className="text-4xl font-bold text-white tracking-tight mb-6">
+             <Logo />
+         </div>
+
+         <div className="relative z-10">
+             <h2 className="text-4xl font-bold text-white leading-tight mb-6">
                  Built for <br/> 
                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-indigo-400">Deterministic</span> <br/>
                  Workflows.
