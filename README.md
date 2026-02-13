@@ -32,7 +32,6 @@ Each page is designed to specialize in one responsibility only.
 
 | Page | Status | Responsibility |
 | :--- | :--- | :--- |
-<<<<<<< HEAD
 | **Pulse (Home)** | ✅ Complete | Execution-focused overview and active task management. |
 | **Dashboard** | ✅ Complete | Broader task and project overview. |
 | **Analytics** | ✅ Complete | Performance insights and progress patterns (no vanity metrics). |
@@ -41,8 +40,7 @@ Each page is designed to specialize in one responsibility only.
 | **Pulse (Home)** | ✅ Complete | Execution-focused overview and active task management. |
 | **Roadmap** | ✅ Complete | Broader task and project overview. |
 | **Analytics** | ✅ Complete | Performance insights and progress patterns (no vanity metrics). |
-| **Settings** | ✅ Complete | User preferences and configuration. |
->>>>>>> 49f6e47da0ec52283e99ed0d600bff28aa855227
+| **Settings** | ✅ Complete | User Account and Envoy Settings customization . |
 
 ---
 
@@ -153,7 +151,6 @@ TaskLinex is intentionally opinionated and does **not** aim to:
 * Replace Notion or become a document/wiki system.
 * Support infinite customization at the cost of clarity.
 * Optimize for aesthetic "vanity" dashboards over execution.
-<<<<<<< HEAD
 =======
 
 ---
@@ -183,5 +180,4 @@ pip install -r requirments.txt
 ```bash
 npm run dev
 ```
-The application will be live at: http://localhost:3000
->>>>>>> 49f6e47da0ec52283e99ed0d600bff28aa855227
+The application will be live at: http://localhost:8000
