@@ -314,22 +314,21 @@ interface AppState {
     envoyActive: string | null; // Task ID interacting with Envoy
     viewingDependenciesFor: string | null;
 }
-
 type Action =
     | { type: 'INIT_DATA', payload: any }
     | { type: 'SET_ACTIVE_PERSONA', payload: any }
     | { type: 'SET_FILTER', payload: Partial<FilterState> }
     | { type: 'SET_LAYOUT_MODE', payload: LayoutMode }
     | { type: 'SET_VIEW_MODE', payload: ViewMode }
-    | { type: 'SET_TIMELINE_VIEW', payload: TimelineView } // NEW
-    | { type: 'TOGGLE_PROJECT_VISIBILITY', payload: string } // NEW
+    | { type: 'SET_TIMELINE_VIEW', payload: TimelineView }
+    | { type: 'TOGGLE_PROJECT_VISIBILITY', payload: string }
     | { type: 'TOGGLE_PERSONA', payload: string }
     | { type: 'ADD_TASK', payload: Task[] }
     | { type: 'UPDATE_TASKS', payload: Task[] }
     | { type: 'SET_LOADING', payload: boolean }
     | { type: 'TRIGGER_ENVOY', payload: string | null }
-    | { type: 'VIEW_DEPENDENCIES', payload: string | null };
-    | { type: 'DELETE_PROJECT'; payload: string };
+    | { type: 'VIEW_DEPENDENCIES', payload: string | null } 
+    | { type: 'DELETE_PROJECT', payload: string };          
 
 const initialState: AppState = {
     tasks: [], users: [], projects: [], personas: [],
