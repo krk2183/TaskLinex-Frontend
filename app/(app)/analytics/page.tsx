@@ -80,12 +80,12 @@ const AI_SUGGESTIONS = [
 // --- 2. COMPONENTS ---
 
 // A. Layout Shell
-const SidebarItem: React.FC<SidebarItemProps> = ({ icon: Icon, label, active }) => (
+const SidebarItem = ({ icon: Icon, label, active }) => (
   <div className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200 group ${active ? 'bg-blue-600/10 text-blue-400' : 'hover:bg-slate-800 text-slate-400'}`}>
-    <Icon size={20} className={active ? "text-blue-400" : "group-hover:text-slate-200"} />
-    <span className={`font-medium ${active ? "text-blue-400" : "group-hover:text-slate-200"}`}>{label}</span>
+    <Icon size={20} className={active ? 'text-blue-400' : 'group-hover:text-slate-200'} />
+    <span className={`font-medium ${active ? 'text-blue-400' : 'group-hover:text-slate-200'}`}>{label}</span>
   </div>
-);
+)
 
 type Task = {
   id: string;
