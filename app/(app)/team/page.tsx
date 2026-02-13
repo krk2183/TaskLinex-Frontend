@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { 
-    Users, AlertTriangle, Shield, Activity, 
+    Users, AlertTriangle, Shield, Activity, AlertCircle,
     CheckCircle, XCircle, Zap, BarChart3, Plus, UserPlus, Edit3, Search, X, Loader2
 } from 'lucide-react';
 import { useAuth } from '../../providers/AuthContext';
