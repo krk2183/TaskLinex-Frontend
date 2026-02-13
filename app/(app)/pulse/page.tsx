@@ -553,7 +553,7 @@ export default function PulsePage() {
 
         if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(textToCopy).then(() => {
-                alert("App Invite link copied!");
+                //alert("App Invite link copied!");
             }).catch(err => {
                 console.error("Error: ", err);
             });
