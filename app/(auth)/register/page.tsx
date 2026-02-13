@@ -30,14 +30,14 @@ const InputField = ({
   onChange,
   required = false
 }: { 
-  label: string, 
-  type: string, 
-  placeholder: string,
-  icon: any,
-  name: string,
-  value: string,
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void,
-  required?: boolean
+  label: string; 
+  type: string; 
+  placeholder: string;
+  icon: React.ComponentType<{ className?: string }>;
+  name: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  required?: boolean;
 }) => (
   <div className="space-y-1.5">
     <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -84,7 +84,7 @@ export default function SignupPage() {
   const { login } = useAuth();
   const router = useRouter();
   const [isLogin, setIsLogin] = React.useState(false);
-  const [Data, setData] = React.useState({
+  const [data, setData] = React.useState({
     firstName: "",
     lastName: "",
     username: "",
@@ -100,7 +100,7 @@ export default function SignupPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.type === "checkbox" ? e.target.checked : e.target.value;
-    setData({ ...Data, [e.target.name]: value });
+    setData({ ...data, [e.target.name]: value });
     setError(""); 
   };
 
@@ -112,11 +112,12 @@ export default function SignupPage() {
       setLoading(true);
       setError("");
       try {
-        await login(Data.email, Data.password);
+        await login(data.email, data.password);
         // AuthContext will handle redirect
-      } catch (err: any) {
+      } catch (err) {
         console.error("Login Error:", err);
-        setError(err.message || "Login failed.");
+        const errorMessage = err instanceof Error ? err.message : "Login failed.";
+        setError(errorMessage);
       } finally {
         setLoading(false);
       }
@@ -124,12 +125,12 @@ export default function SignupPage() {
     }
 
     // Handle signup
-    if (Data.password !== Data.confirmPassword) {
+    if (data.password !== data.confirmPassword) {
       setError("Passwords do not match");
       return;
     }
 
-    if (!Data.username.trim()) {
+    if (!data.username.trim()) {
       setError("Username is required");
       return;
     }
@@ -141,22 +142,22 @@ export default function SignupPage() {
       console.log('🚀 Starting registration process...');
 
       // Generate unique email if not provided (for username-only signup)
-      const email = Data.email.trim() || `${Data.username}@tasklinex.local`;
+      const email = data.email.trim() || `${data.username}@tasklinex.local`;
       
       // Prepare companyName: only send if it has actual content
-      const companyNameValue = Data.companyName.trim() || null;
+      const companyNameValue = data.companyName.trim() || null;
       
       // Step 1: Sign up with Supabase
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email,
-        password: Data.password,
+        password: data.password,
         options: {
           data: {
-            username: Data.username.trim(),
-            firstName: Data.firstName.trim(),
-            lastName: Data.lastName.trim(),
+            username: data.username.trim(),
+            firstName: data.firstName.trim(),
+            lastName: data.lastName.trim(),
             companyName: companyNameValue,
-            role: Data.role,
+            role: data.role,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
           }
         }
@@ -208,43 +209,40 @@ export default function SignupPage() {
           body: JSON.stringify({
             userId,
             email: email,
-            username: Data.username.trim(),
-            firstName: Data.firstName.trim(),
-            lastName: Data.lastName.trim(),
+            username: data.username.trim(),
+            firstName: data.firstName.trim(),
+            lastName: data.lastName.trim(),
             companyName: companyNameValue,
-            role: Data.role,
+            role: data.role,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
           })
         });
 
         if (!ensureResponse.ok) {
-          const errorData = await ensureResponse.json().catch(() => ({}));
-          throw new Error(errorData.detail || 'Failed to create user data');
+          const errData = await ensureResponse.json();
+          throw new Error(errData.detail || 'Failed to create user in backend');
         }
-
-        console.log('✅ User created via fallback');
+        console.log('✅ User ensured via fallback');
       }
 
-      console.log('✅ Registration complete, logging in...');
+      console.log('✅ Registration complete - redirecting...');
+      router.push('/dashboard');
       
-      // Step 5: Log the user in
-      await login(email, Data.password);
-      
-      console.log('✅ Login successful, redirecting...');
-
-    } catch (err: any) {
-      console.error('❌ Registration error:', err);
-      setError(err.message || 'Registration failed. Please try again.');
+    } catch (err) {
+      console.error('Registration failed:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Registration failed. Please try again.';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen w-full flex bg-slate-950 text-slate-200 font-sans selection:bg-violet-500/30 relative overflow-hidden">
-      {/* LEFT: Hero */}
-      <div className="hidden lg:flex lg:w-5/12 relative bg-[#0B0F17] border-r border-slate-800 flex-col justify-between p-12 xl:p-16">
-         <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:3rem_3rem] opacity-20" />
+    <div className="min-h-screen w-full flex bg-slate-950 text-slate-200 font-sans selection:bg-violet-500/30 relative">
+      
+      {/* LEFT SIDE */}
+      <div className="hidden lg:flex lg:w-5/12 bg-gradient-to-br from-slate-950 via-violet-950/20 to-slate-950 border-r border-slate-800 flex-col justify-between p-12 relative overflow-hidden">
+         <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-10" />
          
          <div className="relative z-10">
              <Logo />
@@ -321,7 +319,7 @@ export default function SignupPage() {
                 label="First Name" 
                 type="text" 
                 name="firstName"
-                value={Data.firstName}
+                value={data.firstName}
                 onChange={handleChange}
                 placeholder="Jane" 
                 icon={User}
@@ -331,7 +329,7 @@ export default function SignupPage() {
                 label="Last Name" 
                 type="text" 
                 name="lastName"
-                value={Data.lastName}
+                value={data.lastName}
                 onChange={handleChange}
                 placeholder="Doe" 
                 icon={User}
@@ -345,7 +343,7 @@ export default function SignupPage() {
               label="Username" 
               type="text" 
               name="username"
-              value={Data.username}
+              value={data.username}
               onChange={handleChange}
               placeholder="unique_username" 
               icon={User}
@@ -357,7 +355,7 @@ export default function SignupPage() {
               label={isLogin ? "Email or Username" : "Work Email (Optional)"} 
               type={isLogin ? "text" : "email"}
               name="email"
-              value={Data.email}
+              value={data.email}
               onChange={handleChange}
               placeholder={isLogin ? "email@company.com or username" : "jane@company.com (optional)"} 
               icon={Mail}
@@ -368,7 +366,7 @@ export default function SignupPage() {
               label="Password" 
               type="password" 
               name="password"
-              value={Data.password}
+              value={data.password}
               onChange={handleChange}
               placeholder="••••••••••••" 
               icon={Lock}
@@ -380,7 +378,7 @@ export default function SignupPage() {
               label="Confirm Password" 
               type="password" 
               name="confirmPassword"
-              value={Data.confirmPassword}
+              value={data.confirmPassword}
               onChange={handleChange}
               placeholder="••••••••••••" 
               icon={Lock}
@@ -396,15 +394,15 @@ export default function SignupPage() {
                 <div className="grid grid-cols-2 gap-4">
                     <button
                         type="button"
-                        onClick={() => setData({...Data, role: 'user'})}
-                        className={`flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-medium transition-all ${Data.role === 'user' ? 'bg-violet-600 border-violet-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'}`}
+                        onClick={() => setData({...data, role: 'user'})}
+                        className={`flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-medium transition-all ${data.role === 'user' ? 'bg-violet-600 border-violet-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'}`}
                     >
                         <User className="w-4 h-4" /> User
                     </button>
                     <button
                         type="button"
-                        onClick={() => setData({...Data, role: 'admin'})}
-                        className={`flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-medium transition-all ${Data.role === 'admin' ? 'bg-violet-600 border-violet-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'}`}
+                        onClick={() => setData({...data, role: 'admin'})}
+                        className={`flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-medium transition-all ${data.role === 'admin' ? 'bg-violet-600 border-violet-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'}`}
                     >
                         <Briefcase className="w-4 h-4" /> Admin
                     </button>
@@ -417,7 +415,7 @@ export default function SignupPage() {
               label="Company Name (Optional)" 
               type="text" 
               name="companyName"
-              value={Data.companyName}
+              value={data.companyName}
               onChange={handleChange}
               placeholder="Leave blank for personal use" 
               icon={Briefcase} 
@@ -430,11 +428,11 @@ export default function SignupPage() {
                 type="checkbox"
                 name="rememberMe"
                 id="rememberMe"
-                checked={Data.rememberMe}
+                checked={data.rememberMe}
                 onChange={handleChange}
                 className="w-4 h-4 rounded border-slate-800 bg-slate-900 text-violet-600 focus:ring-violet-500/50 focus:ring-offset-0 accent-violet-600"
               />
-              <label htmlFor="rememberMe" className="text-sm text-slate-400 select-none  cursor-pointer hover:text-slate-300 transition-colors">
+              <label htmlFor="rememberMe" className="text-sm text-slate-400 select-none cursor-pointer hover:text-slate-300 transition-colors">
                 Remember me
               </label>
             </div>
@@ -449,13 +447,17 @@ export default function SignupPage() {
           <div className="mt-5 flex justify-center w-full">
            
              <div className="mt-0.5 text-sm">{isLogin ? "Don't have an account?" : "Already have an account?"}</div>  
-             <a onClick={() => { setIsLogin(!isLogin); setError(""); }} className="ml-2 text-violet-400 hover:text-violet-300 font-medium cursor-pointer">
+             <button 
+                type="button"
+                onClick={() => { setIsLogin(!isLogin); setError(""); }} 
+                className="ml-2 text-violet-400 hover:text-violet-300 font-medium cursor-pointer"
+             >
               {isLogin ? "Create one" : "Sign in"}
-            </a>
+            </button>
           </div>
 
             <p className="text-[11px] text-slate-500 text-center leading-relaxed max-w-sm mx-auto">
-                By clicking "Create Account", you agree to our <a href="#" className="text-slate-400 underline hover:text-white">Terms of Service</a> and <a href="#" className="text-slate-400 underline hover:text-white">Privacy Policy</a>.
+                By clicking &quot;Create Account&quot;, you agree to our <a href="#" className="text-slate-400 underline hover:text-white">Terms of Service</a> and <a href="#" className="text-slate-400 underline hover:text-white">Privacy Policy</a>.
             </p>
           </form>
 
