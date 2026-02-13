@@ -17,40 +17,23 @@ from time import time
 from supabase import create_client, Client
 from dotenv import load_dotenv
 import jwt
-# # --- Setup & Config ---
-# backend_dir = Path(__file__).resolve().parent
-# root_dir = backend_dir.parent
-# dotenv_path = root_dir / ".env.local"
 
-# if dotenv_path.exists():
-#     dotenv.load_dotenv(dotenv_path=dotenv_path)
-#     print(f"Loaded .env from: {dotenv_path}")
-# else:
-#     print(f"Warning: .env not found at {dotenv_path}. Using default settings.")
-
-# load_dotenv(dotenv_path=".env.local")
-
-base_dir = Path(__file__).resolve().parent.parent
-dotenv_path = base_dir / ".env.local"
-
-
+base_dir = Path(__file__).resolve().parent
+dotenv_path = base_dir / ".env.backend"
 
 if dotenv_path.exists():
-    load_dotenv(dotenv_path=dotenv_path)
-    print(f"✅ Success: .env.local loaded from {dotenv_path}")
-    print(f"DEBUG: Key starts with: {str(os.getenv('SUPABASE_SERVICE_ROLE_KEY'))[:12]}")
-
+    load_dotenv(dotenv_path=dotenv_path, override=True)
+    print(f"✅ Loaded: {dotenv_path}")
 else:
-    print(f"❌ Error: .env.local not found at {dotenv_path}")
-    print(f"Current Working Directory: {os.getcwd()}")
+    print(f"❌ Critical: {dotenv_path} not found")
 
-
-
-# Supabase Init
+# 2. Supabase Init - DOUBLE CHECK THESE NAMES MATCH YOUR .env.backend FILE
 SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 JWKS_URL = os.getenv("SUPABASE_JWKS")
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_KEY")
+# Check if your .env.backend uses 'SUPABASE_JWT_KEY' or 'JWT_SECRET'
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_KEY") or os.getenv("JWT_SECRET")
+
 if not SUPABASE_URL or not SUPABASE_KEY or not SUPABASE_JWT_SECRET:
     raise ValueError("Supabase URL, KEY, or JWT_SECRET missing in environment!")
 

@@ -135,6 +135,53 @@ const EnvoyConsole = () => {
         }
     }, [jwt, userId, optimizationMode, assignmentEngine]); 
 
+    // NEW: Save model preference whenever it changes
+    useEffect(() => {
+        const saveModelPreference = async () => {
+            if (!jwt || !userId || !assignmentEngine) return;
+            
+            try {
+                const result = await api.post('/users/update-preferred-model', {
+                    userId,
+                    preferred_model: assignmentEngine
+                }, jwt);
+                console.log(`✅ Saved preferred model: ${assignmentEngine}`);
+                
+                // Check if there's a warning about schema
+                if (result.warning) {
+                    console.warn(`⚠️ ${result.warning}`);
+                }
+            } catch (err: any) {
+                console.error("Failed to save model preference:", err);
+                // Don't break the UI - preference will be used for this session
+                console.log("⚠️ Model preference not persisted, but will be used for current session");
+            }
+        };
+        
+        saveModelPreference();
+    }, [assignmentEngine, userId, jwt]);
+
+    // NEW: Load user's preferred model on mount
+    useEffect(() => {
+        const loadModelPreference = async () => {
+            if (!jwt || !userId) return;
+            
+            try {
+                const data = await api.get(`/users/${userId}/preferred-model`, jwt);
+                if (data.preferred_model) {
+                    setAssignmentEngine(data.preferred_model as 'Envoy Mega' | 'Envoy Pulse' | 'Envoy Nano');
+                    console.log(`✅ Loaded preferred model: ${data.preferred_model}`);
+                }
+            } catch (err: any) {
+                console.error("Failed to load model preference:", err);
+                // Don't break the UI - just use the default already set in state
+                console.log("⚠️ Using default model: Envoy Mega");
+            }
+        };
+        
+        loadModelPreference();
+    }, [userId, jwt]); 
+
 
 
     useEffect(() => {
@@ -276,7 +323,7 @@ const EnvoyConsole = () => {
     }
 
     return (
-        <div className="min-h-screen bg-black text-white">
+        <div className="min-h-screen bg-black text-white overflow-auto">
             {/* Header */}
             <header className="border-b border-gray-800 bg-[#0c0c0e]">
                 <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
