@@ -80,17 +80,29 @@ const AI_SUGGESTIONS = [
 // --- 2. COMPONENTS ---
 
 // A. Layout Shell
-const SidebarItem = ({ icon: Icon, label, active }) => (
-  <div className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200 group ${active ? 'bg-blue-600/10 text-blue-400' : 'hover:bg-slate-800 text-slate-400'}`}>
+const SidebarItem: React.FC<{ icon: React.ComponentType<{ size?: number; className?: string }>; label: string; active?: boolean }> = ({ icon: Icon, label, active }) => (
+  <div
+    className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200 group ${
+      active ? 'bg-blue-600/10 text-blue-400' : 'hover:bg-slate-800 text-slate-400'
+    }`}
+  >
     <Icon size={20} className={active ? 'text-blue-400' : 'group-hover:text-slate-200'} />
     <span className={`font-medium ${active ? 'text-blue-400' : 'group-hover:text-slate-200'}`}>{label}</span>
   </div>
-)
+);
+
 
 type Task = {
   id: string;
-  priority: "High" | "Medium" | "Low";
-  status: "Blocked" | "Stalled" | "Active";
+  title: string;
+  status: string;
+  ownerId?: string;
+  duration?: number;
+  plannedDuration?: number;
+  leakageHours: number; // This must be here to fix the build error!
+  dependencies?: string[];
+  downstream?: string[];
+  priority?: "High" | "Medium" | "Low";
 };
 
 type Edge = {
@@ -104,7 +116,7 @@ type Edge = {
 // };
 
 
-export const RippleGraph = ({ onHoverNode }) => {
+export const RippleGraph = ({ tasks, onHoverNode }: { tasks: any[]; onHoverNode: any }) => {
   const { userId, jwt } = useAuth();
   const [graph, setGraph] = useState<{ tasks: any[]; edges: any[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
