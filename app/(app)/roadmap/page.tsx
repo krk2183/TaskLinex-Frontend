@@ -121,6 +121,7 @@ interface EnvoyDrawerProps {
 // 2. MOCK DATA & API SIMULATION
 // ==========================================
 
+
 const MOCK_USERS: User[] = [
     {
         id: 'u1', name: 'Matthew', avatar: 'https://i.pravatar.cc/150?u=1', baseCapacity: 80,
@@ -152,6 +153,21 @@ const MOCK_TASKS: Task[] = [
 ];
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+interface TriggerProps {
+  onTrigger: () => void;
+  isActive: boolean;
+}
+
+const ActionButton: React.FC<TriggerProps> = ({ onTrigger, isActive }) => (
+  <button 
+    onClick={onTrigger} 
+    disabled={isActive}
+    className="btn-trigger"
+  >
+    {isActive ? 'Active...' : 'Show Notification'}
+  </button>
+);
 
 // Async Placeholder
 const MockAPI = {
@@ -327,7 +343,14 @@ const AppContext = createContext<{ state: AppState; dispatch: React.Dispatch<Act
 function appReducer(state: AppState, action: Action): AppState {
     switch (action.type) {
         case 'INIT_DATA':
-            return { ...state, ...action.payload, isLoading: false };
+            // Preserve currentUser if not provided in payload
+            const currentUser = action.payload.currentUser || state.currentUser;
+            return { 
+                ...state, 
+                ...action.payload, 
+                currentUser,
+                isLoading: false 
+            };
         case 'SET_ACTIVE_PERSONA':
             return {...state,activePersonaId:action.payload}
         case 'SET_LAYOUT_MODE':
@@ -648,9 +671,7 @@ const WorkloadHUD = () => {
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Team Capacity</span>
                 <span className="text-xs text-slate-500">Persona View</span>
             </div>
-
             <div className="h-8 w-px bg-slate-200 dark:bg-slate-800 mx-2" />
-
             {state.users.map(user => {
                 // If the user is the current logged-in user, show persona toggles
                 const isCurrentUser = state.currentUser?.id === user.id;
@@ -687,6 +708,12 @@ const WorkloadHUD = () => {
                     </div>
                 );
             })}
+            {/* THE POP UP SHOULD APPEAR ON THIS PART OF THE PAGE ALLIGNED TO THE RIGHT THAT IS VIOLET-700 */}
+            
+
+
+
+
         </div>
     );
 };
@@ -698,16 +725,61 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     const headline = taskToEdit?  'Update Task Details': "Add New Task";
     const buttontitle = taskToEdit? 'Edit Task':'Create Task';
 
+    // Helper functions for date conversion
+    const timestampToDateString = (timestamp?: number) => {
+        if (!timestamp) return '';
+        const date = new Date(timestamp * 1000);
+        return date.toISOString().split('T')[0];
+    };
+
+    const dateStringToTimestamp = (dateStr: string) => {
+        if (!dateStr) return Math.floor(Date.now() / 1000);
+        return Math.floor(new Date(dateStr).getTime() / 1000);
+    };
+
     // Fallback defaults
     const [title, setTitle] = useState(taskToEdit?.title || '');
     const [projectId, setProjectId] = useState(taskToEdit?.projectId || state.projects[0]?.id || '');
     const [ownerId, setOwnerId] = useState(taskToEdit?.ownerId || state.currentUser?.id || state.users[0]?.id || '');
     const [startDate, setStartDate] = useState(taskToEdit?.startDate || 1);
+    const [startDateInput, setStartDateInput] = useState(timestampToDateString(taskToEdit?.startDate));
     const [duration, setDuration] = useState(taskToEdit?.duration || 1);
+    const [deadlineInput, setDeadlineInput] = useState(() => {
+        if (taskToEdit?.startDate && taskToEdit?.duration) {
+            const deadline = taskToEdit.startDate + (taskToEdit.duration * 7 * 24 * 60 * 60);
+            return timestampToDateString(deadline);
+        }
+        return '';
+    });
     const [status, setStatus] = useState<TaskStatus>(taskToEdit?.status || 'On Track');
     const [priority, setPriority] = useState<Priority>(taskToEdit?.priority || 'Medium');
 
     const currentUserId = state.currentUser?.id || user?.id;
+
+    // Update duration when deadline changes
+    const handleDeadlineChange = (deadlineStr: string) => {
+        setDeadlineInput(deadlineStr);
+        if (startDateInput && deadlineStr) {
+            const start = dateStringToTimestamp(startDateInput);
+            const end = dateStringToTimestamp(deadlineStr);
+            const durationInWeeks = Math.max(1, Math.ceil((end - start) / (7 * 24 * 60 * 60)));
+            setDuration(durationInWeeks);
+        }
+    };
+
+    // Update deadline when start date changes
+    const handleStartDateChange = (startStr: string) => {
+        setStartDateInput(startStr);
+        if (startStr) {
+            setStartDate(dateStringToTimestamp(startStr));
+            if (deadlineInput) {
+                const start = dateStringToTimestamp(startStr);
+                const end = dateStringToTimestamp(deadlineInput);
+                const durationInWeeks = Math.max(1, Math.ceil((end - start) / (7 * 24 * 60 * 60)));
+                setDuration(durationInWeeks);
+            }
+        }
+    };
 
     const handleDelete = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -890,25 +962,34 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Start Week</label>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Start Date</label>
                             <input
-                                type="number"
-                                min="1" max="12"
-                                value={startDate}
-                                onChange={e => setStartDate(Number(e.target.value))}
+                                type="date"
+                                value={startDateInput}
+                                onChange={e => handleStartDateChange(e.target.value)}
                                 className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
                             />
                         </div>
                         <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Duration (W)</label>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Deadline</label>
                             <input
-                                type="number"
-                                min="1" max="12"
-                                value={duration}
-                                onChange={e => setDuration(Number(e.target.value))}
+                                type="date"
+                                value={deadlineInput}
+                                onChange={e => handleDeadlineChange(e.target.value)}
                                 className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
                             />
                         </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Duration (Weeks)</label>
+                        <input
+                            type="number"
+                            min="1" max="52"
+                            value={duration}
+                            onChange={e => setDuration(Number(e.target.value))}
+                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                        />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -994,13 +1075,14 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     );
 };
 
-const AddProjectModal = ({ onClose }: { onClose: () => void }) => {
+const AddProjectModal = ({ onClose, onSuccess }: { onClose: () => void, onSuccess: () => void }) => {
     const { state, dispatch } = useContext(AppContext)!;
     const { jwt } = useAuth();
     const [name, setName] = useState('');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        onSuccess(); 
         try {
             const response = await fetch(`${API_BASE_URL}/createProject`, {
                 method: 'POST',
@@ -1009,7 +1091,9 @@ const AddProjectModal = ({ onClose }: { onClose: () => void }) => {
             });
             if (!response.ok) throw new Error('Failed to create project');
             
-            // Refresh data
+            const newProject = await response.json();
+            
+            // Refresh full data to ensure everything is in sync
             const data = await MockAPI.fetchData(jwt!);
             dispatch({ type: 'INIT_DATA', payload: data });
             onClose();
@@ -1018,6 +1102,7 @@ const AddProjectModal = ({ onClose }: { onClose: () => void }) => {
             alert('Failed to create project');
         }
     };
+    
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -1686,6 +1771,12 @@ export default function RoadmapPage() {
     const loading = state.isLoading;
     const { viewingDependenciesFor } = state;
     const personas = ['P1', 'P2', 'P3'] // Dummy
+    const [showPopUp, setShowPopUp] = useState(false);
+    
+    const triggerProjectPopup = () => {
+        setShowPopUp(true);
+        setTimeout(() => setShowPopUp(false), 3000);
+    };
 
     // Initial Data Fetch
     useEffect(() => {
@@ -2107,9 +2198,12 @@ export default function RoadmapPage() {
                     }}
                     taskToEdit={taskToEdit} />)}
 
-                    {/* Add Project Modal */}
+{/* Add Project Modal */}
                     {addProjectVisible && (
-                        <AddProjectModal onClose={() => setAddProjectVisible(false)} />
+                        <AddProjectModal 
+                            onClose={() => setAddProjectVisible(false)} 
+                            onSuccess={triggerProjectPopup}
+                        />
                     )}
 
                     {/* Delete Project Modal */}
@@ -2147,12 +2241,31 @@ export default function RoadmapPage() {
                     )}
 
                     {/* NEW: Dependency Panel */}
+{/* NEW: Dependency Panel */}
                     {viewingDependenciesFor && (
                         <DependencyPanel 
                             taskId={viewingDependenciesFor}
                             onClose={() => dispatch({ type: 'VIEW_DEPENDENCIES', payload: null })}
                         />
                     )}
+
+                    {/* VIOLET SUCCESS POPUP */}
+                    <AnimatePresence>
+                        {showPopUp && (
+                            <motion.div 
+                                initial={{ opacity: 0, x: 20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: 20 }}
+                                className="fixed top-20 right-10 z-[9999] flex items-center gap-3 bg-violet-700 text-white px-6 py-4 rounded-xl shadow-2xl border border-violet-500/50"
+                            >
+                                <Sparkles className="w-5 h-5 text-white" />
+                                <div>
+                                    <p className="font-bold text-sm">Project Created Successfully!</p>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
                 </div>
 
             </div>

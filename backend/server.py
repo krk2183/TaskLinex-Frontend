@@ -465,7 +465,7 @@ class UsernameLoginRequest(BaseModel):
 class PersonaCreate(BaseModel):
     name: str
     weekly_capacity_hours: float = 40.0
-    user_id: str = "default_user"
+    user_id: str
 
 class PersonaDelete(BaseModel):
     id: str
@@ -1196,11 +1196,14 @@ async def create_dependency(dep: DependencyCreate, user: dict = Depends(get_curr
     dep_id = str(uuid.uuid4())
     created_at = int(datetime.now(timezone.utc).timestamp())
 
+    # Handle both string and enum types for type field
+    dep_type = dep.type.value if hasattr(dep.type, 'value') else dep.type
+
     supabase.table('dependencies').insert({
         'id': dep_id,
         'from_task_id': dep.from_task_id,
         'to_task_id': dep.to_task_id,
-        'type': dep.type.value,
+        'type': dep_type,
         'note': dep.note,
         'created_at': created_at
     }).execute()
@@ -1267,8 +1270,12 @@ async def update_dependency(dependency_id: str, dep_update: DependencyUpdate, us
     task_id = res_dep.data[0]['to_task_id']
 
     updates = {}
-    if dep_update.type: updates['type'] = dep_update.type.value
-    if dep_update.note is not None: updates['note'] = dep_update.note
+    if dep_update.type:
+        # Handle both string and enum types
+        dep_type = dep_update.type.value if hasattr(dep_update.type, 'value') else dep_update.type
+        updates['type'] = dep_type
+    if dep_update.note is not None: 
+        updates['note'] = dep_update.note
 
     if not updates:
         raise HTTPException(status_code=400, detail="No update fields provided")
@@ -1365,52 +1372,68 @@ async def get_envoy_friction(task_id: str, user: dict = Depends(get_current_user
 
 @app.post("/envoy/suggest")
 async def suggest(req: EnvoyRequest, request: Request, user: dict = Depends(get_current_user)):
+    """Generate AI-powered task optimization suggestions"""
     user_id = user['sub']
 
-    rows = []
-    if req.all or not req.task_id:
-        # fetch all tasks for this user
-        res_t = supabase.table('tasks').select(
-            'id, title, status, priority, plannedDuration, dependencyIds'
-        ).eq('ownerId', user_id).execute()
-        rows = res_t.data
-    else:
-        # single task
-        res_t = supabase.table('tasks').select(
-            'id, title, status, priority, plannedDuration, dependencyIds'
-        ).eq('id', req.task_id).execute()
-        rows = res_t.data
+    try:
+        rows = []
+        if req.all or not req.task_id:
+            # fetch all tasks for this user
+            res_t = supabase.table('tasks').select(
+                'id, title, status, priority, plannedDuration, dependencyIds'
+            ).eq('ownerId', user_id).execute()
+            rows = res_t.data
+        else:
+            # single task
+            res_t = supabase.table('tasks').select(
+                'id, title, status, priority, plannedDuration, dependencyIds'
+            ).eq('id', req.task_id).execute()
+            rows = res_t.data
 
-    # parse dependencies
-    tasks_list = []
-    for row in rows:
-        dep_ids = row.get('dependencyIds')
-        if isinstance(dep_ids, str):
-            dep_ids = safe_json_loads(dep_ids) or []
-        tasks_list.append({
-            "id": row['id'],
-            "title": row['title'],
-            "status": row['status'],
-            "priority": row['priority'],
-            "plannedDuration": row['plannedDuration'],
-            "dependencyIds": dep_ids
-        })
+        if not rows:
+            return {"task_id": req.task_id, "proposals": []}
 
-    parsed = await generate_envoy_proposals(tasks_list, req.context_text)
+        # parse dependencies
+        tasks_list = []
+        for row in rows:
+            dep_ids = row.get('dependencyIds')
+            if isinstance(dep_ids, str):
+                dep_ids = safe_json_loads(dep_ids) or []
+            tasks_list.append({
+                "id": row['id'],
+                "title": row['title'],
+                "status": row['status'],
+                "priority": row['priority'],
+                "plannedDuration": row['plannedDuration'],
+                "dependencyIds": dep_ids
+            })
 
-    proposals = [
-        {
-            "id": str(uuid.uuid4()),
-            "field": p.get("field", ""),
-            "suggested": p.get("suggested", ""),
-            "reason": p.get("reason", "")
-        }
-        for p in parsed if isinstance(p, dict)
-    ]
+        parsed = await generate_envoy_proposals(tasks_list, req.context_text or "optimize workflow")
 
-    log_event(user_id, "ai_call", "envoy_suggest", f"Requested suggestions for {len(tasks_list)} task(s)")
+        proposals = [
+            {
+                "id": str(uuid.uuid4()),
+                "task_id": p.get("task_id", ""),
+                "field": p.get("field", ""),
+                "suggested": p.get("suggested", ""),
+                "reason": p.get("reason", ""),
+                "priority": "MEDIUM"
+            }
+            for p in parsed if isinstance(p, dict)
+        ]
 
-    return {"task_id": req.task_id, "proposals": proposals}
+        log_event(user_id, "ai_call", "envoy_suggest", f"Requested suggestions for {len(tasks_list)} task(s)")
+
+        return {"task_id": req.task_id, "proposals": proposals}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Suggest error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate suggestions: {str(e)}"
+        )
 
 @app.post("/envoy/apply")
 def apply(req: EnvoyRequest, user: dict = Depends(get_current_user)):
@@ -1464,6 +1487,178 @@ def apply(req: EnvoyRequest, user: dict = Depends(get_current_user)):
         print(f"Apply Error: {e}")
         return {"error": str(e)}
 
+@app.post("/envoy/persona-switch")
+async def persona_switch(req: dict, user: dict = Depends(get_current_user)):
+    """Log persona switching activity"""
+    user_id = user.get('sub')
+    
+    try:
+        # Log the persona switch to activity log or a separate tracking table
+        event_id = str(uuid.uuid4())
+        
+        log_event(
+            user_id,
+            "persona_switch",
+            req.get('personaName', 'Unknown'),
+            f"User switched to persona: {req.get('personaName')}"
+        )
+        
+        return {"status": "success", "message": "Persona switch logged"}
+    except Exception as e:
+        print(f"Persona switch logging error: {e}")
+        # Don't fail the request if logging fails
+        return {"status": "warning", "message": "Switch succeeded but logging failed"}
+
+@app.post("/envoy/decompose")
+async def decompose_tasks(req: dict, user: dict = Depends(get_current_user)):
+    """
+    Run the task decomposer/assignment engine with specified settings.
+    Reassigns tasks based on optimization mode and AI engine preference.
+    """
+    user_id = user.get('sub')
+    
+    try:
+        optimization_mode = req.get('optimizationMode', 'stability')
+        assignment_engine = req.get('assignmentEngine', 'gemini')
+        task_ids = req.get('tasks', [])
+        
+        # If no specific tasks, get all user's tasks
+        if not task_ids:
+            res = supabase.table('tasks').select('id').eq('ownerId', user_id).execute()
+            task_ids = [t['id'] for t in res.data]
+        
+        if not task_ids:
+            return {
+                "status": "success",
+                "message": "No tasks to process",
+                "reassigned": 0
+            }
+        
+        # Fetch task details
+        tasks_res = supabase.table('tasks').select(
+            'id, title, status, priority, plannedDuration, personaId'
+        ).in_('id', task_ids).execute()
+        
+        tasks = tasks_res.data
+        
+        # Get available personas
+        personas_res = supabase.table('personas').select('id, name').eq('user_id', user_id).execute()
+        personas = personas_res.data
+        
+        if not personas:
+            return {
+                "status": "error",
+                "message": "No personas available for assignment"
+            }
+        
+        # Build AI prompt for task assignment
+        prompt = f"""
+            You are an intelligent task assignment system. Assign the following tasks to the most appropriate personas.
+
+            OPTIMIZATION MODE: {optimization_mode}
+            - velocity: Prioritize speed and parallel execution
+            - stability: Prioritize reliable, tested workflows
+            - quality: Prioritize thoroughness and attention to detail
+
+            AVAILABLE PERSONAS:
+            {json.dumps([{'id': p['id'], 'name': p['name']} for p in personas])}
+
+            TASKS TO ASSIGN:
+            {json.dumps([{
+                'id': t['id'],
+                'title': t['title'],
+                'status': t['status'],
+                'priority': t['priority'],
+                'currentPersona': t.get('personaId')
+            } for t in tasks])}
+
+            Return ONLY a JSON array of assignments in this format:
+            [
+                {{
+                    "task_id": "task-uuid",
+                    "persona_id": "persona-uuid",
+                    "reason": "Brief explanation"
+                }}
+            ]
+
+            Consider the optimization mode when making assignments. Don't reassign if current assignment is already optimal.
+            """
+                    
+        # Call AI engine based on preference
+        raw_response = None
+        if assignment_engine == "gemini":
+            raw_response = await call_gemini(prompt)
+        elif assignment_engine == "asus":
+            raw_response = await call_external_model(ASUS_LOCAL_URL, prompt)
+        elif assignment_engine == "mini":
+            raw_response = await call_external_model(MINI_ONLINE_URL, prompt)
+        
+        if not raw_response:
+            raise HTTPException(
+                status_code=503,
+                detail=f"AI engine '{assignment_engine}' failed to respond"
+            )
+        
+        # Parse response
+        assignments = safe_json_loads(raw_response)
+        
+        if not assignments or not isinstance(assignments, list):
+            raise HTTPException(
+                status_code=500,
+                detail="AI returned invalid assignment format"
+            )
+        
+        # Apply assignments
+        reassigned_count = 0
+        for assignment in assignments:
+            task_id = assignment.get('task_id')
+            persona_id = assignment.get('persona_id')
+            reason = assignment.get('reason', 'AI recommendation')
+            
+            if not task_id or not persona_id:
+                continue
+            
+            # Verify persona belongs to user
+            if not any(p['id'] == persona_id for p in personas):
+                continue
+            
+            # Update task
+            try:
+                supabase.table('tasks').update({
+                    'personaId': persona_id
+                }).eq('id', task_id).eq('ownerId', user_id).execute()
+                
+                reassigned_count += 1
+                
+                # Log the assignment
+                log_event(
+                    user_id,
+                    'task_reassignment',
+                    task_id,
+                    f"Reassigned by Envoy ({assignment_engine}): {reason}"
+                )
+            except Exception as e:
+                print(f"Failed to assign task {task_id}: {e}")
+                continue
+        
+        return {
+            "status": "success",
+            "message": f"Successfully processed {len(assignments)} assignments",
+            "reassigned": reassigned_count,
+            "total_tasks": len(tasks),
+            "engine_used": assignment_engine,
+            "mode": optimization_mode
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Decompose error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Task decomposition failed: {str(e)}"
+        )
+
 @app.get('/renderPersona')
 async def get_personas(user: dict = Depends(get_current_user)):
     """Get ONLY the current user's personas"""
@@ -1479,18 +1674,59 @@ async def get_personas(user: dict = Depends(get_current_user)):
 
 @app.post('/createPersona')
 async def createPersona(p: PersonaCreate, user: dict = Depends(get_current_user)):
-    new_id = str(uuid.uuid4())
-    data = p.dict()
-    data['id'] = new_id
-    supabase.table('personas').insert(data).execute()
-    return data
+    """Create a new persona for the current user"""
+    user_id = user.get('sub')
+    
+    # Validate that the user_id matches
+    if p.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Cannot create personas for other users")
+    
+    try:
+        new_id = str(uuid.uuid4())
+        data = {
+            'id': new_id,
+            'name': p.name,
+            'weekly_capacity_hours': p.weekly_capacity_hours,
+            'user_id': user_id
+        }
+        
+        result = supabase.table('personas').insert(data).execute()
+        
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to create persona")
+        
+        return result.data[0]
+    except Exception as e:
+        print(f"Error creating persona: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create persona: {str(e)}")
 
 @app.post('/deletePersona')
 async def deletePersona(data: PersonaDelete, user: dict = Depends(get_current_user)):
-    res = supabase.table('personas').delete().eq('id', data.id).execute()
-    if not res.data:
-        return {"message": "Persona not found, nothing deleted"}
-    return {"message": "Persona deleted successfully"}
+    """Delete a persona owned by the current user"""
+    user_id = user.get('sub')
+    
+    try:
+        # First verify the persona belongs to this user
+        check = supabase.table('personas').select('user_id').eq('id', data.id).execute()
+        
+        if not check.data:
+            raise HTTPException(status_code=404, detail="Persona not found")
+        
+        if check.data[0]['user_id'] != user_id:
+            raise HTTPException(status_code=403, detail="Cannot delete other users' personas")
+        
+        # Now delete it
+        res = supabase.table('personas').delete().eq('id', data.id).execute()
+        
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Persona not found or already deleted")
+        
+        return {"message": "Persona deleted successfully", "deleted_id": data.id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting persona: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete persona: {str(e)}")
 
 
 @app.post('/users/{user_id}/change-password')

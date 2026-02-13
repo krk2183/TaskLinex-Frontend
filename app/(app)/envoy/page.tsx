@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useCallback } from 'react';
 import {
     Activity,
     Cpu,
@@ -30,6 +31,7 @@ const EnvoyConsole = () => {
     // --- STATE ---
     const [activePersona, setActivePersona] = useState('Builder');
     const [optimizationMode, setOptimizationMode] = useState('stability');
+    const [assignmentEngine, setAssignmentEngine] = useState<'gemini' | 'asus' | 'mini'>('gemini');
     
     // UI State für Modals & Loading
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -54,13 +56,12 @@ const EnvoyConsole = () => {
             delta: '+12%'
         }
     ]);
-
+    
     // --- FETCH LOGIC ---
     const fetchPersonas = async () => {
         if (!jwt || !userId) return;
         
         try {
-            // FIXED: This now only returns the current user's personas from the backend
             const data = await api.get('/renderPersona', jwt);
             
             // Map the personas from the database
@@ -81,8 +82,9 @@ const EnvoyConsole = () => {
                 const uniqueNew = dbPersonas.filter((x: any) => !existingIds.has(x.id));
                 return [...staticPersonas, ...uniqueNew];
             });
-        } catch (error) {
-            console.warn("Failed to fetch personas:", error);
+        } catch (error: any) {
+            console.error("Failed to fetch personas:", error);
+            setError(`Failed to load personas: ${error.message || 'Unknown error'}`);
         }
     };
 
@@ -91,10 +93,10 @@ const EnvoyConsole = () => {
         
         try {
             const data = await api.get('/renderTask', jwt);
-            // FIXED: Filter to only show tasks owned by the current user
             setTasks(data.filter((t: any) => t.ownerId === userId));
-        } catch (e) {
+        } catch (e: any) {
             console.error("Failed to fetch tasks:", e);
+            setError(`Failed to load tasks: ${e.message || 'Unknown error'}`);
         }
     };
 
@@ -109,21 +111,21 @@ const EnvoyConsole = () => {
         }
     };
     
-    const fetchSuggestions = async () => {
+    const fetchSuggestions = useCallback(async () => {
         if (!jwt || !userId) return;
 
         try {
             const data = await api.post('/envoy/suggest', {
                 all: true,
-                context_text: "optimize my workflow"
+                context_text: `optimize my workflow with ${optimizationMode} mode and ${assignmentEngine} engine`
             }, jwt);
 
             setSuggestions(Array.isArray(data.proposals) ? data.proposals : []);
-        } catch (err) {
+        } catch (err: any) {
             console.error("Failed to load envoy suggestions:", err);
             setSuggestions([]);
         }
-    };
+    }, [jwt, userId, optimizationMode, assignmentEngine, api]); 
 
 
 
@@ -140,7 +142,7 @@ const EnvoyConsole = () => {
                     fetchTasks(),
                     fetchInterventions()
                 ]);
-            } catch (err) {
+            } catch (err: any) {
                 console.error("Error loading data:", err);
                 setError("Failed to load data. Please refresh the page.");
             } finally {
@@ -175,9 +177,22 @@ const EnvoyConsole = () => {
         return JSON.parse(raw);
     };
 
-    const handlePersonaClick = (name: string) => {
-        setActivePersona(name);
-        addToSession(name);
+    const handlePersonaClick = async (name: string) => {
+        try {
+            setActivePersona(name);
+            addToSession(name);
+            
+            // Optional: Notify backend about persona switch
+            if (jwt && userId) {
+                await api.post('/envoy/persona-switch', {
+                    userId,
+                    personaName: name,
+                    timestamp: Date.now()
+                }, jwt).catch(err => console.warn('Failed to log persona switch:', err));
+            }
+        } catch (error) {
+            console.error('Error switching persona:', error);
+        }
     };
 
     // --- CREATE / DELETE PERSONAS ---
@@ -186,18 +201,18 @@ const EnvoyConsole = () => {
 
         try {
             await api.post('/createPersona', {
-                userId: userId,
+                user_id: userId,
                 name: newPersonaName.trim(),
-                weeklyCapacityHours: 40,
-                role: 'Member'
+                weekly_capacity_hours: 40
             }, jwt);
 
             await fetchPersonas();
             setShowCreateModal(false);
             setNewPersonaName('');
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to create persona:', err);
-            alert('Failed to create persona');
+            setError(`Failed to create persona: ${err.message || 'Unknown error'}`);
+            alert(`Failed to create persona: ${err.message || 'Unknown error'}`);
         }
     };
 
@@ -205,27 +220,69 @@ const EnvoyConsole = () => {
         if (!showDeleteModal || !jwt) return;
 
         try {
-            await api.delete(`/deletePersona/${showDeleteModal.id}`, jwt);
+            await api.post('/deletePersona', {
+                id: showDeleteModal.id
+            }, jwt);
+            
             await fetchPersonas();
             setShowDeleteModal(null);
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to delete persona:', err);
-            alert('Failed to delete persona');
+            setError(`Failed to delete persona: ${err.message || 'Unknown error'}`);
+            alert(`Failed to delete persona: ${err.message || 'Unknown error'}`);
         }
     };
 
     // --- SIMULATION / DECOMPOSITION ---
     const runDecomposer = async () => {
+        // 1. SAFETY GUARD: If already running, or no auth, stop.
+        if (!jwt || !userId || isSimulatingProcess) return;
+        
         setIsSimulatingProcess(true);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        setIsSimulatingProcess(false);
-        alert('Decomposer ran successfully! (Simulated)');
+        
+        try {
+            const response = await api.post('/envoy/decompose', {
+                userId,
+                optimizationMode,
+                assignmentEngine,
+                tasks: tasks.map(t => t.id)
+            }, jwt);
+            
+            setIsSimulatingProcess(false);
+            
+            // Refresh tasks
+            await fetchTasks();
+            
+
+        } catch (error: any) {
+            setIsSimulatingProcess(false);
+            console.error('Decomposer error:', error);
+            // Keep alerts for errors so the user knows why it failed
+            alert(`Decomposer failed: ${error.message || 'Unknown error'}`);
+        }
     };
 
     const handleAcceptSuggestion = async (suggestion: any, idx: number) => {
-        console.log('Accepting suggestion:', suggestion);
-        setSuggestions(prev => prev.filter((_, i) => i !== idx));
-        alert('Suggestion accepted! Changes will be applied.');
+        if (!jwt || !userId) return;
+        
+        try {
+            // Apply the suggestion via the backend
+            const response = await api.post('/envoy/apply', {
+                task_id: suggestion.task_id || null,
+                proposals: [suggestion]
+            }, jwt);
+            
+            // Remove from UI
+            setSuggestions(prev => prev.filter((_, i) => i !== idx));
+            
+            // Refresh tasks to see the changes
+            await fetchTasks();
+            
+            alert(`Suggestion accepted!\n\nApplied: ${response.applied_fields?.join(', ') || 'changes'}\nSkipped: ${response.skipped_fields?.join(', ') || 'none'}`);
+        } catch (error: any) {
+            console.error('Failed to accept suggestion:', error);
+            alert(`Failed to apply suggestion: ${error.message || 'Unknown error'}`);
+        }
     };
 
     const handleDismissSuggestion = (idx: number) => {
@@ -334,8 +391,17 @@ const EnvoyConsole = () => {
 
                 {/* Error Display */}
                 {error && (
-                    <div className="mb-6 bg-red-900/20 border border-red-900/50 p-4 rounded-[12px]">
-                        <p className="text-red-400 text-sm">{error}</p>
+                    <div className="mb-6 bg-red-900/20 border border-red-900/50 p-4 rounded-[12px] flex items-start gap-3">
+                        <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                            <p className="text-red-400 text-sm">{error}</p>
+                            <button 
+                                onClick={() => setError(null)}
+                                className="text-xs text-red-300 hover:text-red-200 mt-2 underline"
+                            >
+                                Dismiss
+                            </button>
+                        </div>
                     </div>
                 )}
 
@@ -524,14 +590,17 @@ const EnvoyConsole = () => {
                                     <div className="p-5 flex-1">
                                         <div className="flex justify-between items-start mb-3">
                                             <h3 className="text-white font-medium font-mono text-sm uppercase">
-                                                {suggestion.type || 'ENVOY_PROPOSAL'}
+                                                {suggestion.field || 'ENVOY_PROPOSAL'}
                                             </h3>
                                             <span className="text-xs bg-violet-900/30 text-violet-300 px-2 py-1 rounded font-mono border border-violet-900/50">
                                                 {suggestion.priority || 'MEDIUM'}
                                             </span>
                                         </div>
+                                        <p className="text-sm text-gray-400 mb-2 leading-relaxed">
+                                            <span className="font-bold text-violet-300">Suggested:</span> {suggestion.suggested || 'N/A'}
+                                        </p>
                                         <p className="text-sm text-gray-400 mb-4 leading-relaxed">
-                                            {suggestion.message || suggestion.rationale || 'Optimize task workflow'}
+                                            {suggestion.reason || suggestion.message || suggestion.rationale || 'Optimize task workflow'}
                                         </p>
                                         <div className="flex gap-3">
                                             <button 
@@ -571,18 +640,18 @@ const EnvoyConsole = () => {
                         </div>
 
                         <div className="bg-[#121214] border border-gray-800 p-6 rounded-[12px]">
-                            <div className="grid grid-cols-2 gap-8">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                 {/* Left Controls */}
                                 <div className="space-y-6">
                                     <div>
                                         <label className="block text-xs font-mono text-gray-500 mb-2">OPTIMIZATION GOAL</label>
                                         <div className="flex bg-[#0c0c0e] p-1 rounded-[12px] border border-gray-800">
-                                            {['Velocity', 'Stability', 'Quality'].map((mode) => (
+                                            {['velocity', 'stability', 'quality'].map((mode) => (
                                                 <button
                                                     key={mode}
-                                                    onClick={() => setOptimizationMode(mode.toLowerCase())}
+                                                    onClick={() => setOptimizationMode(mode)}
                                                     className={`flex-1 py-1.5 text-xs font-medium uppercase tracking-wide rounded-[12px] transition-all
-                                                    ${optimizationMode === mode.toLowerCase()
+                                                    ${optimizationMode === mode
                                                             ? 'bg-gray-700 text-white shadow-sm'
                                                             : 'text-gray-500 hover:text-gray-300'
                                                         }`}
@@ -592,36 +661,64 @@ const EnvoyConsole = () => {
                                             ))}
                                         </div>
                                     </div>
+                                    
+                                    <div>
+                                        <label className="block text-xs font-mono text-gray-500 mb-2">AI ENGINE</label>
+                                        <div className="flex bg-[#0c0c0e] p-1 rounded-[12px] border border-gray-800">
+                                            {['Envoy Mega', 'Envoy Pulse', 'Envoy Nano'].map((engine) => (
+                                                <button
+                                                    key={engine}
+                                                    onClick={() => setAssignmentEngine(engine as 'gemini' | 'asus' | 'mini')}
+                                                    className={`flex-1 py-1.5 text-xs font-medium uppercase tracking-wide rounded-[12px] transition-all
+                                                    ${assignmentEngine === engine
+                                                            ? 'bg-violet-700 text-white shadow-sm'
+                                                            : 'text-gray-500 hover:text-gray-300'
+                                                        }`}
+                                                >
+                                                    {engine}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    
                                     <div>
                                         <label className="block text-xs font-mono text-gray-500 mb-2">TARGET SCOPE</label>
                                         <select className="w-full bg-[#0c0c0e] border border-gray-800 text-gray-300 text-sm p-2 font-mono focus:border-violet-700 focus:outline-none rounded">
-                                            <option>Q3_Milestone_Alpha</option>
-                                            <option>Weekly_Backlog</option>
-                                            <option>Hotfix_Deployment</option>
+                                            <option>All Tasks</option>
+                                            <option>Active Projects</option>
+                                            <option>High Priority</option>
                                         </select>
                                     </div>
                                 </div>
 
                                 {/* Right Preview/Action */}
                                 <div className="flex flex-col justify-end">
-                                    <div className="mb-4 text-right">
-                                        <span className="block text-xs font-mono text-gray-500">ESTIMATED REALLOCATION TIME</span>
-                                        <span className="text-xl text-white font-mono">
-                                            {isSimulatingProcess ? 'CALCULATING...' : '140ms'}
-                                        </span>
+                                    <div className="mb-4 space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-mono text-gray-500">ACTIVE ENGINE</span>
+                                            <span className="text-sm text-violet-400 font-mono uppercase">{assignmentEngine}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-mono text-gray-500">OPTIMIZATION MODE</span>
+                                            <span className="text-sm text-white font-mono uppercase">{optimizationMode}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-mono text-gray-500">TASKS TO PROCESS</span>
+                                            <span className="text-xl text-white font-mono">{tasks.length}</span>
+                                        </div>
                                     </div>
                                     <button 
                                         onClick={runDecomposer}
-                                        disabled={isSimulatingProcess}
+                                        disabled={isSimulatingProcess || tasks.length === 0}
                                         className={`w-full py-3 text-sm rounded-[12px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 transition-all
-                                            ${isSimulatingProcess 
-                                                ? 'bg-violet-900/50 text-white/50 cursor-wait' 
+                                            ${isSimulatingProcess || tasks.length === 0
+                                                ? 'bg-violet-900/50 text-white/50 cursor-not-allowed' 
                                                 : 'bg-violet-700 hover:bg-violet-600 text-white shadow-[0_0_20px_rgba(109,40,217,0.4)] hover:shadow-[0_0_25px_rgba(109,40,217,0.6)]'
                                             }`}
                                     >   
                                         {isSimulatingProcess ? (
                                             <>
-                                                <Activity className="w-4 h-4 animate-spin" /> Processing
+                                                <Loader2 className="w-4 h-4 animate-spin" /> Processing
                                             </>
                                         ) : (
                                             <>
