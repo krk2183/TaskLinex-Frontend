@@ -11,7 +11,7 @@ import { useAuth, supabase } from "@/app/providers/AuthContext";
 const Logo = () => (
   <div className="flex items-center gap-2 mb-12">
     <span className="text-3xl font-bold tracking-tight select-none">
-      <span className="text-white ">Task</span>
+      <span className="text-white">Task</span>
       <span className="text-violet-500">Linex</span>
     </span>
   </div>
@@ -26,13 +26,13 @@ const InputField = ({
   value,
   onChange
 }: { 
-  label: string, 
-  type: string, 
-  placeholder: string, 
-  icon: any,
-  name: string,
-  value: string,
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+  label: string; 
+  type: string; 
+  placeholder: string; 
+  icon: React.ComponentType<{ className?: string }>;
+  name: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }) => (
   <div className="space-y-2">
     <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -117,8 +117,9 @@ export default function LoginPage() {
           }
           
           emailToUse = userData.email;
-        } catch (err: any) {
-          throw new Error(err.message || 'Unable to find account with that username.');
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : 'Unable to find account with that username.';
+          throw new Error(errorMessage);
         }
       }
       
@@ -126,9 +127,10 @@ export default function LoginPage() {
       await login(emailToUse, data.password);
       // Redirect is now handled by AuthContext upon successful login
       
-    } catch (err: any) {
+    } catch (err) {
       console.error("Login error:", err);
-      setError(err.message || "Invalid credentials. Please try again.");
+      const errorMessage = err instanceof Error ? err.message : "Invalid credentials. Please try again.";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -224,7 +226,7 @@ export default function LoginPage() {
           </div>
 
           <div className="mt-5 flex justify-center w-full">
-              <div className="mt-0.5 text-sm">Don't have an account?</div> <Link href="/register" className="ml-1 text-violet-400 hover:text-violet-300 font-medium">
+              <div className="mt-0.5 text-sm">Don&apos;t have an account?</div> <Link href="/register" className="ml-1 text-violet-400 hover:text-violet-300 font-medium">
               Initialize Workspace
             </Link>
           </div>
