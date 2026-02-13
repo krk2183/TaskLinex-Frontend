@@ -329,6 +329,7 @@ type Action =
     | { type: 'SET_LOADING', payload: boolean }
     | { type: 'TRIGGER_ENVOY', payload: string | null }
     | { type: 'VIEW_DEPENDENCIES', payload: string | null };
+    | { type: 'DELETE_PROJECT'; payload: string };
 
 const initialState: AppState = {
     tasks: [], users: [], projects: [], personas: [],
@@ -381,6 +382,12 @@ function appReducer(state: AppState, action: Action): AppState {
             return { ...state, isLoading: action.payload };
         case 'TRIGGER_ENVOY':
             return { ...state, envoyActive: action.payload };
+        case 'DELETE_PROJECT':
+            return {
+                ...state,
+                projects: state.projects.filter(p => p.id !== action.payload),
+                tasks: state.tasks.filter(t => t.projectId !== action.payload)
+            };
         case 'VIEW_DEPENDENCIES':
             return { ...state, viewingDependenciesFor: action.payload };
         default: return state;
