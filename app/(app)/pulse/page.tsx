@@ -549,11 +549,11 @@ export default function PulsePage() {
         setInviteStatus('animating');
         setTimeout(() => setInviteStatus('idle'), 2000);
 
-        const textToCopy = 'http://192.168.0.117:3000';
+        const textToCopy = 'https://tasklinex.vercel.app';
 
         if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(textToCopy).then(() => {
-                alert("Invite link copied!");
+                alert("App Invite link copied!");
             }).catch(err => {
                 console.error("Error: ", err);
             });
