@@ -446,6 +446,10 @@ export default function SettingsPage() {
                 <div className="p-6">
                     <h1 className="text-xl font-bold tracking-tight mb-1">Settings</h1>
                     <p className="text-xs text-gray-500">TaskLinex Configuration</p>
+                    <p className='text-[15px] text-white font-black bg-gray-700 rounded-lg px-1 py-1 w-fit mt-3'>
+                        Under Development
+                    </p>
+
                 </div>
                 
                 <nav className="px-3 space-y-1">

@@ -13,6 +13,7 @@ import { api } from '@/lib/api';
 
 // --- 1. MOCK DATA & TYPES (Based on your provided Schema) ---
 
+
 const MOCK_USERS = [
   { 
     id: "u1", name: "Alex Chen", avatar: "AC", baseCapacity: 100,
@@ -87,69 +88,137 @@ const SidebarItem = ({ icon: Icon, label, active }) => (
   </div>
 );
 
-// B. Visualization: Dependency Ripple Graph
-const RippleGraph = ({ tasks, onHoverNode }) => {
-  // Simple layout calculation for demo purposes (Layers based on dependencies)
-  // In production, use D3 or Dagre
 
-  const layers = [
-    tasks.filter(t => t.dependencies.length === 0),
-    tasks.filter(t => t.dependencies.length > 0 && t.downstream.length > 0),
-    tasks.filter(t => t.downstream.length === 0 && t.dependencies.length > 0)
-  ];
+type Task = {
+  id: string;
+  priority: "High" | "Medium" | "Low";
+  status: "Blocked" | "Stalled" | "Active";
+};
+
+type Edge = {
+  from_task_id: string;
+  to_task_id: string;
+};
+
+// type GraphResponse = {
+//   tasks: Task[];
+//   edges: Edge[];
+// };
+
+
+export const RippleGraph = ({ onHoverNode }) => {
+  const { userId, jwt } = useAuth();
+  const [graph, setGraph] = useState<{ tasks: any[]; edges: any[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!userId || !jwt) return;
+    let mounted = true;
+
+    (async () => {
+      try {
+        // Use the API helper - ensure your .env has the correct IP!
+        const data = await api.get(`/analytics/ripple?userId=${userId}`, jwt);
+        if (!data || !Array.isArray(data.tasks)) {
+          throw new Error("Invalid ripple graph response");
+        }
+        if (!mounted) return;
+        setGraph(data);
+        setError(null);
+      } catch (err) {
+        console.error("Ripple fetch failed:", err);
+        if (!mounted) return;
+        setError("Failed to load dependency graph");
+      }
+    })();
+
+    return () => { mounted = false; };
+  }, [userId, jwt]);
+
+  // --- POSITIONING LOGIC: ROADMAP STYLE ---
+  const nodePositions = useMemo(() => {
+    const positions: Record<string, { x: number; y: number }> = {};
+    if (!graph?.tasks) return positions;
+
+    const totalTasks = graph.tasks.length;
+    const containerWidth = 800; // Adjust based on your UI
+    
+    graph.tasks.forEach((task, i) => {
+      // Creates a "Roadmap" wave/zigzag pattern
+      // X moves forward for every task
+      const x = 100 + (i * (containerWidth / Math.max(totalTasks, 1)));
+      
+      // Y toggles up and down to form a "path" shape instead of a flat line
+      const y = i % 2 === 0 ? 150 : 250; 
+
+      positions[task.id] = { x, y };
+    });
+
+    return positions;
+  }, [graph]);
+
+  if (error) return <div className="p-4 bg-red-900/20 text-red-500 rounded-lg">{error}</div>;
+  if (!graph) return <div className="animate-pulse text-slate-500">Generating Roadmap...</div>;
 
   return (
-    <div className="relative h-64 w-full flex items-center justify-between px-10">
-      {/* Connecting Lines (SVG) */}
-      <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-30">
+    <div className="relative h-[400px] w-full overflow-hidden bg-slate-950/50 rounded-xl border border-slate-800">
+      <svg className="absolute inset-0 w-full h-full pointer-events-none">
         <defs>
-          <marker id="head" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+          {/* RED ARROW HEAD */}
+          <marker id="arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" />
           </marker>
         </defs>
-        {/* Mocked connector lines for visual demo */}
-        <path d="M 150 128 C 300 128, 300 80, 450 80" stroke="#64748b" strokeWidth="1" fill="none" markerEnd="url(#head)" />
-        <path d="M 150 128 C 300 128, 300 180, 450 180" stroke="#64748b" strokeWidth="1" fill="none" markerEnd="url(#head)" />
-        <path d="M 550 80 C 650 80, 650 128, 750 128" stroke="#64748b" strokeWidth="1" fill="none" markerEnd="url(#head)" />
-        <path d="M 550 180 C 650 180, 650 128, 750 128" stroke="#64748b" strokeWidth="1" fill="none" markerEnd="url(#head)" />
+
+        {graph.edges.map((e, i) => {
+          const from = nodePositions[e.from_task_id];
+          const to = nodePositions[e.to_task_id];
+          if (!from || !to) return null;
+
+          return (
+            <motion.path
+              key={`edge-${i}`}
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: 1 }}
+              d={`M ${from.x} ${from.y} C ${(from.x + to.x) / 2} ${from.y}, ${(from.x + to.x) / 2} ${to.y}, ${to.x} ${to.y}`}
+              stroke="#ef4444" // RED LINES
+              strokeWidth={2}
+              fill="none"
+              markerEnd="url(#arrow-red)"
+            />
+          );
+        })}
       </svg>
 
-      {layers.map((layer, i) => (
-        <div key={i} className="flex flex-col gap-12 z-10">
-          {layer.map(task => (
-            <motion.div
-              key={task.id}
-              whileHover={{ scale: 1.1 }}
-              onMouseEnter={() => onHoverNode(task.id)}
-              onMouseLeave={() => onHoverNode(null)}
-              className={`
-                relative w-12 h-12 rounded-full flex items-center justify-center border-2 shadow-xl cursor-pointer
-                ${task.status === 'Blocked' ? 'bg-red-900/20 border-red-500 text-red-500' : 
-                  task.status === 'Stalled' ? 'bg-amber-900/20 border-amber-500 text-amber-500' : 
-                  'bg-slate-900 border-slate-700 text-slate-400'}
-              `}
-            >
-              {task.status === 'Blocked' && (
-                <motion.div 
-                  className="absolute inset-0 rounded-full border border-red-500"
-                  animate={{ scale: [1, 1.5], opacity: [1, 0] }}
-                  transition={{ repeat: Infinity, duration: 1.5 }}
-                />
-              )}
-              <div className="text-xs font-bold">{task.id.toUpperCase()}</div>
-              
-              {/* Tooltip */}
-              <div className="absolute top-14 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 bg-slate-800 text-xs p-2 rounded w-32 text-center pointer-events-none transition-opacity">
-                {task.title}
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      ))}
+      {graph.tasks.map((task) => {
+        const pos = nodePositions[task.id];
+        if (!pos) return null;
+
+        return (
+          <motion.div
+            key={task.id}
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            style={{
+              position: "absolute",
+              left: pos.x,
+              top: pos.y,
+              transform: "translate(-50%, -50%)",
+            }}
+            onMouseEnter={() => onHoverNode(task.id)}
+            onMouseLeave={() => onHoverNode(null)}
+            className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center border-2 shadow-[0_0_15px_rgba(0,0,0,0.5)] cursor-pointer transition-colors
+              ${task.status === "Blocked" ? "bg-red-500/20 border-red-500" : 
+                task.status === "In Progress" ? "bg-violet-500/20 border-violet-500" : 
+                "bg-slate-800 border-slate-600"}`}
+          >
+             <span className="text-[10px] font-bold text-white uppercase">{task.id.slice(-3)}</span>
+          </motion.div>
+        );
+      })}
     </div>
   );
 };
-
 
 interface CommunicationLeakageProps {
   tasks: Task[];

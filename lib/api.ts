@@ -1,8 +1,7 @@
 // lib/api.ts or utils/api.ts
 // Universal API helper for making authenticated requests
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://192.168.0.113:8000';
 interface RequestOptions {
   method: string;
   headers: HeadersInit;

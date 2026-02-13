@@ -2048,6 +2048,70 @@ async def get_pulse_stats(userId: str, user: dict = Depends(get_current_user)):
         "isNewUser": is_new
     }
 
+@app.get('/analytics/ripple')
+async def get_ripple_graph(userId: str, user: dict = Depends(get_current_user)):
+    # 1. Get all tasks for this user (active only for ripple)
+    res_tasks = supabase.table('tasks').select('id, title, status, priority').eq('ownerId', userId).neq('status', 'Done').execute()
+    my_tasks = res_tasks.data or []
+    
+    if not my_tasks:
+        return {"tasks": [], "edges": []}
+
+    my_task_ids = [t['id'] for t in my_tasks]
+    
+    # 2. Get dependencies (both directions)
+    res_down = supabase.table('dependencies').select('from_task_id, to_task_id').in_('from_task_id', my_task_ids).execute()
+    res_up = supabase.table('dependencies').select('from_task_id, to_task_id').in_('to_task_id', my_task_ids).execute()
+    
+    edges = (res_down.data or []) + (res_up.data or [])
+    
+    # 3. Identify all relevant task IDs
+    all_ids = set(my_task_ids)
+    for e in edges:
+        all_ids.add(e['from_task_id'])
+        all_ids.add(e['to_task_id'])
+        
+    # 4. Fetch details for missing tasks
+    missing_ids = list(all_ids - set(my_task_ids))
+    other_tasks = []
+    if missing_ids:
+        res_others = supabase.table('tasks').select('id, title, status, priority').in_('id', missing_ids).execute()
+        other_tasks = res_others.data or []
+        
+    combined_tasks = my_tasks + other_tasks
+    
+    # 5. Format
+    final_tasks = []
+    seen_ids = set()
+    
+    for t in combined_tasks:
+        if t['id'] in seen_ids: continue
+        seen_ids.add(t['id'])
+        
+        s = "Active"
+        if t.get('status') == 'Blocked': s = "Blocked"
+        elif t.get('status') in ['At Risk', 'Stalled']: s = "Stalled"
+        
+        final_tasks.append({
+            "id": t['id'],
+            "priority": t.get('priority', 'Medium'),
+            "status": s
+        })
+        
+    # Deduplicate edges
+    unique_edges = []
+    seen_edges = set()
+    for e in edges:
+        k = f"{e['from_task_id']}_{e['to_task_id']}"
+        if k not in seen_edges:
+            seen_edges.add(k)
+            unique_edges.append(e)
+
+    return {
+        "tasks": final_tasks,
+        "edges": unique_edges
+    }
+
 @app.get('/analytics/{user_id}')
 async def get_analytics(user_id: str, user: dict = Depends(get_current_user)):
     res_all = supabase.table('tasks').select('*').execute()

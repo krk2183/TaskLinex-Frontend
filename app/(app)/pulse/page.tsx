@@ -313,8 +313,11 @@ const TeamSidebar = ({ members, isNewUser }: { members: TeamMember[], isNewUser:
 // Feed Sections Main Content
 const FeedItem = ({ event, isSample }: { event: PulseEvent, isSample?: boolean }) => {
     // COLOR SCHEME AND ICONOGRAPHY
-    const getStyles = (type: EventType) => {
-        switch(type) {
+    const getStyles = (event: PulseEvent) => {
+        if (event.details === 'Task Deleted') {
+            return { icon: XCircle, color: 'text-rose-500', bg: 'bg-rose-50 dark:bg-rose-900/20', border: 'border-rose-200 dark:border-rose-900' };
+        }
+        switch(event.type) {
             case 'blocker':
                 return { icon: AlertTriangle, color: 'text-rose-500', bg: 'bg-rose-50 dark:bg-rose-900/20', border: 'border-rose-200 dark:border-rose-900' };
             case 'status_change':
@@ -326,9 +329,10 @@ const FeedItem = ({ event, isSample }: { event: PulseEvent, isSample?: boolean }
           }
     };
 
-    const style = getStyles(event.type);
+    const style = getStyles(event);
     const Icon = style.icon;
-
+    const isDeleted = event.details === 'Task Deleted';
+    
     return (
         <div className="flex gap-3 sm:gap-4 relative pb-8 last:pb-0">
             {/* Timeline Line */}
@@ -350,7 +354,7 @@ const FeedItem = ({ event, isSample }: { event: PulseEvent, isSample?: boolean }
             <div className={`flex-1 p-3 sm:p-4 rounded-xl border ${style.border} ${style.bg} relative group transition-all hover:shadow-md ${isSample ? 'opacity-80' : ''}`}>
                 <div className="flex flex-col sm:flex-row sm:justify-between items-start mb-1 gap-1 sm:gap-0">
                     <p className="text-sm text-slate-200">
-                        <span className="font-bold">{event.actor.name}</span> <span className="text-slate-400 font-normal">{event.details}</span> <span className="font-semibold text-indigo-400 hover:underline cursor-pointer">"{event.targetTask}"</span>
+                        <span className="font-bold">{event.actor.name}</span> <span className="text-slate-400 font-normal">{event.details}</span> <span className={`font-semibold ${isDeleted ? 'text-rose-400' : 'text-indigo-400 hover:underline cursor-pointer'}`}>"{event.targetTask}"</span>
                         {isSample && <span className="ml-2 text-[10px] bg-slate-800/50 px-1.5 py-0.5 rounded text-slate-400 border border-slate-700">Sample</span>}
                     </p>
                     <span className="text-xs text-slate-500 whitespace-nowrap ml-0 sm:ml-2">{event.timestamp}</span>
