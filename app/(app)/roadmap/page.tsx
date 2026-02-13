@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
     Check, Eye, Loader2, AlertCircle, Sparkles, Info, ChevronRight, Ban, Hourglass, Lightbulb,
     CheckCircle, ArrowRight, XCircle, FolderPlus, Trash2,
-    GitCommit, Layers, Zap, BrainCircuit, UserCog, LayoutGrid, List, Calendar, RefreshCw, Plus, Search, X, ChevronDown, Unlink, Settings2
+    GitCommit, Layers, Zap, BrainCircuit, UserCog, LayoutGrid, List, Calendar, RefreshCw, Plus, Search, X, ChevronDown, Unlink, Settings2, EyeOff
 } from 'lucide-react';
 import { useAuth } from "@/app/providers/AuthContext";
 
@@ -16,6 +16,7 @@ import { useAuth } from "@/app/providers/AuthContext";
 type TaskStatus = 'On Track' | 'At Risk' | 'Blocked' | 'Completed';
 type Priority = 'High' | 'Medium' | 'Low';
 type ViewMode = 'Week' | 'Month';
+type TimelineView = 'Daily' | 'Weekly' | 'Monthly'; // NEW: Timeline granularity
 type LayoutMode = 'Roadmap' | 'Board' | 'Sprint';
 type DependencyType = 'blocked_by' | 'waiting_on' | 'helpful_if_done_first';
 
@@ -309,6 +310,8 @@ interface AppState {
     filters: FilterState;
     layoutMode: LayoutMode;
     viewMode: ViewMode;
+    timelineView: TimelineView; // NEW: Daily/Weekly/Monthly granularity
+    hiddenProjects: Set<string>; // NEW: Track hidden projects
     envoyActive: string | null; // Task ID interacting with Envoy
     viewingDependenciesFor: string | null;
 }
@@ -319,6 +322,8 @@ type Action =
     | { type: 'SET_FILTER', payload: Partial<FilterState> }
     | { type: 'SET_LAYOUT_MODE', payload: LayoutMode }
     | { type: 'SET_VIEW_MODE', payload: ViewMode }
+    | { type: 'SET_TIMELINE_VIEW', payload: TimelineView } // NEW
+    | { type: 'TOGGLE_PROJECT_VISIBILITY', payload: string } // NEW
     | { type: 'TOGGLE_PERSONA', payload: string }
     | { type: 'ADD_TASK', payload: Task[] }
     | { type: 'UPDATE_TASKS', payload: Task[] }
@@ -333,6 +338,8 @@ const initialState: AppState = {
     isLoading: true,
     layoutMode: 'Roadmap',
     viewMode: 'Week',
+    timelineView: 'Weekly', // NEW: Default to weekly view
+    hiddenProjects: new Set(), // NEW: Track hidden projects
     envoyActive: null,
     viewingDependenciesFor: null,
     filters: { query: '', owners: [], statuses: [], onlyMyPersonas: false }
@@ -359,6 +366,14 @@ function appReducer(state: AppState, action: Action): AppState {
             return { ...state, filters: { ...state.filters, ...action.payload } };
         case 'SET_VIEW_MODE':
             return { ...state, viewMode: action.payload };
+        case 'SET_TIMELINE_VIEW': // NEW
+            return { ...state, timelineView: action.payload };
+        case 'TOGGLE_PROJECT_VISIBILITY': { // NEW
+            const set = new Set(state.hiddenProjects);
+            if (set.has(action.payload)) set.delete(action.payload);
+            else set.add(action.payload);
+            return { ...state, hiddenProjects: set };
+        }
         case 'TOGGLE_PERSONA':
             return { ...state, activePersonaId: action.payload === state.activePersonaId ? null : action.payload };
         case 'UPDATE_TASKS':
@@ -404,6 +419,46 @@ const PortalTooltip = ({ text, rect }: { text: string, rect: DOMRect }) => {
         </div>,
         document.body
     );
+};
+
+// NEW: Helper functions for timeline view calculations
+const getDateRangeForView = (timelineView: TimelineView, viewMode: ViewMode) => {
+    let totalUnits = 0;
+    let unitDuration = 0; // in days
+
+    if (timelineView === 'Daily') {
+        totalUnits = viewMode === 'Week' ? 7 : 30; // 7 days or 30 days
+        unitDuration = 1;
+    } else if (timelineView === 'Weekly') {
+        totalUnits = viewMode === 'Week' ? 4 : 12; // 4 weeks or 12 weeks
+        unitDuration = 7;
+    } else { // Monthly
+        totalUnits = viewMode === 'Week' ? 3 : 12; // 3 months or 12 months
+        unitDuration = 30;
+    }
+
+    return { totalUnits, unitDuration };
+};
+
+const generateTimelineLabels = (timelineView: TimelineView, totalUnits: number): string[] => {
+    const labels: string[] = [];
+    const now = new Date();
+
+    for (let i = 0; i < totalUnits; i++) {
+        if (timelineView === 'Daily') {
+            const date = new Date(now);
+            date.setDate(date.getDate() + i);
+            labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+        } else if (timelineView === 'Weekly') {
+            labels.push(`W${i + 1}`);
+        } else { // Monthly
+            const date = new Date(now);
+            date.setMonth(date.getMonth() + i);
+            labels.push(date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }));
+        }
+    }
+
+    return labels;
 };
 
 // 4. SUB-COMPONENTS
@@ -1153,6 +1208,60 @@ const DeleteProjectModal = ({ project, onClose, onConfirm }: { project: Project,
                     <button onClick={onConfirm} className="px-4 py-2 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-all shadow-lg shadow-red-900/20">Delete Project</button>
                 </div>
             </div>
+        </div>
+    );
+};
+
+// NEW: Project Visibility Dropdown Component
+const ProjectVisibilityDropdown: React.FC<{ state: AppState; dispatch: React.Dispatch<Action> }> = ({ state, dispatch }) => {
+    const [isOpen, setIsOpen] = useState(false);
+
+    return (
+        <div className="relative">
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+            >
+                <Eye className="w-4 h-4" />
+                Projects
+                <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isOpen && (
+                <>
+                    <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="absolute top-full mt-2 right-0 z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl w-64 max-h-96 overflow-y-auto"
+                    >
+                        <div className="p-2">
+                            <div className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 dark:border-slate-700 mb-2">
+                                Show/Hide Projects
+                            </div>
+                            {state.projects.map(project => {
+                                const isHidden = state.hiddenProjects.has(project.id);
+                                return (
+                                    <button
+                                        key={project.id}
+                                        onClick={() => dispatch({ type: 'TOGGLE_PROJECT_VISIBILITY', payload: project.id })}
+                                        className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-sm transition-colors"
+                                    >
+                                        <span className={`flex-1 text-left ${isHidden ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-300'}`}>
+                                            {project.name}
+                                        </span>
+                                        {isHidden ? (
+                                            <EyeOff className="w-4 h-4 text-slate-400" />
+                                        ) : (
+                                            <Eye className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </motion.div>
+                </>
+            )}
         </div>
     );
 };
@@ -1994,6 +2103,22 @@ export default function RoadmapPage() {
 
                             <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
 
+                            {/* Timeline View Dropdown (NEW) */}
+                            <select
+                                value={state.timelineView}
+                                onChange={(e) => dispatch({ type: 'SET_TIMELINE_VIEW', payload: e.target.value as TimelineView })}
+                                className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                            >
+                                <option value="Daily">Daily View</option>
+                                <option value="Weekly">Weekly View</option>
+                                <option value="Monthly">Monthly View</option>
+                            </select>
+
+                            {/* Project Visibility Dropdown Component - Will be added below */}
+                            <ProjectVisibilityDropdown state={state} dispatch={dispatch} />
+
+                            <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
+
                             <button
                                 onClick={() => setAddProjectVisible(true)}
                                 className="p-1.5 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-slate-800 transition-all"
@@ -2036,21 +2161,32 @@ export default function RoadmapPage() {
 
                         {/* TIMELINE DATES */}
                         <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur border-b border-slate-200 dark:border-slate-800 mb-6">
-                            <div className="grid grid-cols-12 gap-0">
-                                {Array.from({ length: 12 }).map((_, i) => (
-                                    <div key={i} className="py-3 border-r border-slate-200 dark:border-slate-800/50 text-center">
-                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">W{i + 1}</span>
-                                    </div>
-                                ))}
+                            <div className="flex gap-0">
+                                {(() => {
+                                    const { totalUnits } = getDateRangeForView(state.timelineView, state.viewMode);
+                                    const labels = generateTimelineLabels(state.timelineView, totalUnits);
+                                    const cellWidth = state.timelineView === 'Daily' ? '80px' : state.timelineView === 'Weekly' ? '120px' : '150px';
+                                    
+                                    return labels.map((label, i) => (
+                                        <div key={i} className="py-3 border-r border-slate-200 dark:border-slate-800/50 text-center" style={{ minWidth: cellWidth }}>
+                                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{label}</span>
+                                        </div>
+                                    ));
+                                })()}
                             </div>
                         </div>
 
                         <div className="relative">
                             {/* BACKGROUND GRID */}
-                            <div className="absolute inset-0 grid grid-cols-12 pointer-events-none z-0">
-                                {Array.from({ length: 12 }).map((_, i) => (
-                                    <div key={i} className="border-r border-dashed border-slate-200 dark:border-slate-800 h-full" />
-                                ))}
+                            <div className="absolute inset-0 flex pointer-events-none z-0">
+                                {(() => {
+                                    const { totalUnits } = getDateRangeForView(state.timelineView, state.viewMode);
+                                    const cellWidth = state.timelineView === 'Daily' ? '80px' : state.timelineView === 'Weekly' ? '120px' : '150px';
+                                    
+                                    return Array.from({ length: totalUnits }).map((_, i) => (
+                                        <div key={i} className="border-r border-dashed border-slate-200 dark:border-slate-800 h-full" style={{ minWidth: cellWidth }} />
+                                    ));
+                                })()}
                             </div>
 
                             {/* SVG LINES OVERLAY */}
@@ -2083,7 +2219,9 @@ export default function RoadmapPage() {
                                         </p>
                                     </div>
                                 ) : (
-                                    state.projects.map(project => {
+                                    state.projects
+                                        .filter(project => !state.hiddenProjects.has(project.id)) // NEW: Filter out hidden projects
+                                        .map(project => {
                                         const projectTasks = filteredTasks.filter(t => t.projectId === project.id);
                                         const isCollapsed = collapsedProjects.includes(project.id);
 
@@ -2091,7 +2229,7 @@ export default function RoadmapPage() {
                                         const projectUserIds = [...new Set(projectTasks.map(task => task.ownerId))];
                                         const projectUsers = state.users.filter(user => projectUserIds.includes(user.id));
 
-                                        if (projectTasks.length === 0) return null;
+                                        // REMOVED: if (projectTasks.length === 0) return null; // Now showing all projects
 
                                         return (
                                             <div key={project.id}>
@@ -2131,23 +2269,29 @@ export default function RoadmapPage() {
                                                 <div className={`grid transition-all duration-300 ease-in-out ${isCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}>
                                                     <div className="overflow-hidden">
                                                         <div className="relative min-h-[100px] space-y-1">
-                                                            {projectTasks.map(task => (
-                                                                <RoadmapRow
-                                                                    key={task.id}
-                                                                    task={task}
-                                                                    users={state.users}
-                                                                    level={0}
-                                                                    dispatch={dispatch}
-                                                                    envoyActiveTaskId={state.envoyActive}
-                                                                    onEdit={(t) => {
-                                                                        setTaskToEdit(t);
-                                                                        setAVisible(true);
-                                                                    }}
-                                                                    personas={state.personas}
-                                                                    onTaskDrop={(s, t) => setDependencyModal({ sourceId: s, targetId: t })}
-                                                                    parentId={null}
-                                                                />
-                                                            ))}
+                                                            {projectTasks.length === 0 ? (
+                                                                <div className="flex items-center justify-center py-8 text-slate-400 text-sm">
+                                                                    No tasks in this project yet
+                                                                </div>
+                                                            ) : (
+                                                                projectTasks.map(task => (
+                                                                    <RoadmapRow
+                                                                        key={task.id}
+                                                                        task={task}
+                                                                        users={state.users}
+                                                                        level={0}
+                                                                        dispatch={dispatch}
+                                                                        envoyActiveTaskId={state.envoyActive}
+                                                                        onEdit={(t) => {
+                                                                            setTaskToEdit(t);
+                                                                            setAVisible(true);
+                                                                        }}
+                                                                        personas={state.personas}
+                                                                        onTaskDrop={(s, t) => setDependencyModal({ sourceId: s, targetId: t })}
+                                                                        parentId={null}
+                                                                    />
+                                                                ))
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </div>
