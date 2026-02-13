@@ -75,7 +75,15 @@ interface UserSettings {
 // 2. UI COMPONENTS
 // ==========================================
 
-const Toggle = ({ label, description, checked, onChange, disabled }: any) => (
+interface ToggleProps {
+    label: string;
+    description?: string;
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+    disabled?: boolean;
+}
+
+const Toggle = ({ label, description, checked, onChange, disabled }: ToggleProps) => (
     <div className={`flex items-start justify-between py-4 border-b border-gray-100 dark:border-gray-800 last:border-0 ${disabled ? 'opacity-50' : ''}`}>
         <div className="pr-8">
             <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">{label}</h4>
@@ -91,8 +99,8 @@ const Toggle = ({ label, description, checked, onChange, disabled }: any) => (
 );
 
 // --- Section: Personas ---
-const PersonaSection = ({ data, onUpdate }: { data: PersonaSettings, onUpdate: (d: PersonaSettings) => void }) => {
-    const updatePersona = (id: string, field: string, value: any) => {
+const PersonaSection = ({ data, onUpdate }: { data: PersonaSettings; onUpdate: (d: PersonaSettings) => void }) => {
+    const updatePersona = (id: string, field: string, value: string | number | boolean) => {
         const updatedPersonas = data.activePersonas.map(p => p.id === id ? { ...p, [field]: value } : p);
         onUpdate({ ...data, activePersonas: updatedPersonas });
     };
@@ -162,227 +170,151 @@ const PersonaSection = ({ data, onUpdate }: { data: PersonaSettings, onUpdate: (
                             </div>
                             <button
                                 onClick={() => removePersona(persona.id)}
-                                className="ml-4 text-red-400 hover:text-red-600 transition-colors"
+                                className="ml-3 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 p-1.5 rounded transition-colors"
                             >
                                 <Trash2 className="w-4 h-4" />
                             </button>
                         </div>
 
-                        <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <div className="flex justify-between text-xs mb-1">
-                                    <span className="text-gray-500 font-bold uppercase">Weekly Capacity</span>
-                                    <span className="text-gray-700 dark:text-gray-300">{persona.capacityLimit}h</span>
-                                </div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Color</label>
                                 <input
-                                    type="range"
-                                    min="0"
-                                    max="100"
-                                    value={persona.capacityLimit}
-                                    onChange={(e) => updatePersona(persona.id, 'capacityLimit', parseInt(e.target.value))}
-                                    className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                                    type="color"
+                                    value={persona.color}
+                                    onChange={(e) => updatePersona(persona.id, 'color', e.target.value)}
+                                    className="w-full h-9 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md cursor-pointer"
                                 />
                             </div>
-                            
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Weekly Capacity (hrs)</label>
+                                <input
+                                    type="number"
+                                    value={persona.capacityLimit}
+                                    onChange={(e) => updatePersona(persona.id, 'capacityLimit', parseInt(e.target.value))}
+                                    className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="mt-3">
                             <Toggle
                                 label="Allow Overload"
-                                description="Permit task assignments beyond capacity limit"
+                                description="Permit tasks beyond capacity"
                                 checked={persona.allowOverload}
                                 onChange={(v: boolean) => updatePersona(persona.id, 'allowOverload', v)}
                             />
                         </div>
                     </div>
                 ))}
-
-                {data.activePersonas.length === 0 && (
-                    <div className="text-center py-8 text-gray-400 italic">
-                        No personas configured. Click "Add Persona" to get started.
-                    </div>
-                )}
-            </div>
-
-            <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
-                <Toggle
-                    label="Enable Virtual Teammates"
-                    description="Treat each persona as a separate user in team views"
-                    checked={data.enableVirtualTeammates}
-                    onChange={(v: boolean) => onUpdate({ ...data, enableVirtualTeammates: v })}
-                />
             </div>
         </div>
     );
 };
 
 // --- Section: Envoy AI ---
-const EnvoySection = ({ data, onUpdate }: { data: EnvoySettings, onUpdate: (d: EnvoySettings) => void }) => (
-    <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-        <div className="bg-violet-50 dark:bg-violet-900/10 p-4 rounded-lg border border-violet-100 dark:border-violet-900">
-            <h4 className="text-sm font-bold text-violet-900 dark:text-violet-200">Envoy AI Assistant</h4>
-            <p className="text-xs text-violet-700 dark:text-violet-300 mt-1">
-                Configure how Envoy analyzes and assists with your workflow.
-            </p>
-        </div>
-
-        <div className="bg-white dark:bg-gray-950 rounded-xl border border-gray-100 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800 px-4">
-            <Toggle
-                label="Enable AI Suggestions"
-                description="Allow Envoy to propose workflow optimizations"
+const EnvoySection = ({ data, onUpdate }: { data: EnvoySettings; onUpdate: (d: EnvoySettings) => void }) => {
+    return (
+        <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+            <Toggle 
+                label="Enable AI Suggestions" 
+                description="Let Envoy proactively suggest task optimizations."
                 checked={data.suggestionsEnabled}
                 onChange={(v: boolean) => onUpdate({ ...data, suggestionsEnabled: v })}
             />
-            <Toggle
-                label="Auto-Detect Dependencies"
-                description="Automatically identify task relationships"
+            <Toggle 
+                label="Auto-Detect Dependencies" 
+                description="Automatically identify task relationships."
                 checked={data.autoDetectDependencies}
                 onChange={(v: boolean) => onUpdate({ ...data, autoDetectDependencies: v })}
             />
-        </div>
-
-        <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Communication Style</label>
-            <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg w-fit">
-                {(['Concise', 'Elaborate'] as const).map((style) => (
-                    <button
-                        key={style}
-                        onClick={() => onUpdate({ ...data, communicationStyle: style })}
-                        className={`px-4 py-2 text-xs rounded-md transition-all ${data.communicationStyle === style ? 'bg-white dark:bg-gray-700 shadow-sm font-bold' : 'text-gray-500'}`}
-                    >
-                        {style}
-                    </button>
-                ))}
+            
+            <div className="py-4 border-b border-gray-100 dark:border-gray-800">
+                <h4 className="text-sm font-medium mb-2">Communication Style</h4>
+                <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg w-fit">
+                    {(['Concise', 'Elaborate'] as const).map((style) => (
+                        <button
+                            key={style}
+                            onClick={() => onUpdate({ ...data, communicationStyle: style })}
+                            className={`px-4 py-2 text-xs rounded-md transition-all ${data.communicationStyle === style ? 'bg-white dark:bg-gray-700 shadow-sm font-bold' : 'text-gray-500'}`}
+                        >
+                            {style}
+                        </button>
+                    ))}
+                </div>
             </div>
-        </div>
 
-        <div>
-            <div className="flex justify-between text-xs mb-2">
-                <span className="font-bold text-gray-500 uppercase">Proactiveness Level</span>
-                <span className="text-gray-700 dark:text-gray-300">{data.sensitivityLevel}/10</span>
+            <div className="py-4 border-b border-gray-100 dark:border-gray-800">
+                <h4 className="text-sm font-medium mb-3">Sensitivity Level: {data.sensitivityLevel}%</h4>
+                <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={data.sensitivityLevel}
+                    onChange={(e) => onUpdate({ ...data, sensitivityLevel: parseInt(e.target.value) })}
+                    className="w-full accent-indigo-600"
+                />
+                <div className="flex justify-between text-[10px] text-gray-500 mt-1">
+                    <span>Conservative</span>
+                    <span>Aggressive</span>
+                </div>
             </div>
-            <input
-                type="range"
-                min="1"
-                max="10"
-                value={data.sensitivityLevel}
-                onChange={(e) => onUpdate({ ...data, sensitivityLevel: parseInt(e.target.value) })}
-                className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-            />
-            <p className="text-[10px] text-gray-400 mt-1">1 = Conservative | 10 = Highly Proactive</p>
-        </div>
 
-        <div>
-            <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3">Permissions</h4>
-            <div className="bg-white dark:bg-gray-950 rounded-xl border border-gray-100 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800 px-4">
-                <Toggle
-                    label="Can Draft Notes"
-                    description="Allow Envoy to write task descriptions"
+            <div className="space-y-3">
+                <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300">AI Permissions</h4>
+                <Toggle 
+                    label="Can Draft Notes" 
                     checked={data.permissions.canDraftNotes}
                     onChange={(v: boolean) => onUpdate({ ...data, permissions: { ...data.permissions, canDraftNotes: v } })}
                 />
-                <Toggle
-                    label="Can Propose Handoffs"
-                    description="Suggest task reassignments"
+                <Toggle 
+                    label="Can Propose Handoffs" 
                     checked={data.permissions.canProposeHandoffs}
                     onChange={(v: boolean) => onUpdate({ ...data, permissions: { ...data.permissions, canProposeHandoffs: v } })}
                 />
-                <Toggle
-                    label="Can Modify Dates"
-                    description="Adjust task timelines automatically"
+                <Toggle 
+                    label="Can Modify Dates" 
                     checked={data.permissions.canModifyDates}
                     onChange={(v: boolean) => onUpdate({ ...data, permissions: { ...data.permissions, canModifyDates: v } })}
                 />
             </div>
         </div>
-    </div>
-);
+    );
+};
 
 // ==========================================
-// 4. MAIN PAGE CONTROLLER
+// 3. MAIN PAGE
 // ==========================================
+
+type TabId = 'personas' | 'envoy' | 'visuals';
+type SyncState = 'idle' | 'saving' | 'saved' | 'error';
 
 export default function SettingsPage() {
     const { userId, jwt } = useAuth();
-
-    const [activeTab, setActiveTab] = useState<'personas' | 'envoy' | 'visuals'>('personas');
+    const [activeTab, setActiveTab] = useState<TabId>('personas');
     const [settings, setSettings] = useState<UserSettings | null>(null);
     const [loading, setLoading] = useState(true);
-    const [syncState, setSyncState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const [syncState, setSyncState] = useState<SyncState>('idle');
 
-    // Initial Fetch
     useEffect(() => {
         if (!userId || !jwt) return;
         
         const loadSettings = async () => {
             setLoading(true);
-            
             try {
-                // Load user data
-                const user = await api.get(`/users/${userId}`, jwt);
-                
-                // Initialize settings with defaults
-                const defaultSettings: UserSettings = {
-                    account: {
-                        displayName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-                        email: user.email,
-                        avatarUrl: `https://ui-avatars.com/api/?name=${user.firstName}+${user.lastName}&background=random`,
-                        accountType: user.role === 'admin' ? 'Team' : 'Individual',
-                        language: 'English (US)',
-                        twoFactorEnabled: false
-                    },
-                    personas: {
-                        activePersonas: [],
-                        enableVirtualTeammates: false
-                    },
-                    envoy: {
-                        suggestionsEnabled: true,
-                        autoDetectDependencies: true,
-                        communicationStyle: 'Concise',
-                        sensitivityLevel: 5,
-                        permissions: {
-                            canDraftNotes: true,
-                            canProposeHandoffs: true,
-                            canModifyDates: false
-                        }
-                    },
-                    visuals: {
-                        defaultTimelineScale: 'Week',
-                        showGhostBars: true,
-                        showDependencyLines: true,
-                        uiDensity: 'Comfortable'
-                    },
-                    experimental: {
-                        enableJQL: false,
-                        usegpuAcceleration: false
-                    }
-                };
-
-                // Load personas from backend
-                try {
-                    const personas = await api.get('/renderPersona', jwt);
-                    defaultSettings.personas.activePersonas = personas.map((p: any) => ({
-                        id: p.id,
-                        name: p.name,
-                        role: p.role || 'Member',
-                        color: p.color || '#6366f1',
-                        capacityLimit: p.weekly_capacity_hours || 40,
-                        allowOverload: p.allow_overload || false
-                    }));
-                } catch (err) {
-                    console.warn("Could not load personas:", err);
-                }
-
-                setSettings(defaultSettings);
+                const data = await api.get(`/settings/${userId}`, jwt);
+                setSettings(data);
             } catch (err) {
                 console.error("Failed to load settings:", err);
-                setSyncState('error');
             } finally {
                 setLoading(false);
             }
         };
-
+        
         loadSettings();
     }, [userId, jwt]);
 
-    const handleUpdate = useCallback(async (section: keyof UserSettings, newData: any) => {
+    const handleUpdate = useCallback(async (section: keyof UserSettings, newData: PersonaSettings | EnvoySettings | VisualSettings) => {
         if (!settings || !userId || !jwt) return;
         
         const previousData = settings[section];
@@ -433,10 +365,10 @@ export default function SettingsPage() {
     );
 
     const tabs = [
-        { id: 'personas', label: 'Persona System', icon: Users },
-        { id: 'envoy', label: 'Envoy AI', icon: Bot },
-        { id: 'visuals', label: 'Visualization', icon: Monitor },
-    ] as const;
+        { id: 'personas' as const, label: 'Persona System', icon: Users },
+        { id: 'envoy' as const, label: 'Envoy AI', icon: Bot },
+        { id: 'visuals' as const, label: 'Visualization', icon: Monitor },
+    ];
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-[#0A0E17] text-gray-900 dark:text-gray-100 flex flex-col md:flex-row">
