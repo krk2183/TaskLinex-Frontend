@@ -200,7 +200,7 @@ export default function AccountPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-950 p-4 sm:p-8">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-950 p-4 sm:p-8 overflow-y-auto">
             {/* SUCCESS/ERROR MESSAGE */}
             {message && (
                 <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg flex items-center gap-2 ${message.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
