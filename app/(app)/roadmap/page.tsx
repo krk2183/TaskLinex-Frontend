@@ -21,7 +21,6 @@ type TimelineView = 'Daily' | 'Weekly' | 'Monthly'; // NEW: Timeline granularity
 type LayoutMode = 'Roadmap' | 'Board' | 'Sprint';
 type DependencyType = 'blocked_by' | 'waiting_on' | 'helpful_if_done_first';
 
-// The "Persona" allows one user to wear multiple hats (e.g., Lead vs Contributor)
 interface Persona {
     id: string;
     name: string;
@@ -74,7 +73,7 @@ interface Task {
     priority: Priority;
     ownerId: string;
     ownerName?: string;
-    personaId?: string; // Which "hat" is the owner wearing?
+    personaId?: string; 
     dependencyIds: string[]; // Array of IDs this task depends on
     handOffToId?: string;
     dependents?: Task[];
@@ -345,13 +344,13 @@ type Action =
 
 const initialState: AppState = {
     tasks: [], users: [], projects: [], personas: [],
-    currentUser: null, // Simulating logged in as Matthew
+    currentUser: null, 
     activePersonaId: 'p_u1_1',
     isLoading: true,
     layoutMode: 'Roadmap',
     viewMode: 'Week',
-    timelineView: 'Weekly', // NEW: Default to weekly view
-    hiddenProjects: new Set(), // NEW: Track hidden projects
+    timelineView: 'Weekly', 
+    hiddenProjects: new Set(), 
     envoyActive: null,
     viewingDependenciesFor: null,
     filters: { query: '', owners: [], statuses: [], onlyMyPersonas: false }
