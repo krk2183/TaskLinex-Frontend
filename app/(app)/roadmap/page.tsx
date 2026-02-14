@@ -2448,17 +2448,8 @@ export default function RoadmapPage() {
     }, [state.tasks, state.filters, state.activePersonaId]);
 
     const handleAutoBalance = async () => {
-        dispatch({ type: 'SET_LOADING', payload: true });
-        try {
-            await fetch(`${API_BASE_URL}/envoy/auto-balance`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
-                body: JSON.stringify({ userId: state.currentUser?.id || 'u1' }) // Backend now handles role-based logic
-            });
-            const data = await MockAPI.fetchData(jwt!);
-            dispatch({ type: 'INIT_DATA', payload: data });
-        } catch (e) { console.error(e); }
-        dispatch({ type: 'SET_LOADING', payload: false });
+        // Open the auto-balance modal with suggestions
+        await fetchBalanceSuggestions();
     };
 
     const [collapsedProjects, setCollapsedProjects] = useState<string[]>([]);
@@ -2541,6 +2532,113 @@ export default function RoadmapPage() {
     // Usage:
 
     const [addVisible,setAVisible] = useState(false);
+    
+    // Auto-Balance Modal State
+    const [showAutoBalanceModal, setShowAutoBalanceModal] = useState(false);
+    const [balanceSuggestions, setBalanceSuggestions] = useState<BalanceSuggestion[]>([]);
+    const [autoBalanceLoading, setAutoBalanceLoading] = useState(false);
+    
+    // Envoy Sidebar State
+    const [showEnvoySidebar, setShowEnvoySidebar] = useState(false);
+    const AI_SUGGESTIONS: EnvoySuggestion[] = [
+        {
+            id: 'env1',
+            type: 'handoff',
+            message: 'Task "API Integration" might benefit from handoff to backend team',
+            confidence: 85,
+            actionLabel: 'Suggest Handoff'
+        },
+        {
+            id: 'env2',
+            type: 'slippage',
+            message: 'Task "UI Polish" is at risk of missing deadline',
+            confidence: 72,
+            actionLabel: 'Adjust Timeline'
+        },
+        {
+            id: 'env3',
+            type: 'blocker',
+            message: 'Dependency blocking "Launch Prep" - consider parallel work',
+            confidence: 90,
+            actionLabel: 'Review Dependencies'
+        }
+    ];
+    
+    // Auto-Balance Handler: Fetch suggestions
+    const fetchBalanceSuggestions = async () => {
+        if (!jwt || !userId) return;
+        
+        setAutoBalanceLoading(true);
+        setShowAutoBalanceModal(true);
+        
+        try {
+            const response = await fetch(`${API_BASE_URL}/envoy/auto-balance-personas`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${jwt}`
+                },
+                body: JSON.stringify({
+                    tasks: state.tasks,
+                    userId: userId
+                })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                setBalanceSuggestions(data.suggestions || []);
+            } else {
+                console.error('Failed to fetch balance suggestions');
+                setBalanceSuggestions([]);
+            }
+        } catch (error) {
+            console.error('Error fetching balance suggestions:', error);
+            setBalanceSuggestions([]);
+        } finally {
+            setAutoBalanceLoading(false);
+        }
+    };
+    
+    // Accept Balance Suggestion
+    const handleAcceptBalanceSuggestion = async (suggestion: BalanceSuggestion) => {
+        if (!jwt || !userId) return;
+        
+        try {
+            const response = await fetch(`${API_BASE_URL}/envoy/apply-balance-suggestion`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${jwt}`
+                },
+                body: JSON.stringify({
+                    suggestion,
+                    userId: userId
+                })
+            });
+            
+            if (response.ok) {
+                // Remove the accepted suggestion from the list
+                setBalanceSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
+                
+                // Refresh tasks to show updated assignments
+                const data = await MockAPI.fetchData(jwt);
+                dispatch({ type: 'INIT_DATA', payload: data });
+                
+                triggerPopup('Balance suggestion applied successfully!');
+            } else {
+                console.error('Failed to apply balance suggestion');
+                triggerPopup('Failed to apply suggestion');
+            }
+        } catch (error) {
+            console.error('Error applying balance suggestion:', error);
+            triggerPopup('Error applying suggestion');
+        }
+    };
+    
+    // Decline Balance Suggestion
+    const handleDeclineBalanceSuggestion = (suggestionId: string) => {
+        setBalanceSuggestions(prev => prev.filter(s => s.id !== suggestionId));
+    };
 
     const handleBackgroundDrop = async (e: React.DragEvent) => {
         e.preventDefault();
