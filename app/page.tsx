@@ -399,88 +399,191 @@ const MiniLeakage = () => (
     </div>
 );
 
+import { Users, Shield, Target, Cpu } from 'lucide-react';
 const MacBookFrame = ({ step }: { step: number }) => {
-    // Dynamic stats based on calculator step to simulate "Live Analysis"
-    const stats = useMemo(() => {
-        const baseBlock = 3;
-        const baseContext = "Med";
-        // Simulate changing data as user progresses
-        return {
-            blocked: step > 3 ? baseBlock + 4 : baseBlock,
-            context: step > 2 ? "High" : baseContext,
-            leakage: step > 4 ? "Critical" : "Stable"
-        }
-    }, [step]);
+    // Dynamic simulation based on the landing page calculator step
+    const teamData = useMemo(() => ({
+        debt: step > 3 ? "CRITICAL" : "STABLE",
+        leakage: step > 2 ? 42 : 12,
+        risk: step > 4 ? "SEVERE" : "MINIMAL",
+        members: [
+            { name: "Alex Chen", role: "Backend Lead", focus: 88, color: "text-violet-400" },
+            { name: "Sarah J.", role: "Design Sys", focus: 42, color: "text-rose-400" },
+            { name: "Mike Ross", role: "DevOps", focus: 95, color: "text-emerald-400" }
+        ]
+    }), [step]);
 
     return (
-        <div className="relative w-full max-w-lg mx-auto transform transition-all duration-500">
-            {/* Screen Bezel */}
-            <div className="bg-[#0f0f10] rounded-t-2xl p-1.5 border border-slate-800 shadow-2xl relative">
-                {/* Camera Notch */}
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-15 h-3 bg-black rounded-b-lg z-20"></div>
-
-                {/* Screen Content (The Mini Dashboard) */}
-                <div className="bg-[#0B1120] rounded-lg overflow-hidden aspect-[16/10] relative flex flex-col border border-white/5">
-                    {/* Header */}
-                    <div className="h-8 border-b border-white/5 bg-[#0F172A] flex items-center px-3 justify-between">
-                         <div className="flex gap-1.5">
-                            <div className="w-2.5 h-2.5 rounded-full bg-rose-500/20 border border-rose-500/50" />
-                            <div className="w-2.5 h-2.5 rounded-full bg-amber-500/20 border border-amber-500/50" />
+        <div className="relative w-full max-w-2xl ml-auto mr-0 px-4 group py-12 select-none">
+            {/* 30% Horizontal Shift Container (Desktop Only) */}
+            <div className="relative w-full transition-all duration-700 ease-out md:-translate-x-[15%]">
+                
+                {/* 1. THE LID: Space Black Aluminum Shell */}
+                <div className="relative z-10 bg-[#080809] rounded-t-xl p-[0.6%] border-x border-t border-white/[0.12] shadow-[0_40px_100px_-20px_rgba(0,0,0,0.7)]">
+                    
+                    {/* Micro-Bezel Glass Buffer */}
+                    <div className="bg-black p-[0.4%] rounded-t-lg">
+                        
+                        {/* Precision Camera Notch */}
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[12%] h-[3%] bg-black rounded-b-md z-30 flex items-center justify-center">
+                            <div className="w-1 h-1 rounded-full bg-violet-900/40 border border-violet-500/20" />
                         </div>
-                        <span className="text-[10px] text-slate-500 font-mono">analysis.tasklinex.local</span>
+
+                        {/* SCREEN: Locked Aspect Ratio */}
+                        <div className="relative w-full aspect-[16/10] bg-[#050505] rounded-md overflow-hidden flex flex-col shadow-[inset_0_0_120px_rgba(0,0,0,1)] border border-white/5">
+                            
+                            {/* OS Header - Violet-700 Themed */}
+                            <div className="h-7 border-b border-white/[0.04] bg-black/60 backdrop-blur-xl flex items-center px-4 justify-between relative z-20">
+                                <div className="flex gap-2 group/controls">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#FF5F56] border border-[#E0443E] relative flex items-center justify-center">
+                                        <X className="w-1.5 h-1.5 text-black/30 opacity-0 group-hover/controls:opacity-100 transition-opacity" />
+                                    </div>
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#FFBD2E] border border-[#DEA123] relative flex items-center justify-center">
+                                        <div className="w-1.5 h-[1px] bg-black/30 opacity-0 group-hover/controls:opacity-100 transition-opacity" />
+                                    </div>
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#27C93F] border border-[#1AAB29] relative flex items-center justify-center">
+                                        <div className="w-1.5 h-1.5 border-[0.5px] border-black/30 opacity-0 group-hover/controls:opacity-100 transition-opacity rotate-45" />
+                                    </div>
+                                </div>
+                                <span className="text-[5px] text-white/30 tracking-[0.4em] font-black uppercase">
+                                    Team Intelligence
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <div className="h-1 w-10 bg-violet-950/40 rounded-full overflow-hidden">
+                                        <motion.div 
+                                            animate={{ x: [-30, 50] }} 
+                                            transition={{ repeat: Infinity, duration: 2.5, ease: "linear" }} 
+                                            className="h-full w-6 bg-violet-600/50 blur-[2px]" 
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Internal Dashboard Content */}
+                            <div className="p-8 flex-1 grid grid-cols-12 gap-6 relative z-20 overflow-hidden">
+                                
+                                {/* LEFT: Team Health & Capacity (Col Span 4) */}
+                                <div className="col-span-4 space-y-4">
+                                    {/* Coordination Debt Card */}
+                                    <div className="bg-white/[0.02] border border-white/[0.06] p-4 rounded-xl backdrop-blur-sm">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <Activity className="w-3 h-3 text-violet-600" />
+                                            <span className="text-[6px] text-white/40 uppercase font-black tracking-widest">Health</span>
+                                        </div>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <div className="text-[6px] text-white/20 uppercase mb-1 font-bold">Coordination Debt</div>
+                                                <div className={`text-sm font-black font-mono tracking-tighter ${teamData.debt === 'CRITICAL' ? 'text-rose-600' : 'text-emerald-500'}`}>
+                                                    {teamData.debt}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="text-[6px] text-white/20 uppercase mb-1 font-bold">Leakage Score</div>
+                                                <div className="text-sm font-black font-mono text-violet-500">{teamData.leakage}%</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Live Member Attention Map */}
+                                    <div className="bg-white/[0.01] border border-white/[0.03] p-4 rounded-xl">
+                                        <div className="text-[6px] text-white/20 uppercase font-black mb-3 tracking-widest">Attention Map</div>
+                                        <div className="space-y-3">
+                                            {teamData.members.map((m, i) => (
+                                                <div key={i} className="flex justify-between items-center border-b border-white/[0.02] pb-2">
+                                                    <div>
+                                                        <div className="text-[8px] text-white font-bold tracking-tight">{m.name}</div>
+                                                        <div className="text-[6px] text-white/20 font-medium">{m.role}</div>
+                                                    </div>
+                                                    <div className={`text-[8px] font-mono font-black ${m.color}`}>{m.focus}%</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* RIGHT: Envoy Intelligence (Col Span 8) */}
+                                <div className="col-span-8 h-full">
+                                    <div className="bg-violet-950/10 border border-violet-700/20 rounded-2xl p-6 relative overflow-hidden h-full flex flex-col">
+                                        {/* Background Violet Glow */}
+                                        <div className="absolute top-0 right-0 w-32 h-32 bg-violet-700/5 blur-3xl rounded-full" />
+                                        
+                                        <div className="flex justify-between items-center mb-6 relative z-10">
+                                            <div className="flex items-center gap-2">
+                                                <Shield className="w-3 h-3 text-violet-500 shadow-[0_0_10px_rgba(109,40,217,0.4)]" />
+                                                <h3 className="text-[8px] font-black text-white uppercase tracking-[0.2em]">Envoy Interventions</h3>
+                                            </div>
+                                            <div className="px-2 py-0.5 rounded-sm bg-violet-700 text-white text-[6px] font-black tracking-tighter">
+                                                ACTIVE PROTOCOL
+                                            </div>
+                                        </div>
+
+                                        {/* Interaction Logic simulation */}
+                                        <div className="space-y-3 flex-1 relative z-10">
+                                            <div className="bg-black/60 border border-white/[0.08] p-4 rounded-xl flex items-start gap-3 shadow-xl">
+                                                <AlertTriangle className="w-3 h-3 text-rose-500 mt-0.5 shrink-0" />
+                                                <div>
+                                                    <p className="text-[9px] text-white/80 leading-relaxed font-medium">
+                                                        High dependency risk: <span className="text-violet-400">Sarah</span> is currently a single point of failure for <span className="text-violet-400 tracking-tighter">Core.API.v2</span>.
+                                                    </p>
+                                                    <div className="flex gap-2 mt-3">
+                                                        <div className="h-4 w-16 bg-violet-700/20 rounded-md border border-violet-700/40 flex items-center justify-center">
+                                                            <div className="w-8 h-0.5 bg-violet-500/50 rounded-full" />
+                                                        </div>
+                                                        <div className="h-4 w-12 bg-white/5 rounded-md" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="bg-black/60 border border-white/[0.08] p-4 rounded-xl flex items-start gap-3 shadow-xl">
+                                                <Zap className="w-3 h-3 text-amber-500 mt-0.5 shrink-0" />
+                                                <div>
+                                                    <p className="text-[9px] text-white/80 leading-relaxed font-medium">
+                                                        Optimization: Envoy detected skill alignment. Suggesting cross-train for <span className="text-emerald-400">Kubernetes</span>.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Footer Visualization */}
+                                        <div className="mt-auto pt-6 border-t border-white/[0.05] flex justify-between items-end relative z-10">
+                                            <div className="flex gap-1.5 h-10 items-end">
+                                                {[40, 75, 55, 100, 85, 60, 45, 90].map((h, i) => (
+                                                    <motion.div 
+                                                        key={i} 
+                                                        initial={{ height: 0 }}
+                                                        animate={{ height: `${h}%` }}
+                                                        className={`w-1 rounded-t-full transition-colors duration-500 ${h === 100 ? 'bg-violet-600 shadow-[0_0_15px_rgba(109,40,217,0.6)]' : 'bg-violet-900/30'}`} 
+                                                    />
+                                                ))}
+                                            </div>
+                                            <div className="text-[6px] text-white/20 font-mono tracking-widest uppercase font-bold">
+                                                Sync Status: Nominal
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Glass Reflection Layer */}
+                            <div className="absolute inset-0 bg-gradient-to-tr from-white/[0.03] via-transparent to-transparent pointer-events-none z-30" />
+                        </div>
                     </div>
+                </div>
 
-                    {/* Dashboard Content */}
-                    <div className="p-4 grid grid-cols-2 gap-4">
-                        {/* Stat Cards */}
-                        <div className="col-span-2 grid grid-cols-3 gap-2">
-                             <div className="bg-slate-900/50 border border-white/5 p-2 rounded">
-                                 <div className="text-[10px] text-slate-500 uppercase">Blocked</div>
-                                 <div className="text-lg font-bold text-white transition-all key={stats.blocked}">{stats.blocked}</div>
-                             </div>
-                             <div className="bg-slate-900/50 border border-white/5 p-2 rounded">
-                                 <div className="text-[10px] text-slate-500 uppercase">Switching</div>
-                                 <div className="text-lg font-bold text-rose-400 transition-all key={stats.context}">{stats.context}</div>
-                             </div>
-                             <div className="bg-slate-900/50 border border-white/5 p-2 rounded">
-                                 <div className="text-[10px] text-slate-500 uppercase">Leakage</div>
-                                 <div className="text-lg font-bold text-amber-400 transition-all key={stats.leakage}">{stats.leakage}</div>
-                             </div>
-                        </div>
-
-                        {/* Visuals */}
-                        <div className="col-span-2 bg-slate-900/30 border border-white/5 rounded-lg p-3">
-                            <div className="text-[10px] text-slate-400 mb-2 font-bold">DEPENDENCY GRAPH</div>
-                            <MiniRippleGraph />
-                        </div>
-
-                        <div className="col-span-2 bg-slate-900/30 border border-white/5 rounded-lg p-3">
-                             <div className="text-[10px] text-slate-400 mb-2 font-bold">COMMUNICATION OVERHEAD</div>
-                             <MiniLeakage />
-                        </div>
+                {/* 2. THE CHASSIS: M4 Stealth Body */}
+                <div className="relative -mt-px group-hover:translate-y-[1px] transition-transform duration-500">
+                    <div className="h-2.5 bg-[#121214] rounded-b-xl -mx-[3%] shadow-[0_30px_70px_rgba(0,0,0,0.8)] border-t border-white/10 relative z-20 flex justify-center">
+                        {/* Hinge/Touch Bar Notch */}
+                        <div className="w-16 h-1 bg-black/60 rounded-b-md border-x border-b border-white/10 shadow-inner" />
                     </div>
-
-                    {/* Overlay Scan Effect when changing steps */}
-                    <AnimatePresence>
-                        {step > 0 && (
-                            <motion.div
-                                key={step}
-                                initial={{ top: "-100%" }}
-                                animate={{ top: "200%" }}
-                                transition={{ duration: 1.5, ease: "linear" }}
-                                className="absolute left-0 right-0 h-12 bg-gradient-to-b from-transparent via-violet-500/10 to-transparent pointer-events-none z-10"
-                            />
-                        )}
-                    </AnimatePresence>
+                    
+                    {/* Floor Reflection Underglow (Violet-700) */}
+                    <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-[85%] h-12 bg-violet-700/15 blur-[60px] rounded-full opacity-60" />
                 </div>
             </div>
-            {/* Base of Laptop */}
-            <div className="h-3 bg-[#1a1a1c] rounded-b-xl mx-0 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.5)] border-t border-black"></div>
-            <div className="h-0.5 bg-[#2a2a2c] mx-auto w-16 rounded-b-md"></div>
         </div>
-    )
-}
-
+    );
+};
 
 // --- SECTIONS: VALUE CALCULATOR ---
 
@@ -593,7 +696,7 @@ function ValueCalculator() {
                                 </h2>
                                 <p className="text-lg text-white/50 max-w-md">
                                     A 30-second estimate based on how you actually work.
-                                    No marketing fluff, just math.
+                                    No marketing nonsense, just math.
                                 </p>
                                 <button
                                     onClick={() => setActive(true)}
