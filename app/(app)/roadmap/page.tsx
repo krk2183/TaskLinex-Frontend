@@ -73,7 +73,7 @@ interface Task {
     priority: Priority;
     ownerId: string;
     ownerName?: string;
-    personaId?: string; 
+    personaId?: string;
     dependencyIds: string[]; // Array of IDs this task depends on
     handOffToId?: string;
     dependents?: Task[];
@@ -344,13 +344,13 @@ type Action =
 
 const initialState: AppState = {
     tasks: [], users: [], projects: [], personas: [],
-    currentUser: null, 
+    currentUser: null,
     activePersonaId: 'p_u1_1',
     isLoading: true,
     layoutMode: 'Roadmap',
     viewMode: 'Week',
-    timelineView: 'Weekly', 
-    hiddenProjects: new Set(), 
+    timelineView: 'Weekly',
+    hiddenProjects: new Set(),
     envoyActive: null,
     viewingDependenciesFor: null,
     filters: { query: '', owners: [], statuses: [], onlyMyPersonas: false }
@@ -2359,6 +2359,17 @@ export default function RoadmapPage() {
     const personas = ['P1', 'P2', 'P3'] // Dummy
     const [popupMessage, setPopupMessage] = useState<string | null>(null);
     const [mounted, setMounted] = useState(false);
+    
+    // Auto-Balance Modal State (moved here to ensure it's declared before usage)
+    const [showAutoBalanceModal, setShowAutoBalanceModal] = useState(false);
+    const [balanceSuggestions, setBalanceSuggestions] = useState<BalanceSuggestion[]>([]);
+    const [autoBalanceLoading, setAutoBalanceLoading] = useState(false);
+    
+    // Add task modal state
+    const [addVisible, setAVisible] = useState(false);
+    
+    // Envoy Sidebar State
+    const [showEnvoySidebar, setShowEnvoySidebar] = useState(false);
 
     useEffect(() => {
         setMounted(true);
@@ -2529,16 +2540,6 @@ export default function RoadmapPage() {
     }
 
     // Usage:
-
-    const [addVisible,setAVisible] = useState(false);
-    
-    // Auto-Balance Modal State
-    const [showAutoBalanceModal, setShowAutoBalanceModal] = useState(false);
-    const [balanceSuggestions, setBalanceSuggestions] = useState<BalanceSuggestion[]>([]);
-    const [autoBalanceLoading, setAutoBalanceLoading] = useState(false);
-    
-    // Envoy Sidebar State
-    const [showEnvoySidebar, setShowEnvoySidebar] = useState(false);
     const AI_SUGGESTIONS: EnvoySuggestion[] = [
         {
             id: 'env1',
@@ -2562,14 +2563,14 @@ export default function RoadmapPage() {
             actionLabel: 'Review Dependencies'
         }
     ];
-    
+
     // Auto-Balance Handler: Fetch suggestions
     const fetchBalanceSuggestions = async () => {
         if (!jwt || !userId) return;
-        
+
         setAutoBalanceLoading(true);
         setShowAutoBalanceModal(true);
-        
+
         try {
             const response = await fetch(`${API_BASE_URL}/envoy/auto-balance-personas`, {
                 method: 'POST',
@@ -2582,7 +2583,7 @@ export default function RoadmapPage() {
                     userId: userId
                 })
             });
-            
+
             if (response.ok) {
                 const data = await response.json();
                 setBalanceSuggestions(data.suggestions || []);
@@ -2597,11 +2598,11 @@ export default function RoadmapPage() {
             setAutoBalanceLoading(false);
         }
     };
-    
+
     // Accept Balance Suggestion
     const handleAcceptBalanceSuggestion = async (suggestion: BalanceSuggestion) => {
         if (!jwt || !userId) return;
-        
+
         try {
             const response = await fetch(`${API_BASE_URL}/envoy/apply-balance-suggestion`, {
                 method: 'POST',
@@ -2614,15 +2615,15 @@ export default function RoadmapPage() {
                     userId: userId
                 })
             });
-            
+
             if (response.ok) {
                 // Remove the accepted suggestion from the list
                 setBalanceSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
-                
+
                 // Refresh tasks to show updated assignments
                 const data = await MockAPI.fetchData(jwt);
                 dispatch({ type: 'INIT_DATA', payload: data });
-                
+
                 triggerPopup('Balance suggestion applied successfully!');
             } else {
                 console.error('Failed to apply balance suggestion');
@@ -2633,7 +2634,7 @@ export default function RoadmapPage() {
             triggerPopup('Error applying suggestion');
         }
     };
-    
+
     // Decline Balance Suggestion
     const handleDeclineBalanceSuggestion = (suggestionId: string) => {
         setBalanceSuggestions(prev => prev.filter(s => s.id !== suggestionId));
