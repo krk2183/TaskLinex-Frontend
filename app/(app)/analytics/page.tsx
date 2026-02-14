@@ -151,7 +151,7 @@ export const RippleGraph = ({ tasks, onHoverNode }: { tasks: any[]; onHoverNode:
     if (!graph?.tasks) return positions;
 
     const totalTasks = graph.tasks.length;
-    const containerWidth = 800; // Adjust based on your UI
+    const containerWidth = 800;
     
     graph.tasks.forEach((task, i) => {
       // Creates a "Roadmap" wave/zigzag pattern
@@ -169,6 +169,19 @@ export const RippleGraph = ({ tasks, onHoverNode }: { tasks: any[]; onHoverNode:
 
   if (error) return <div className="p-4 bg-red-900/20 text-red-500 rounded-lg">{error}</div>;
   if (!graph) return <div className="animate-pulse text-slate-500">Generating Roadmap...</div>;
+
+  if (graph.tasks.length === 0) {
+    return (
+      <div className="relative h-[400px] w-full overflow-hidden bg-slate-950/50 rounded-xl border border-slate-800 flex items-center justify-center">
+        <div className="flex flex-col items-center justify-center">
+          <div className="w-16 h-16 rounded-xl flex flex-col items-center justify-center border-2 border-dashed border-slate-700 bg-slate-900/50 mb-4">
+            <span className="text-xs font-bold text-slate-600 uppercase">NEW</span>
+          </div>
+          <p className="text-slate-500 font-bold text-lg">Create a task to get started</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative h-[400px] w-full overflow-hidden bg-slate-950/50 rounded-xl border border-slate-800">
