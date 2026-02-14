@@ -159,8 +159,6 @@ const Toggle = ({ label, description, checked, onChange, disabled }: ToggleProps
     </button>
     </div>
 );
-
-// ==========================================
 // 3. SECTION COMPONENTS
 // ==========================================
 
@@ -1124,6 +1122,7 @@ const ExperimentalSection = ({ data, onUpdate }: { data: ExperimentalSettings; o
 // 4. MAIN SETTINGS COMPONENT
 // ==========================================
 
+
 export default function Settings() {
     const { user, jwt } = useAuth();
     const userId = user?.id;
@@ -1144,8 +1143,8 @@ export default function Settings() {
                 // Initialize with defaults if missing
                 const defaultSettings: UserSettings = {
                     account: {
-                        displayName: data.account?.displayName || user?.name || '',
-                        email: data.account?.email || user?.email || '',
+                        displayName: data.account?.displayName || '',
+                        email: data.account?.email || '',
                         avatarUrl: data.account?.avatarUrl || '',
                         username: data.account?.username || '',
                         accountType: data.account?.accountType || 'Individual',
@@ -1180,7 +1179,7 @@ export default function Settings() {
                         },
                         digestFrequency: data.notifications?.digestFrequency || 'weekly',
                         quietHours: {
-                            enabled: data.notifications?.quietHours?.enabled || false,
+                            enabled: data.notifications?.quietHours?.enabled ?? false,
                             start: data.notifications?.quietHours?.start || '22:00',
                             end: data.notifications?.quietHours?.end || '08:00'
                         }
@@ -1227,7 +1226,7 @@ export default function Settings() {
         };
 
         loadSettings();
-    }, [userId, jwt, user]);
+    }, [userId, jwt]);
 
     const handleUpdate = useCallback(async (
         section: keyof UserSettings,
