@@ -29,7 +29,7 @@ interface PulseEvent {
     type: EventType;
     actor: TeamMember;
     targetTask: string;
-    targetLink: string;
+    targetLink?: string;
     details: string; // e.g., "Moved to In Progress"
     timestamp: string; // Relative time e.g., "2m ago"
     metadata?: {
@@ -124,9 +124,9 @@ const SprintHealthCard = ({ data, isNewUser }: { data: ProjectHealth; isNewUser?
                         <div key={i} className="flex-1 h-full bg-slate-100 dark:bg-slate-800/30 rounded-t-full relative">
                             <div
                                 className={`absolute bottom-0 left-0 right-0 rounded-t-full transition-all duration-1000
-                                    ${isCurrent ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]' :
+                    ${isCurrent ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]' :
                                         isPast ? 'bg-slate-400 dark:bg-slate-600' : 'bg-slate-200 dark:bg-slate-800'}
-                                `}
+                        `}
                                 style={{
                                     height: `${Math.max(barHeight, 4)}%`,
                                     transitionDelay: `${i * 10}ms`
@@ -223,21 +223,21 @@ const PulseInsights = ({ data, isNewUser }: { data: ProjectHealth; isNewUser: bo
                         </div>
                         <a href="/analytics"
                             className={`
-                                text-xs px-4 py-2 rounded-lg font-bold
-                                transition-all duration-200 ease-out
-                                cursor-pointer outline-none active:scale-95
-                                border border-slate-700/50
+                text-xs px-4 py-2 rounded-lg font-bold
+                transition-all duration-200 ease-out
+                cursor-pointer outline-none active:scale-95
+                border border-slate-700/50
 
-                                ${isBlocker
+                ${isBlocker
                                     ? `bg-rose-900/80 text-rose-100 hover:bg-rose-800
-                                    hover:border-rose-500/50
-                                    shadow-[0_4px_12px_-4px_rgba(225,29,72,0.6)]`
+                    hover:border-rose-500/50
+                    shadow-[0_4px_12px_-4px_rgba(225,29,72,0.6)]`
                                     : `bg-slate-800 text-slate-300 hover:bg-slate-700
-                                    hover:text-slate-100
-                                    hover:border-slate-500/50
-                                    shadow-[0_4px_12px_-4px_rgba(0,0,0,0.5)]`
+                    hover:text-slate-100
+                    hover:border-slate-500/50
+                    shadow-[0_4px_12px_-4px_rgba(0,0,0,0.5)]`
                                 }
-                            `}>
+                `}>
                             View
                         </a>
                     </div>
@@ -577,30 +577,49 @@ export default function PulsePage() {
         }
     }
 
+    // Helper function to transform API event to PulseEvent
+    const transformEvent = (apiEvent: any): PulseEvent => {
+        return {
+            id: apiEvent.id || String(Math.random()),
+            type: apiEvent.type || 'status_change',
+            actor: {
+                id: apiEvent.actor?.id || 'unknown',
+                name: apiEvent.actor?.name || 'Unknown',
+                role: apiEvent.actor?.role || 'User',
+                avatar: apiEvent.actor?.avatar || `https://ui-avatars.com/api/?name=${apiEvent.actor?.name || 'U'}`,
+                status: apiEvent.actor?.status || 'offline',
+                workload: apiEvent.actor?.workload || 0
+            },
+            targetTask: apiEvent.targetTask || 'Task',
+            targetLink: apiEvent.targetLink || '#',
+            details: apiEvent.details || '',
+            timestamp: apiEvent.timestamp || 'Just now',
+            metadata: apiEvent.metadata,
+            actionRequired: apiEvent.actionRequired || false
+        };
+    };
+
     useEffect(() => {
         if (!userId || !jwt) return;
 
         const fetchData = async () => {
             try {
                 const [teamData, activityData, focusDataResponse, statsData] = await Promise.all([
-                    api.get(`/team/members?userId=${userId}`, jwt),
-                    api.get(`/pulse/events?userId=${userId}`, jwt),
-                    api.get(`/pulse/${userId}`, jwt),
-                    api.get(`/pulse/stats?userId=${userId}`, jwt),
+                    api.get(`/team/members?userId=${userId}`, jwt).catch(() => []),
+                    api.get(`/pulse/events?userId=${userId}`, jwt).catch(() => []),
+                    api.get(`/pulse/${userId}`, jwt).catch(() => ({ currentTask: null, nextTask: null, rationale: null })),
+                    api.get(`/pulse/stats?userId=${userId}`, jwt).catch(() => ({
+                        velocity: 'Medium',
+                        blockers: { count: 0, type: 'blocker' },
+                        sprint: { daysLeft: 0, completed: 0, remaining: 0 }
+                    })),
                 ]);
 
-                const mappedTeam: TeamMember[] = Array.isArray(teamData) ? teamData.map((m: {
-                    id: string;
-                    name: string;
-                    role: string;
-                    status?: string;
-                    workload?: number;
-                    currentTask?: string
-                }) => ({
-                    id: m.id,
-                    name: m.name,
-                    role: m.role,
-                    avatar: `https://ui-avatars.com/api/?name=${m.name}&background=random`,
+                const mappedTeam: TeamMember[] = Array.isArray(teamData) ? teamData.map((m: any) => ({
+                    id: m.id || String(Math.random()),
+                    name: m.name || 'Unknown',
+                    role: m.role || 'Member',
+                    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(m.name || 'U')}&background=random`,
                     status: (m.status || 'offline') as TeamMember['status'],
                     workload: m.workload || Math.floor(Math.random() * 100),
                     currentTask: m.currentTask
@@ -609,7 +628,11 @@ export default function PulsePage() {
                 setTeamMembers(mappedTeam);
                 if (mappedTeam.length > 0) setHasSeenActivity(true);
 
-                const events = Array.isArray(activityData) ? activityData : [];
+                // Transform API events to match PulseEvent interface
+                const events: PulseEvent[] = Array.isArray(activityData) 
+                    ? activityData.map(transformEvent)
+                    : [];
+                
                 setActivityEvents(events);
                 if (events.length > 0) setHasSeenActivity(true);
 
