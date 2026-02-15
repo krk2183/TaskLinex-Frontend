@@ -17,18 +17,18 @@ const Logo = () => (
   </div>
 );
 
-const InputField = ({ 
-  label, 
-  type, 
-  placeholder, 
+const InputField = ({
+  label,
+  type,
+  placeholder,
   icon: Icon,
   name,
   value,
   onChange
-}: { 
-  label: string; 
-  type: string; 
-  placeholder: string; 
+}: {
+  label: string;
+  type: string;
+  placeholder: string;
   icon: React.ComponentType<{ className?: string }>;
   name: string;
   value: string;
@@ -61,7 +61,7 @@ const BackButton = () => (
     transition={{ delay: 0.2, duration: 0.5 }}
     className="absolute left-8 md:left-24 xl:left-32 top-8 z-50"
   >
-    <Link 
+    <Link
       href="/"
       className="flex items-center gap-2 px-5 py-3 rounded-full bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 hover:text-white transition-all border border-violet-400/50 text-sm font-medium group backdrop-blur-sm"
     >
@@ -93,40 +93,59 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setLoading(true);
-    
+
     try {
       const identifier = data.emailOrUsername.trim();
-      
+
+      if (!identifier) {
+        throw new Error('Please enter your email or username');
+      }
+
+      if (!data.password) {
+        throw new Error('Please enter your password');
+      }
+
       // Check if identifier is an email or username
       const isEmail = identifier.includes('@');
-      
+
       let emailToUse = identifier;
-      
-      // If it's a username, we need to find the associated email
+
+      // If it's a username, find the associated email
       if (!isEmail) {
+        console.log('🔍 Looking up email for username:', identifier);
+        
         try {
-          // Query the users table to find the email associated with this username
           const { data: userData, error: queryError } = await supabase
             .from('users')
             .select('email')
             .eq('username', identifier)
             .single();
-          
-          if (queryError || !userData) {
+
+          if (queryError) {
+            console.error('Username lookup error:', queryError);
             throw new Error('Username not found. Please check your credentials.');
           }
-          
+
+          if (!userData || !userData.email) {
+            throw new Error('Username not found. Please check your credentials.');
+          }
+
           emailToUse = userData.email;
+          console.log('✅ Found email for username');
         } catch (err) {
+          console.error('Username lookup failed:', err);
           const errorMessage = err instanceof Error ? err.message : 'Unable to find account with that username.';
           throw new Error(errorMessage);
         }
       }
-      
-      // Now login with the email
+
+      // Login with the email
+      console.log('🔐 Attempting login...');
       await login(emailToUse, data.password);
-      // Redirect is now handled by AuthContext upon successful login
       
+      console.log('✅ Login successful');
+      // Redirect is handled by AuthContext upon successful login
+
     } catch (err) {
       console.error("Login error:", err);
       const errorMessage = err instanceof Error ? err.message : "Invalid credentials. Please try again.";
@@ -148,7 +167,7 @@ export default function LoginPage() {
           transition={{ duration: 0.6, ease: "easeOut" }}
         >
           <Logo />
-          
+
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-white tracking-tight mb-2">Resume Context</h1>
             <p className="text-slate-400">Authenticate to access your workspace.</p>
@@ -161,11 +180,11 @@ export default function LoginPage() {
                 {error}
               </div>
             )}
-            <InputField 
-              label="Email or Username" 
-              type="text" 
-              placeholder="name@company.com or username" 
-              icon={Mail} 
+            <InputField
+              label="Email or Username"
+              type="text"
+              placeholder="name@company.com or username"
+              icon={Mail}
               name="emailOrUsername"
               value={data.emailOrUsername}
               onChange={handleChange}
@@ -236,9 +255,9 @@ export default function LoginPage() {
       {/* RIGHT SIDE: VISUALIZATION */}
       <div className="hidden lg:block w-1/2 relative bg-[#0B0F17] overflow-hidden border-l border-slate-800">
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:3rem_3rem] opacity-20" />
-        
+
         <div className="absolute inset-0 flex items-center justify-center">
-             <motion.div 
+             <motion.div
                 initial={{ opacity: 0, scale: 0.9, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
@@ -251,18 +270,18 @@ export default function LoginPage() {
                         { color: "bg-amber-500", shadow: "#f59e0b" },
                         { color: "bg-emerald-500", shadow: "#10b981" }
                      ].map((item, i) => (
-                         <motion.div 
+                         <motion.div
                             key={i}
                             whileHover={{ scale: 1.2 }}
                             whileTap={{ scale: 0.9, boxShadow: `0 0 20px ${item.shadow}` }}
-                            className={`w-3 h-3 rounded-full ${item.color} cursor-pointer`} 
+                            className={`w-3 h-3 rounded-full ${item.color} cursor-pointer`}
                          />
                      ))}
                  </div>
-                 
+
                  {/* Decorative Code/Status */}
                  <div className="space-y-3 font-mono text-xs">
-                     <motion.div 
+                     <motion.div
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: 0.2 }}
@@ -271,7 +290,7 @@ export default function LoginPage() {
                          <span>status</span>
                          <span className="text-emerald-500">active</span>
                      </motion.div>
-                     <motion.div 
+                     <motion.div
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: 0.3 }}
@@ -293,7 +312,7 @@ export default function LoginPage() {
                  </div>
 
                  {/* Secure Badge */}
-                 <motion.div 
+                 <motion.div
                     initial={{ opacity: 0, scale: 0.8, y: 10 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     transition={{ delay: 1.1, type: "spring" }}
