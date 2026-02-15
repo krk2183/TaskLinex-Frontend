@@ -201,22 +201,22 @@ export default function LoginPage() {
             />
 
             <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <input
-                        type="checkbox"
-                        name="rememberMe"
-                        id="rememberMe"
-                        checked={data.rememberMe}
-                        onChange={handleChange}
-                        className="w-4 h-4 rounded border-slate-800 bg-slate-900 text-violet-600 focus:ring-violet-500/50 focus:ring-offset-0 accent-violet-600"
-                    />
-                    <label htmlFor="rememberMe" className="text-sm text-slate-400 select-none cursor-pointer hover:text-slate-300 transition-colors">
-                        Remember me
-                    </label>
-                </div>
-                <Link href="#" className="text-xs text-violet-400 hover:text-violet-300 transition-colors">
-                    Forgot password?
-                </Link>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  name="rememberMe"
+                  id="rememberMe"
+                  checked={data.rememberMe}
+                  onChange={handleChange}
+                  className="w-4 h-4 rounded border-slate-800 bg-slate-900 text-violet-600 focus:ring-violet-500/50 focus:ring-offset-0 accent-violet-600"
+                />
+                <label htmlFor="rememberMe" className="text-sm text-slate-400 select-none cursor-pointer hover:text-slate-300 transition-colors">
+                  Remember me
+                </label>
+              </div>
+              <Link href="#" className="text-xs text-violet-400 hover:text-violet-300 transition-colors">
+                Forgot password?
+              </Link>
             </div>
 
             <button type="submit" disabled={loading} className="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg shadow-[0_0_20px_rgba(124,58,237,0.3)] hover:shadow-[0_0_25px_rgba(124,58,237,0.5)] transition-all flex items-center justify-center gap-2 group">
@@ -237,15 +237,15 @@ export default function LoginPage() {
 
           <div className="mt-6 grid grid-cols-2 gap-4">
             <button className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-lg hover:bg-slate-800 hover:border-slate-700 transition-all text-sm font-medium text-slate-300">
-               <Chrome className="w-4 h-4" /> Google
+              <Chrome className="w-4 h-4" /> Google
             </button>
             <button className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-lg hover:bg-slate-800 hover:border-slate-700 transition-all text-sm font-medium text-slate-300">
-               <Github className="w-4 h-4" /> GitHub
+              <Github className="w-4 h-4" /> GitHub
             </button>
           </div>
 
           <div className="mt-5 flex justify-center w-full">
-              <div className="mt-0.5 text-sm">Don&apos;t have an account?</div> <Link href="/register" className="ml-1 text-violet-400 hover:text-violet-300 font-medium">
+            <div className="mt-0.5 text-sm">Don&apos;t have an account?</div> <Link href="/register" className="ml-1 text-violet-400 hover:text-violet-300 font-medium">
               Initialize Workspace
             </Link>
           </div>
@@ -257,71 +257,71 @@ export default function LoginPage() {
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:3rem_3rem] opacity-20" />
 
         <div className="absolute inset-0 flex items-center justify-center">
-             <motion.div
-                initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-                className="w-[400px] h-[300px] bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-xl p-6 relative shadow-2xl"
-             >
-                 {/* Decorative Header */}
-                 <div className="flex gap-2 mb-6 border-b border-slate-800 pb-4">
-                     {[
-                        { color: "bg-rose-500", shadow: "#f43f5e" },
-                        { color: "bg-amber-500", shadow: "#f59e0b" },
-                        { color: "bg-emerald-500", shadow: "#10b981" }
-                     ].map((item, i) => (
-                         <motion.div
-                            key={i}
-                            whileHover={{ scale: 1.2 }}
-                            whileTap={{ scale: 0.9, boxShadow: `0 0 20px ${item.shadow}` }}
-                            className={`w-3 h-3 rounded-full ${item.color} cursor-pointer`}
-                         />
-                     ))}
-                 </div>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+            className="w-[400px] h-[300px] bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-xl p-6 relative shadow-2xl"
+          >
+            {/* Decorative Header */}
+            <div className="flex gap-2 mb-6 border-b border-slate-800 pb-4">
+              {[
+                { color: "bg-rose-500", shadow: "#f43f5e" },
+                { color: "bg-amber-500", shadow: "#f59e0b" },
+                { color: "bg-emerald-500", shadow: "#10b981" }
+              ].map((item, i) => (
+                <motion.div
+                  key={i}
+                  whileHover={{ scale: 1.2 }}
+                  whileTap={{ scale: 0.9, boxShadow: `0 0 20px ${item.shadow}` }}
+                  className={`w-3 h-3 rounded-full ${item.color} cursor-pointer`}
+                />
+              ))}
+            </div>
 
-                 {/* Decorative Code/Status */}
-                 <div className="space-y-3 font-mono text-xs">
-                     <motion.div
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.2 }}
-                        className="flex justify-between text-slate-500"
-                     >
-                         <span>status</span>
-                         <span className="text-emerald-500">active</span>
-                     </motion.div>
-                     <motion.div
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.3 }}
-                        className="flex justify-between text-slate-500"
-                     >
-                         <span>encryption</span>
-                         <span className="text-violet-400">TLS 1.3 / AES-256</span>
-                     </motion.div>
-                     <motion.div initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ delay: 0.4 }} className="h-px bg-slate-800 my-2 origin-left" />
-                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="text-slate-400">
-                        <span className="text-violet-500">➜</span> verifying_handshake...
-                     </motion.div>
-                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }} className="text-slate-400">
-                        <span className="text-violet-500">➜</span> establishing_secure_tunnel...
-                     </motion.div>
-                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9 }} className="text-slate-200 animate-pulse">
-                        <span className="text-emerald-500">✓</span> ready_for_auth
-                     </motion.div>
-                 </div>
+            {/* Decorative Code/Status */}
+            <div className="space-y-3 font-mono text-xs">
+              <motion.div
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.2 }}
+                className="flex justify-between text-slate-500"
+              >
+                <span>status</span>
+                <span className="text-emerald-500">active</span>
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.3 }}
+                className="flex justify-between text-slate-500"
+              >
+                <span>encryption</span>
+                <span className="text-violet-400">TLS 1.3 / AES-256</span>
+              </motion.div>
+              <motion.div initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ delay: 0.4 }} className="h-px bg-slate-800 my-2 origin-left" />
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="text-slate-400">
+                <span className="text-violet-500">➜</span> verifying_handshake...
+              </motion.div>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }} className="text-slate-400">
+                <span className="text-violet-500">➜</span> establishing_secure_tunnel...
+              </motion.div>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9 }} className="text-slate-200 animate-pulse">
+                <span className="text-emerald-500">✓</span> ready_for_auth
+              </motion.div>
+            </div>
 
-                 {/* Secure Badge */}
-                 <motion.div
-                    initial={{ opacity: 0, scale: 0.8, y: 10 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    transition={{ delay: 1.1, type: "spring" }}
-                    className="absolute -bottom-6 -right-6 bg-slate-950 border border-slate-800 px-4 py-2 rounded-lg flex items-center gap-2 shadow-lg"
-                 >
-                     <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                     <span className="text-xs font-bold text-slate-300">SOC2 Compliant</span>
-                 </motion.div>
-             </motion.div>
+            {/* Secure Badge */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ delay: 1.1, type: "spring" }}
+              className="absolute -bottom-6 -right-6 bg-slate-950 border border-slate-800 px-4 py-2 rounded-lg flex items-center gap-2 shadow-lg"
+            >
+              <ShieldCheck className="w-4 h-4 text-emerald-500" />
+              <span className="text-xs font-bold text-slate-300">SOC2 Compliant</span>
+            </motion.div>
+          </motion.div>
         </div>
       </div>
 
