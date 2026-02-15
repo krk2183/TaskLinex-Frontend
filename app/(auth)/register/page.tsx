@@ -9,6 +9,9 @@ import { useAuth, supabase } from "@/app/providers/AuthContext";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
+// Safely determine the site URL for OAuth redirects (prioritizes production env variables)
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '');
+
 // --- COMPONENTS ---
 
 const Logo = () => (
@@ -113,7 +116,7 @@ export default function SignupPage() {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${SITE_URL}/auth/callback`,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
@@ -121,9 +124,7 @@ export default function SignupPage() {
         }
       });
 
-      if (oauthError) {
-        throw oauthError;
-      }
+      if (oauthError) throw oauthError;
     } catch (err) {
       console.error('Google OAuth error:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to sign in with Google';
@@ -141,13 +142,11 @@ export default function SignupPage() {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`
+          redirectTo: `${SITE_URL}/auth/callback`
         }
       });
 
-      if (oauthError) {
-        throw oauthError;
-      }
+      if (oauthError) throw oauthError;
     } catch (err) {
       console.error('GitHub OAuth error:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to sign in with GitHub';
@@ -165,8 +164,6 @@ export default function SignupPage() {
       setError("");
       try {
         const identifier = Data.email.trim();
-
-        // Check if identifier is an email or username
         const isEmail = identifier.includes('@');
         let emailToUse = identifier;
 
@@ -185,7 +182,7 @@ export default function SignupPage() {
         }
 
         await login(emailToUse, Data.password);
-        // AuthContext will handle redirect
+        // AuthContext will automatically handle the redirect (just like the old code)
       } catch (err: any) {
         console.error("Login Error:", err);
         setError(err.message || "Login failed.");
@@ -219,18 +216,7 @@ export default function SignupPage() {
 
       // Generate unique email if not provided (for username-only signup)
       const email = Data.email.trim() || `${Data.username.trim()}@tasklinex.local`;
-
-      // Prepare companyName: only send if it has actual content
       const companyNameValue = Data.companyName.trim() || null;
-
-      console.log('📝 Registration data:', {
-        email,
-        username: Data.username.trim(),
-        firstName: Data.firstName.trim(),
-        lastName: Data.lastName.trim(),
-        companyName: companyNameValue || '(empty)',
-        role: Data.role
-      });
 
       // Step 1: Sign up with Supabase
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -258,8 +244,7 @@ export default function SignupPage() {
 
       console.log('✅ Supabase auth created:', userId);
 
-      // Step 2: Wait for Supabase trigger to process (longer wait for reliability)
-      console.log('⏳ Waiting for database trigger (3 seconds)...');
+      // Step 2: Wait for Supabase trigger to process
       await new Promise(resolve => setTimeout(resolve, 3000));
 
       // Step 3: Verify user was created with retries
@@ -269,8 +254,6 @@ export default function SignupPage() {
 
       while (retries > 0 && !userExists) {
         try {
-          console.log(`🔍 Verification attempt ${6 - retries}/5...`);
-
           const userResponse = await fetch(`${API_BASE_URL}/users/${userId}`, {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -279,8 +262,6 @@ export default function SignupPage() {
           });
 
           if (userResponse.ok) {
-            const userData = await userResponse.json();
-            console.log('✅ User data verified:', userData);
             userExists = true;
             break;
           }
@@ -319,17 +300,14 @@ export default function SignupPage() {
           const errorData = await ensureResponse.json().catch(() => ({}));
           throw new Error(errorData.detail || 'Failed to create user data');
         }
-
-        console.log('✅ User created via fallback');
       }
 
       console.log('✅ Registration complete, logging in...');
 
-      // Step 5: Log the user in - AuthContext will handle redirect
+      // Step 5: Log the user in - AuthContext handles the redirect seamlessly here
       await login(email, Data.password);
 
-      console.log('✅ Login successful - AuthContext will handle redirect');
-      // Do NOT manually redirect here - let AuthContext handle it
+      console.log('✅ Login successful - waiting for AuthContext to redirect');
 
     } catch (err: any) {
       console.error('❌ Registration error:', err);
