@@ -124,7 +124,7 @@ export default function SignupPage() {
       return;
     }
 
-    // Handle signup
+    // Handle signup validation
     if (data.password !== data.confirmPassword) {
       setError("Passwords do not match");
       return;
@@ -146,25 +146,36 @@ export default function SignupPage() {
     try {
       console.log('🚀 Starting registration process...');
 
-      // Generate unique email if not provided (for username-only signup)
+      // Generate unique email if not provided
       const email = data.email.trim() || `${data.username.trim()}@tasklinex.local`;
       const username = data.username.trim();
       const firstName = data.firstName.trim() || username;
       const lastName = data.lastName.trim() || '';
-      const fullName = `${firstName} ${lastName}`.trim();
+      
+      // Handle companyName: empty string should be sent as empty string
+      // The trigger will convert it to NULL
+      const companyName = data.companyName.trim();
+
+      console.log('📝 Registration data:', {
+        email,
+        username,
+        firstName,
+        lastName,
+        companyName: companyName || '(empty)',
+        role: data.role
+      });
 
       // Step 1: Sign up with Supabase Auth
+      // CRITICAL: Must match exact field names in SQL trigger
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email,
         password: data.password,
         options: {
           data: {
             username: username,
-            full_name: fullName,
-            name: fullName,
-            first_name: firstName,
-            last_name: lastName,
-            company_name: data.companyName.trim() || null,
+            firstName: firstName,  // Exact match to SQL: "firstName"
+            lastName: lastName,    // Exact match to SQL: "lastName"
+            companyName: companyName,  // Exact match to SQL: "companyName"
             role: data.role,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
           }
@@ -172,7 +183,7 @@ export default function SignupPage() {
       });
 
       if (authError) {
-        console.error('Supabase auth error:', authError);
+        console.error('❌ Supabase auth error:', authError);
         throw new Error(authError.message || 'Failed to create account');
       }
       
@@ -181,74 +192,119 @@ export default function SignupPage() {
       }
 
       const userId = authData.user.id;
-      console.log('✅ Supabase auth created:', userId);
+      console.log('✅ Supabase auth created, user ID:', userId);
 
-      // Step 2: Wait for database trigger to create user record
-      console.log('⏳ Waiting for database trigger...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Step 2: Wait for database trigger to process
+      console.log('⏳ Waiting for database trigger to complete...');
+      await new Promise(resolve => setTimeout(resolve, 2500));
 
-      // Step 3: Manually insert into users table if trigger failed
-      try {
-        console.log('🔍 Checking if user exists in users table...');
-        const { data: existingUser, error: checkError } = await supabase
-          .from('users')
-          .select('id')
-          .eq('id', userId)
-          .single();
+      // Step 3: Verify user was created in database
+      let retries = 3;
+      let userExists = false;
 
-        if (!existingUser || checkError) {
-          console.log('📝 Creating user record manually...');
+      while (retries > 0 && !userExists) {
+        try {
+          console.log(`🔍 Checking if user exists in database (attempt ${4 - retries}/3)...`);
           
+          const { data: existingUser, error: checkError } = await supabase
+            .from('users')
+            .select('id, username, email')
+            .eq('id', userId)
+            .single();
+
+          if (existingUser && !checkError) {
+            console.log('✅ User found in database:', existingUser);
+            userExists = true;
+            break;
+          } else {
+            console.log('⚠️ User not found yet:', checkError?.message);
+          }
+        } catch (err) {
+          console.log('⚠️ Check failed:', err);
+        }
+
+        retries--;
+        if (retries > 0) {
+          console.log('⏳ Waiting 1 second before retry...');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      if (!userExists) {
+        console.log('🔧 User not found after retries, creating manually...');
+        
+        // Manual fallback: Insert directly into users table
+        try {
           const { error: insertError } = await supabase
             .from('users')
             .insert({
               id: userId,
               email: email,
               username: username,
-              full_name: fullName,
-              name: fullName,
+              firstName: firstName,
+              lastName: lastName,
+              companyName: companyName || null,
               role: data.role,
-              company_name: data.companyName.trim() || null,
+              isNew: true,
               timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              preferred_ai_model: 'Envoy Mega',
               created_at: new Date().toISOString()
             });
 
           if (insertError) {
-            console.error('Insert error:', insertError);
-            throw new Error(`Database error: ${insertError.message}`);
+            console.error('❌ Manual insert failed:', insertError);
+            throw new Error(`Failed to create user record: ${insertError.message}`);
           }
           
           console.log('✅ User record created manually');
-        } else {
-          console.log('✅ User record exists from trigger');
+
+          // Create default persona
+          const personaId = crypto.randomUUID();
+          await supabase.from('personas').insert({
+            id: personaId,
+            user_id: userId,
+            name: firstName ? `${firstName} (Default)` : 'Default Persona',
+            weekly_capacity_hours: 40,
+            role: 'Member',
+            color: '#6366f1',
+            allow_overload: false
+          });
+
+          // Create welcome task
+          const taskId = crypto.randomUUID();
+          await supabase.from('tasks').insert({
+            id: taskId,
+            projectId: 'proj1',
+            title: '🎉 Welcome to TaskLinex!',
+            status: 'Todo',
+            priority: 'Medium',
+            ownerId: userId,
+            startDate: Math.floor(Date.now() / 1000),
+            duration: 3600,
+            plannedDuration: 3600,
+            personaId: personaId,
+            progress: 0,
+            dependencyIds: [],
+            tags: []
+          });
+
+          console.log('✅ Default persona and welcome task created');
+        } catch (dbError) {
+          console.error('❌ Database operation failed:', dbError);
+          throw new Error(dbError instanceof Error ? dbError.message : 'Failed to create user record');
         }
-      } catch (dbError) {
-        console.error('Database operation failed:', dbError);
-        throw new Error(dbError instanceof Error ? dbError.message : 'Failed to create user record');
       }
 
-      // Step 4: Verify the user can be retrieved
-      console.log('🔍 Verifying user record...');
-      const { data: verifyUser, error: verifyError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (verifyError || !verifyUser) {
-        console.error('Verification failed:', verifyError);
-        throw new Error('User was created but could not be verified. Please try logging in.');
-      }
-
-      console.log('✅ User verified:', verifyUser);
-      console.log('✅ Registration complete - redirecting...');
+      console.log('✅ Registration complete - logging in...');
       
-      // Auto-login after successful registration
+      // Step 4: Auto-login after successful registration
       await login(email, data.password);
+      
+      console.log('✅ Login successful - redirecting to dashboard...');
       router.push('/dashboard');
 
     } catch (err) {
-      console.error('Registration failed:', err);
+      console.error('❌ Registration failed:', err);
       const errorMessage = err instanceof Error ? err.message : 'Registration failed. Please try again.';
       setError(errorMessage);
     } finally {
