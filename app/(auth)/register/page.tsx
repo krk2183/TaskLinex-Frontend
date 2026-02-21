@@ -17,7 +17,6 @@ import {
 import { useAuth, supabase } from "@/app/providers/AuthContext";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ||
   (typeof window !== "undefined" ? window.location.origin : "");
@@ -118,6 +117,7 @@ export default function SignupPage() {
     setError("");
   };
 
+  // --- OAUTH ---
   const handleGoogleLogin = async () => {
     setOauthLoading(true);
     setError("");
@@ -126,15 +126,11 @@ export default function SignupPage() {
         provider: "google",
         options: {
           redirectTo: `${SITE_URL}/callback`,
-          queryParams: {
-            access_type: "offline",
-            prompt: "consent",
-          },
+          queryParams: { access_type: "offline", prompt: "consent" },
         },
       });
       if (oauthError) throw oauthError;
     } catch (err) {
-      console.error("Google OAuth error:", err);
       setError(err instanceof Error ? err.message : "Failed to sign in with Google");
       setOauthLoading(false);
     }
@@ -146,21 +142,20 @@ export default function SignupPage() {
     try {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "github",
-        options: {
-          redirectTo: `${SITE_URL}/callback`,
-        },
+        options: { redirectTo: `${SITE_URL}/callback` },
       });
       if (oauthError) throw oauthError;
     } catch (err) {
-      console.error("GitHub OAuth error:", err);
       setError(err instanceof Error ? err.message : "Failed to sign in with GitHub");
       setOauthLoading(false);
     }
   };
 
+  // --- MAIN SUBMIT ---
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // ── LOGIN TOGGLE (same as old version: just call login + redirect) ──
     if (isLogin) {
       setLoading(true);
       setError("");
@@ -169,34 +164,24 @@ export default function SignupPage() {
         const isEmail = identifier.includes("@");
         let emailToUse = identifier;
 
+        // If username, resolve via backend (avoids RLS on unauthenticated users)
         if (!isEmail) {
-          // Use backend to resolve username → email (bypasses RLS)
           const res = await fetch(`${API_BASE_URL}/auth/login-username`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              username: identifier,
-              password: Data.password,
-            }),
+            body: JSON.stringify({ username: identifier, password: Data.password }),
           });
-
           if (!res.ok) {
             let detail = "Username not found. Please check your credentials.";
-            try {
-              const json = await res.json();
-              detail = json.detail || detail;
-            } catch (_) {}
+            try { detail = (await res.json()).detail || detail; } catch (_) {}
             throw new Error(detail);
           }
-
-          const result = await res.json();
-          emailToUse = result.email;
+          emailToUse = (await res.json()).email;
         }
 
         await login(emailToUse, Data.password);
-        router.push("/pulse");
+        router.push("/roadmap");
       } catch (err: any) {
-        console.error("Login Error:", err);
         setError(err.message || "Login failed.");
       } finally {
         setLoading(false);
@@ -204,7 +189,7 @@ export default function SignupPage() {
       return;
     }
 
-    // --- SIGNUP ---
+    // ── SIGNUP ──
     if (Data.password !== Data.confirmPassword) {
       setError("Passwords do not match");
       return;
@@ -224,8 +209,8 @@ export default function SignupPage() {
     try {
       console.log("🚀 Starting registration process...");
 
-      const email =
-        Data.email.trim() || `${Data.username.trim()}@tasklinex.local`;
+      // Use provided email or generate a local one (old behaviour)
+      const email = Data.email.trim() || `${Data.username.trim()}@tasklinex.local`;
       const companyNameValue = Data.companyName.trim() || null;
 
       // Step 1: Sign up with Supabase
@@ -249,40 +234,32 @@ export default function SignupPage() {
 
       const userId = authData.user.id;
       const token = authData.session?.access_token;
-
       if (!token) throw new Error("No access token received");
 
       console.log("✅ Supabase auth created:", userId);
 
-      // Step 2: Wait for Supabase trigger to process
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      // Step 2: Wait for DB trigger (old version used 1500ms — keep it lean)
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
-      // Step 3: Verify user was created with retries
+      // Step 3: One check attempt, then fallback (mirrors old version exactly)
       console.log("🔍 Verifying user data...");
       let userExists = false;
-      let retries = 5;
-
-      while (retries > 0 && !userExists) {
-        try {
-          const userResponse = await fetch(`${API_BASE_URL}/users/${userId}`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-          });
-          if (userResponse.ok) {
-            userExists = true;
-            break;
-          }
-        } catch (_) {}
-
-        retries--;
-        if (retries > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+      try {
+        const userResponse = await fetch(`${API_BASE_URL}/users/${userId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+        if (userResponse.ok) {
+          console.log("✅ User data verified");
+          userExists = true;
         }
+      } catch (_) {
+        console.log("⚠️ User not found after initial check, attempting fallback...");
       }
 
-      // Step 4: If user doesn't exist, create manually via fallback endpoint
+      // Step 4: Fallback — create user manually if trigger didn't fire
       if (!userExists) {
         console.log("🔧 Creating user via fallback endpoint...");
         const ensureResponse = await fetch(`${API_BASE_URL}/users/ensure`, {
@@ -302,18 +279,20 @@ export default function SignupPage() {
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           }),
         });
-
         if (!ensureResponse.ok) {
           const errorData = await ensureResponse.json().catch(() => ({}));
           throw new Error(errorData.detail || "Failed to create user data");
         }
+        console.log("✅ User created via fallback");
       }
 
       console.log("✅ Registration complete, logging in...");
 
-      // Step 5: Log in then redirect to /pulse
+      // Step 5: Log in then go straight to /roadmap (signup destination)
       await login(email, Data.password);
-      router.push("/pulse");
+      router.push("/roadmap");
+
+      console.log("✅ Redirected to roadmap");
     } catch (err: any) {
       console.error("❌ Registration error:", err);
       setError(err.message || "Registration failed. Please try again.");
@@ -384,6 +363,7 @@ export default function SignupPage() {
       {/* RIGHT: Form */}
       <div className="w-full lg:w-7/12 flex flex-col justify-center px-8 md:px-24 xl:px-40 relative z-10 bg-slate-950">
         <BackButton />
+
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -415,6 +395,7 @@ export default function SignupPage() {
               </div>
             )}
 
+            {/* SIGNUP ONLY FIELDS */}
             {!isLogin && (
               <div className="grid grid-cols-2 gap-4">
                 <InputField
@@ -564,14 +545,15 @@ export default function SignupPage() {
                   isLogin ? "Signing In..." : "Creating Account..."
                 ) : (
                   <>
-                    {isLogin ? "Sign In" : "Create Account"}{" "}
+                    {isLogin ? "Sign In" : "Create Account"}
                     <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                   </>
                 )}
               </button>
             </div>
 
-            <div className="mt-8 relative">
+            {/* OAUTH DIVIDER */}
+            <div className="relative">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-slate-800" />
               </div>
@@ -582,6 +564,7 @@ export default function SignupPage() {
               </div>
             </div>
 
+            {/* OAUTH BUTTONS */}
             <div className="grid grid-cols-2 gap-4">
               <button
                 type="button"
@@ -624,9 +607,14 @@ export default function SignupPage() {
 
             <p className="text-[11px] text-slate-500 text-center leading-relaxed max-w-sm mx-auto">
               By clicking &quot;Create Account&quot;, you agree to our{" "}
-              <a href="#" className="text-slate-400 underline hover:text-white">Terms of Service</a>{" "}
+              <a href="#" className="text-slate-400 underline hover:text-white">
+                Terms of Service
+              </a>{" "}
               and{" "}
-              <a href="#" className="text-slate-400 underline hover:text-white">Privacy Policy</a>.
+              <a href="#" className="text-slate-400 underline hover:text-white">
+                Privacy Policy
+              </a>
+              .
             </p>
           </form>
         </motion.div>
