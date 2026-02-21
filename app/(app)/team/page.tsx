@@ -343,7 +343,7 @@ export default function TeamPage() {
                                                 <span className="text-[9px] bg-violet-700/60 text-violet-200 px-1.5 py-0.5 rounded-full font-bold shrink-0">You</span>
                                             </div>
                                             {myUsername && (
-                                                <span className="text-[10px] text-slate-500 font-mono">@{myUsername}</span>
+                                                <span className="text-[14px] text-slate-500 font-mono">@{myUsername}</span>
                                             )}
                                             <div className="flex flex-wrap gap-1 mt-1">
                                                 {selfMember.skills?.slice(0, 2).map(s => (
@@ -370,7 +370,7 @@ export default function TeamPage() {
                                         <div className="flex-1 min-w-0">
                                             <div className="font-bold text-slate-200 text-sm truncate">{m.name}</div>
                                             {m.username && (
-                                                <span className="text-[10px] text-slate-500 font-mono">@{m.username}</span>
+                                                <span className="text-[14px] text-slate-500 font-mono">@{m.username}</span>
                                             )}
                                             <div className="flex flex-wrap gap-1 mt-1">
                                                 {m.skills?.slice(0, 2).map(s => (
