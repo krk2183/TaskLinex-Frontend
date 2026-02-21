@@ -2,9 +2,16 @@
 
 import React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, Lock, Mail, ShieldCheck, ArrowLeft, AlertCircle } from "lucide-react";
 import { useAuth, supabase } from "@/app/providers/AuthContext";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  (typeof window !== "undefined" ? window.location.origin : "");
 
 // --- COMPONENTS ---
 
@@ -24,7 +31,7 @@ const InputField = ({
   icon: Icon,
   name,
   value,
-  onChange
+  onChange,
 }: {
   label: string;
   type: string;
@@ -75,6 +82,7 @@ const BackButton = () => (
 
 export default function LoginPage() {
   const { login } = useAuth();
+  const router = useRouter();
   const [data, setData] = React.useState({
     emailOrUsername: "",
     password: "",
@@ -90,54 +98,42 @@ export default function LoginPage() {
     setError("");
   };
 
-  // Google OAuth Handler
   const handleGoogleLogin = async () => {
     setOauthLoading(true);
     setError("");
-
     try {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
+        provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${SITE_URL}/callback`,
           queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          }
-        }
+            access_type: "offline",
+            prompt: "consent",
+          },
+        },
       });
-
-      if (oauthError) {
-        throw oauthError;
-      }
+      if (oauthError) throw oauthError;
     } catch (err) {
-      console.error('Google OAuth error:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to sign in with Google';
-      setError(errorMessage);
+      console.error("Google OAuth error:", err);
+      setError(err instanceof Error ? err.message : "Failed to sign in with Google");
       setOauthLoading(false);
     }
   };
 
-  // GitHub OAuth Handler
   const handleGithubLogin = async () => {
     setOauthLoading(true);
     setError("");
-
     try {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: 'github',
+        provider: "github",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`
-        }
+          redirectTo: `${SITE_URL}/callback`,
+        },
       });
-
-      if (oauthError) {
-        throw oauthError;
-      }
+      if (oauthError) throw oauthError;
     } catch (err) {
-      console.error('GitHub OAuth error:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to sign in with GitHub';
-      setError(errorMessage);
+      console.error("GitHub OAuth error:", err);
+      setError(err instanceof Error ? err.message : "Failed to sign in with GitHub");
       setOauthLoading(false);
     }
   };
@@ -150,59 +146,48 @@ export default function LoginPage() {
     try {
       const identifier = data.emailOrUsername.trim();
 
-      if (!identifier) {
-        throw new Error('Please enter your email or username');
-      }
+      if (!identifier) throw new Error("Please enter your email or username");
+      if (!data.password) throw new Error("Please enter your password");
 
-      if (!data.password) {
-        throw new Error('Please enter your password');
-      }
-
-      // Check if identifier is an email or username
-      const isEmail = identifier.includes('@');
-
+      const isEmail = identifier.includes("@");
       let emailToUse = identifier;
 
-      // If it's a username, find the associated email
       if (!isEmail) {
-        console.log('🔍 Looking up email for username:', identifier);
+        console.log("🔍 Resolving username via backend:", identifier);
 
-        try {
-          const { data: userData, error: queryError } = await supabase
-            .from('users')
-            .select('email')
-            .eq('username', identifier)
-            .single();
+        const res = await fetch(`${API_BASE_URL}/auth/login-username`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: identifier,
+            password: data.password,
+          }),
+        });
 
-          if (queryError) {
-            console.error('Username lookup error:', queryError);
-            throw new Error('Username not found. Please check your credentials.');
-          }
-
-          if (!userData || !userData.email) {
-            throw new Error('Username not found. Please check your credentials.');
-          }
-
-          emailToUse = userData.email;
-          console.log('✅ Found email for username');
-        } catch (err) {
-          console.error('Username lookup failed:', err);
-          const errorMessage = err instanceof Error ? err.message : 'Unable to find account with that username.';
-          throw new Error(errorMessage);
+        if (!res.ok) {
+          let detail = "Username not found. Please check your credentials.";
+          try {
+            const json = await res.json();
+            detail = json.detail || detail;
+          } catch (_) {}
+          throw new Error(detail);
         }
+
+        const result = await res.json();
+        emailToUse = result.email;
+        console.log("✅ Resolved email for username");
       }
 
-      // Login with the email
-      console.log('🔐 Attempting login...');
+      console.log("🔐 Signing in...");
       await login(emailToUse, data.password);
 
-      console.log('✅ Login successful');
-      // Redirect is handled by AuthContext upon successful login
-
+      console.log("✅ Login successful, redirecting to /pulse");
+      router.push("/pulse");
     } catch (err) {
       console.error("Login error:", err);
-      const errorMessage = err instanceof Error ? err.message : "Invalid credentials. Please try again.";
-      setError(errorMessage);
+      setError(
+        err instanceof Error ? err.message : "Invalid credentials. Please try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -222,7 +207,9 @@ export default function LoginPage() {
           <Logo />
 
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-white tracking-tight mb-2">Resume Context</h1>
+            <h1 className="text-3xl font-bold text-white tracking-tight mb-2">
+              Resume Context
+            </h1>
             <p className="text-slate-400">Authenticate to access your workspace.</p>
           </div>
 
@@ -233,6 +220,14 @@ export default function LoginPage() {
                 {error}
               </div>
             )}
+
+            {loading && (
+              <div className="p-3 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center gap-2 text-violet-400 text-sm">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-violet-400" />
+                Signing in...
+              </div>
+            )}
+
             <InputField
               label="Email or Username"
               type="text"
@@ -263,7 +258,10 @@ export default function LoginPage() {
                   onChange={handleChange}
                   className="w-4 h-4 rounded border-slate-800 bg-slate-900 text-violet-600 focus:ring-violet-500/50 focus:ring-offset-0 accent-violet-600"
                 />
-                <label htmlFor="rememberMe" className="text-sm text-slate-400 select-none cursor-pointer hover:text-slate-300 transition-colors">
+                <label
+                  htmlFor="rememberMe"
+                  className="text-sm text-slate-400 select-none cursor-pointer hover:text-slate-300 transition-colors"
+                >
                   Remember me
                 </label>
               </div>
@@ -272,23 +270,33 @@ export default function LoginPage() {
               </Link>
             </div>
 
-            <button type="submit" disabled={loading || oauthLoading} className="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg shadow-[0_0_20px_rgba(124,58,237,0.3)] hover:shadow-[0_0_25px_rgba(124,58,237,0.5)] transition-all flex items-center justify-center gap-2 group">
-              {loading ? "Signing In..." : (
-                <>Sign In <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" /></>
+            <button
+              type="submit"
+              disabled={loading || oauthLoading}
+              className="w-full bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg shadow-[0_0_20px_rgba(124,58,237,0.3)] hover:shadow-[0_0_25px_rgba(124,58,237,0.5)] transition-all flex items-center justify-center gap-2 group"
+            >
+              {loading ? (
+                "Signing In..."
+              ) : (
+                <>
+                  Sign In{" "}
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </>
               )}
             </button>
           </form>
 
           <div className="mt-8 relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-800"></div>
+              <div className="w-full border-t border-slate-800" />
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-slate-950 text-slate-500 text-xs uppercase tracking-widest font-semibold">Or continue with</span>
+              <span className="px-2 bg-slate-950 text-slate-500 text-xs uppercase tracking-widest font-semibold">
+                Or continue with
+              </span>
             </div>
           </div>
 
-          {/* OAuth Buttons */}
           <div className="mt-6 grid grid-cols-2 gap-4">
             <button
               onClick={handleGoogleLogin}
@@ -318,7 +326,8 @@ export default function LoginPage() {
           </div>
 
           <div className="mt-5 flex justify-center w-full">
-            <div className="mt-0.5 text-sm">Don&apos;t have an account?</div> <Link href="/register" className="ml-1 text-violet-400 hover:text-violet-300 font-medium">
+            <div className="mt-0.5 text-sm">Don&apos;t have an account?</div>
+            <Link href="/register" className="ml-1 text-violet-400 hover:text-violet-300 font-medium">
               Initialize Workspace
             </Link>
           </div>
@@ -336,12 +345,11 @@ export default function LoginPage() {
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
             className="w-[400px] h-[300px] bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-xl p-6 relative shadow-2xl"
           >
-            {/* Decorative Header */}
             <div className="flex gap-2 mb-6 border-b border-slate-800 pb-4">
               {[
                 { color: "bg-rose-500", shadow: "#f43f5e" },
                 { color: "bg-amber-500", shadow: "#f59e0b" },
-                { color: "bg-emerald-500", shadow: "#10b981" }
+                { color: "bg-emerald-500", shadow: "#10b981" },
               ].map((item, i) => (
                 <motion.div
                   key={i}
@@ -352,7 +360,6 @@ export default function LoginPage() {
               ))}
             </div>
 
-            {/* Decorative Code/Status */}
             <div className="space-y-3 font-mono text-xs">
               <motion.div
                 initial={{ opacity: 0, x: -10 }}
@@ -372,19 +379,38 @@ export default function LoginPage() {
                 <span>encryption</span>
                 <span className="text-violet-400">TLS 1.3 / AES-256</span>
               </motion.div>
-              <motion.div initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ delay: 0.4 }} className="h-px bg-slate-800 my-2 origin-left" />
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="text-slate-400">
+              <motion.div
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: 1 }}
+                transition={{ delay: 0.4 }}
+                className="h-px bg-slate-800 my-2 origin-left"
+              />
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.5 }}
+                className="text-slate-400"
+              >
                 <span className="text-violet-500">➜</span> verifying_handshake...
               </motion.div>
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }} className="text-slate-400">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.7 }}
+                className="text-slate-400"
+              >
                 <span className="text-violet-500">➜</span> establishing_secure_tunnel...
               </motion.div>
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9 }} className="text-slate-200 animate-pulse">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.9 }}
+                className="text-slate-200 animate-pulse"
+              >
                 <span className="text-emerald-500">✓</span> ready_for_auth
               </motion.div>
             </div>
 
-            {/* Secure Badge */}
             <motion.div
               initial={{ opacity: 0, scale: 0.8, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -397,7 +423,6 @@ export default function LoginPage() {
           </motion.div>
         </div>
       </div>
-
     </div>
   );
 }
