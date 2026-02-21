@@ -4,11 +4,17 @@ import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowRight, Lock, Mail, ShieldCheck, ArrowLeft, AlertCircle } from "lucide-react";
+import {
+  ArrowRight,
+  Lock,
+  Mail,
+  ShieldCheck,
+  ArrowLeft,
+  AlertCircle,
+} from "lucide-react";
 import { useAuth, supabase } from "@/app/providers/AuthContext";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ||
   (typeof window !== "undefined" ? window.location.origin : "");
@@ -106,15 +112,11 @@ export default function LoginPage() {
         provider: "google",
         options: {
           redirectTo: `${SITE_URL}/callback`,
-          queryParams: {
-            access_type: "offline",
-            prompt: "consent",
-          },
+          queryParams: { access_type: "offline", prompt: "consent" },
         },
       });
       if (oauthError) throw oauthError;
     } catch (err) {
-      console.error("Google OAuth error:", err);
       setError(err instanceof Error ? err.message : "Failed to sign in with Google");
       setOauthLoading(false);
     }
@@ -126,13 +128,10 @@ export default function LoginPage() {
     try {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "github",
-        options: {
-          redirectTo: `${SITE_URL}/callback`,
-        },
+        options: { redirectTo: `${SITE_URL}/callback` },
       });
       if (oauthError) throw oauthError;
     } catch (err) {
-      console.error("GitHub OAuth error:", err);
       setError(err instanceof Error ? err.message : "Failed to sign in with GitHub");
       setOauthLoading(false);
     }
@@ -145,44 +144,36 @@ export default function LoginPage() {
 
     try {
       const identifier = data.emailOrUsername.trim();
-
       if (!identifier) throw new Error("Please enter your email or username");
       if (!data.password) throw new Error("Please enter your password");
 
       const isEmail = identifier.includes("@");
       let emailToUse = identifier;
 
+      // Username → resolve to email via backend (bypasses Supabase RLS)
       if (!isEmail) {
         console.log("🔍 Resolving username via backend:", identifier);
-
         const res = await fetch(`${API_BASE_URL}/auth/login-username`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username: identifier,
-            password: data.password,
-          }),
+          body: JSON.stringify({ username: identifier, password: data.password }),
         });
 
         if (!res.ok) {
           let detail = "Username not found. Please check your credentials.";
-          try {
-            const json = await res.json();
-            detail = json.detail || detail;
-          } catch (_) {}
+          try { detail = (await res.json()).detail || detail; } catch (_) {}
           throw new Error(detail);
         }
 
-        const result = await res.json();
-        emailToUse = result.email;
+        emailToUse = (await res.json()).email;
         console.log("✅ Resolved email for username");
       }
 
       console.log("🔐 Signing in...");
       await login(emailToUse, data.password);
 
-      console.log("✅ Login successful, redirecting to /pulse");
-      router.push("/pulse");
+      // Redirect to roadmap on successful login
+      router.push("/roadmap");
     } catch (err) {
       console.error("Login error:", err);
       setError(
@@ -195,7 +186,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen w-full flex bg-slate-950 text-slate-200 font-sans selection:bg-violet-500/30 relative">
-      {/* LEFT SIDE: FORM */}
+      {/* LEFT: Form */}
       <div className="w-full lg:w-1/2 flex flex-col justify-center px-8 md:px-24 xl:px-32 relative z-10">
         <BackButton />
 
@@ -265,7 +256,10 @@ export default function LoginPage() {
                   Remember me
                 </label>
               </div>
-              <Link href="#" className="text-xs text-violet-400 hover:text-violet-300 transition-colors">
+              <Link
+                href="#"
+                className="text-xs text-violet-400 hover:text-violet-300 transition-colors"
+              >
                 Forgot password?
               </Link>
             </div>
@@ -279,13 +273,14 @@ export default function LoginPage() {
                 "Signing In..."
               ) : (
                 <>
-                  Sign In{" "}
+                  Sign In
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </>
               )}
             </button>
           </form>
 
+          {/* OAUTH DIVIDER */}
           <div className="mt-8 relative">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-slate-800" />
@@ -297,6 +292,7 @@ export default function LoginPage() {
             </div>
           </div>
 
+          {/* OAUTH BUTTONS */}
           <div className="mt-6 grid grid-cols-2 gap-4">
             <button
               onClick={handleGoogleLogin}
@@ -327,14 +323,17 @@ export default function LoginPage() {
 
           <div className="mt-5 flex justify-center w-full">
             <div className="mt-0.5 text-sm">Don&apos;t have an account?</div>
-            <Link href="/register" className="ml-1 text-violet-400 hover:text-violet-300 font-medium">
+            <Link
+              href="/register"
+              className="ml-1 text-violet-400 hover:text-violet-300 font-medium"
+            >
               Initialize Workspace
             </Link>
           </div>
         </motion.div>
       </div>
 
-      {/* RIGHT SIDE: VISUALIZATION */}
+      {/* RIGHT: Visual */}
       <div className="hidden lg:block w-1/2 relative bg-[#0B0F17] overflow-hidden border-l border-slate-800">
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:3rem_3rem] opacity-20" />
 
