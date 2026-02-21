@@ -20,7 +20,7 @@ interface TeamMember {
     role: string;
     avatar: string;
     status: 'online' | 'busy' | 'offline';
-    workload: number; // 0-100%
+    workload: number;
     currentTask?: string;
 }
 
@@ -30,8 +30,8 @@ interface PulseEvent {
     actor: TeamMember;
     targetTask: string;
     targetLink?: string;
-    details: string; // e.g., "Moved to In Progress"
-    timestamp: string; // Relative time e.g., "2m ago"
+    details: string;
+    timestamp: string;
     metadata?: {
         from?: string;
         to?: string;
@@ -40,7 +40,6 @@ interface PulseEvent {
     actionRequired?: boolean;
 }
 
-// Upper Element - Blockers & Dependencies, Sprint Health and Team Velocity
 interface ProjectHealth {
     velocity: 'High' | 'Medium' | 'Low';
     blockers?: {
@@ -78,13 +77,140 @@ const SYSTEM_EVENTS: PulseEvent[] = [
     },
 ];
 
-// Sprint Health Graph
+// --- UTILITIES ---
+
+/**
+ * Converts a Unix epoch timestamp (seconds or ms) OR an existing string
+ * into a human-readable relative time string like "5m ago".
+ * Guards against objects/null/undefined being passed in.
+ */
+function toRelativeTime(raw: any): string {
+    if (raw === null || raw === undefined) return 'Just now';
+
+    // If it's already a plain, non-object string, return it directly
+    if (typeof raw === 'string' && raw.trim() !== '') return raw;
+
+    // Handle numeric epoch
+    let epoch: number | null = null;
+    if (typeof raw === 'number') {
+        epoch = raw;
+    } else if (typeof raw === 'string' && /^\d+$/.test(raw.trim())) {
+        epoch = parseInt(raw, 10);
+    }
+
+    if (epoch !== null) {
+        // Detect if epoch is in milliseconds (>= year 2001 in ms = 1_000_000_000_000)
+        const ms = epoch > 1_000_000_000_000 ? epoch : epoch * 1000;
+        const diffSec = Math.floor((Date.now() - ms) / 1000);
+        if (diffSec < 5) return 'Just now';
+        if (diffSec < 60) return `${diffSec}s ago`;
+        if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+        if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+        return `${Math.floor(diffSec / 86400)}d ago`;
+    }
+
+    // Fallback for anything else (objects, etc.)
+    return 'Just now';
+}
+
+/**
+ * Ensures a value is a plain string safe to render as a React child.
+ * If it's an object, array, or anything non-primitive, returns the fallback.
+ */
+function safeString(val: any, fallback = ''): string {
+    if (val === null || val === undefined) return fallback;
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+    // It's an object/array — NOT safe to render; use fallback
+    return fallback;
+}
+
+/**
+ * Transforms a raw API event (activity_log row or custom pulse event) into
+ * a fully type-safe PulseEvent. This is the key fix — it handles raw DB rows
+ * where targetTask may be an object, timestamp is a BIGINT epoch, etc.
+ */
+function transformEvent(raw: any): PulseEvent | null {
+    if (!raw || typeof raw !== 'object') return null;
+
+    // Determine event type safely
+    const validTypes: EventType[] = ['status_change', 'comment', 'blocker', 'milestone', 'handoff', 'task_deleted'];
+    const rawType = safeString(raw.type, 'comment');
+    const type: EventType = validTypes.includes(rawType as EventType)
+        ? (rawType as EventType)
+        : 'comment';
+
+    // Build actor — the activity_log table doesn't store actor objects,
+    // so we synthesize from available fields gracefully
+    const rawActor = raw.actor;
+    let actor: TeamMember;
+    if (rawActor && typeof rawActor === 'object' && !Array.isArray(rawActor)) {
+        actor = {
+            id: safeString(rawActor.id, 'unknown'),
+            name: safeString(rawActor.name, 'System'),
+            role: safeString(rawActor.role, 'User'),
+            avatar: safeString(rawActor.avatar, `https://ui-avatars.com/api/?name=U&background=random`),
+            status: (['online', 'busy', 'offline'].includes(rawActor.status) ? rawActor.status : 'offline') as TeamMember['status'],
+            workload: typeof rawActor.workload === 'number' ? rawActor.workload : 0,
+            currentTask: rawActor.currentTask ? safeString(rawActor.currentTask) : undefined,
+        };
+    } else {
+        // activity_log rows: actor info may come from userId field
+        const userId = safeString(raw.userId || raw.user_id || raw.actor_id, 'sys');
+        actor = {
+            id: userId,
+            name: 'System',
+            role: 'Bot',
+            avatar: `https://ui-avatars.com/api/?name=S&background=334155&color=fff`,
+            status: 'online',
+            workload: 0,
+        };
+    }
+
+    // targetTask: must be a string — if API returns a task object, extract title
+    let targetTask = 'Task';
+    const rawTarget = raw.targetTask ?? raw.target_task ?? raw.task ?? raw.title;
+    if (typeof rawTarget === 'string' && rawTarget.trim()) {
+        targetTask = rawTarget.trim();
+    } else if (rawTarget && typeof rawTarget === 'object') {
+        // It's a full task object — extract the title string
+        targetTask = safeString(rawTarget.title, 'Task');
+    }
+
+    // details must be a string
+    const details = safeString(raw.details ?? raw.message ?? raw.description, '—');
+
+    // timestamp: convert epoch int from DB or relative string
+    const timestamp = toRelativeTime(raw.timestamp ?? raw.created_at ?? raw.createdAt);
+
+    // metadata: only include if values are plain strings
+    let metadata: PulseEvent['metadata'] | undefined;
+    if (raw.metadata && typeof raw.metadata === 'object' && !Array.isArray(raw.metadata)) {
+        metadata = {
+            from: raw.metadata.from ? safeString(raw.metadata.from) : undefined,
+            to: raw.metadata.to ? safeString(raw.metadata.to) : undefined,
+            blockerReason: raw.metadata.blockerReason ? safeString(raw.metadata.blockerReason) : undefined,
+        };
+    }
+
+    return {
+        id: safeString(raw.id, String(Math.random())),
+        type,
+        actor,
+        targetTask,
+        targetLink: safeString(raw.targetLink ?? raw.target_link, '#'),
+        details,
+        timestamp,
+        metadata,
+        actionRequired: Boolean(raw.actionRequired ?? raw.action_required),
+    };
+}
+
+// --- SPRINT HEALTH GRAPH ---
 const SprintHealthCard = ({ data, isNewUser }: { data: ProjectHealth; isNewUser?: boolean }) => {
     const totalSlots = 25;
-
     const totalTasks = (data?.sprint?.completed ?? 0) + (data?.sprint?.remaining ?? 0);
-
-    const currentDayIndex = 15; // Example: we are at bar 15 of 25
+    const currentDayIndex = 15;
     const hasData = totalTasks > 0;
 
     return (
@@ -106,31 +232,24 @@ const SprintHealthCard = ({ data, isNewUser }: { data: ProjectHealth; isNewUser?
 
             <div className="w-full sm:w-52 h-14 flex items-end gap-[2px]">
                 {hasData ? Array.from({ length: totalSlots }).map((_, i) => {
-                    // 2. Logic: Is this bar in the past, present, or future?
                     const isPast = i < currentDayIndex;
                     const isCurrent = i === currentDayIndex;
-
-                    let barHeight = 0;
                     const completed = data.sprint?.completed ?? 0;
+                    let barHeight = 0;
                     if (isPast) {
                         barHeight = (i / currentDayIndex) * (completed / (totalTasks || 1)) * 100;
                     } else if (isCurrent) {
                         barHeight = (completed / (totalTasks || 1)) * 100;
                     } else {
-                        barHeight = 5; // Placeholder for future days
+                        barHeight = 5;
                     }
-
                     return (
-                        <div key={i} className="flex-1 h-full bg-slate-100 dark:bg-slate-800/30 rounded-t-full relative">
+                        <div key={i} className="flex-1 h-full bg-slate-800/30 rounded-t-full relative">
                             <div
                                 className={`absolute bottom-0 left-0 right-0 rounded-t-full transition-all duration-1000
-                    ${isCurrent ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]' :
-                                        isPast ? 'bg-slate-400 dark:bg-slate-600' : 'bg-slate-200 dark:bg-slate-800'}
-                        `}
-                                style={{
-                                    height: `${Math.max(barHeight, 4)}%`,
-                                    transitionDelay: `${i * 10}ms`
-                                }}
+                                    ${isCurrent ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]' :
+                                        isPast ? 'bg-slate-600' : 'bg-slate-800'}`}
+                                style={{ height: `${Math.max(barHeight, 4)}%`, transitionDelay: `${i * 10}ms` }}
                             />
                         </div>
                     );
@@ -147,13 +266,13 @@ const SprintHealthCard = ({ data, isNewUser }: { data: ProjectHealth; isNewUser?
 // --- HELPER COMPONENTS ---
 
 const StatusPill = ({ status }: { status: string }) => {
-    const colors = {
+    const colors: Record<string, string> = {
         online: 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]',
         busy: 'bg-amber-500',
         offline: 'bg-gray-400'
     };
     return (
-        <span className={`h-2.5 w-2.5 rounded-full ${colors[status as keyof typeof colors] || colors.offline} ring-2 ring-slate-950`} />
+        <span className={`h-2.5 w-2.5 rounded-full ${colors[status] || colors.offline} ring-2 ring-slate-950`} />
     );
 };
 
@@ -161,13 +280,9 @@ const WorkloadIndicator = ({ level }: { level: number }) => {
     let color = 'bg-emerald-500';
     if (level > 70) color = 'bg-amber-500';
     if (level > 90) color = 'bg-rose-500';
-
     return (
         <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-            <div
-                className={`h-full ${color} transition-all duration-500`}
-                style={{ width: `${level}%` }}
-            />
+            <div className={`h-full ${color} transition-all duration-500`} style={{ width: `${level}%` }} />
         </div>
     );
 };
@@ -177,9 +292,9 @@ const WorkloadIndicator = ({ level }: { level: number }) => {
 const PulseInsights = ({ data, isNewUser }: { data: ProjectHealth; isNewUser: boolean }) => {
     const isBlocker = data.blockers?.type === 'blocker';
     const velocityStyles = {
-        High: { color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/20', iconColor: 'text-emerald-600', textSize: 'text-xl' },
-        Medium: { color: 'text-amber-500', bg: 'bg-amber-100 dark:bg-amber-900/20', iconColor: 'text-amber-600', textSize: 'text-lg' },
-        Low: { color: 'text-rose-500', bg: 'bg-rose-100 dark:bg-rose-900/20', iconColor: 'text-rose-600', textSize: 'text-xl' }
+        High: { color: 'text-emerald-500', bg: 'bg-emerald-900/20', iconColor: 'text-emerald-600', textSize: 'text-xl' },
+        Medium: { color: 'text-amber-500', bg: 'bg-amber-900/20', iconColor: 'text-amber-600', textSize: 'text-lg' },
+        Low: { color: 'text-rose-500', bg: 'bg-rose-900/20', iconColor: 'text-rose-600', textSize: 'text-xl' }
     };
 
     const status = velocityStyles[data.velocity] || velocityStyles.Medium;
@@ -209,41 +324,23 @@ const PulseInsights = ({ data, isNewUser }: { data: ProjectHealth; isNewUser: bo
                 </div>
 
                 {((data.blockers?.count ?? 0) > 0 || isNewUser) && (
-                    <div className={`bg-slate-900 border ${isBlocker ? 'border-rose-200 dark:border-rose-900/50' : 'border-amber-200 dark:border-amber-900/50'} p-4 rounded-xl shadow-sm flex items-center justify-between relative overflow-hidden`}>
+                    <div className={`bg-slate-900 border ${isBlocker ? 'border-rose-900/50' : 'border-amber-900/50'} p-4 rounded-xl shadow-sm flex items-center justify-between relative overflow-hidden`}>
                         <div className={`absolute left-0 top-0 bottom-0 w-1 ${isBlocker ? 'bg-rose-500' : 'bg-amber-500'}`} />
                         <div>
                             <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold">
                                 {isBlocker ? 'Active Blockers' : 'External Dependencies'}
                             </p>
                             <div className="flex items-center gap-2 mt-1">
-                                <span className={`text-2xl font-black ${isBlocker ? 'text-rose-600' : 'text-amber-600'}`}>
+                                <span className={`text-2xl font-black ${isBlocker ? 'text-rose-500' : 'text-amber-500'}`}>
                                     {isNewUser ? '0 (sample)' : `${data.blockers?.count ?? 0} ${(data.blockers?.count ?? 0) === 1 ? 'Issue' : 'Issues'}`}
                                 </span>
                             </div>
                         </div>
-                        <a href="/analytics"
-                            className={`
-                text-xs px-4 py-2 rounded-lg font-bold
-                transition-all duration-200 ease-out
-                cursor-pointer outline-none active:scale-95
-                border border-slate-700/50
-
-                ${isBlocker
-                                    ? `bg-rose-900/80 text-rose-100 hover:bg-rose-800
-                    hover:border-rose-500/50
-                    shadow-[0_4px_12px_-4px_rgba(225,29,72,0.6)]`
-                                    : `bg-slate-800 text-slate-300 hover:bg-slate-700
-                    hover:text-slate-100
-                    hover:border-slate-500/50
-                    shadow-[0_4px_12px_-4px_rgba(0,0,0,0.5)]`
-                                }
-                `}>
+                        <a href="/analytics" className={`text-xs px-4 py-2 rounded-lg font-bold transition-all duration-200 cursor-pointer outline-none active:scale-95 border border-slate-700/50 ${isBlocker ? 'bg-rose-900/80 text-rose-100 hover:bg-rose-800' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>
                             View
                         </a>
                     </div>
                 )}
-
-                {/* SPRINT HEALTH FIELD */}
 
                 {((data.sprint?.daysLeft ?? 0) > 0 || isNewUser) && (
                     <SprintHealthCard data={data} isNewUser={isNewUser} />
@@ -253,7 +350,6 @@ const PulseInsights = ({ data, isNewUser }: { data: ProjectHealth; isNewUser: bo
     );
 };
 
-
 const TeamSidebar = ({ members, isNewUser }: { members: TeamMember[]; isNewUser: boolean }) => {
     return (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 h-fit sticky top-6 shadow-lg">
@@ -261,7 +357,9 @@ const TeamSidebar = ({ members, isNewUser }: { members: TeamMember[]; isNewUser:
                 <h3 className="font-bold text-slate-200 flex items-center gap-2">
                     <Users className="w-4 h-4 text-indigo-500" /> Team Pulse
                 </h3>
-                <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-400">{members.filter(member => member.status === 'online').length} Online</span>
+                <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-400">
+                    {members.filter(m => m.status === 'online').length} Online
+                </span>
             </div>
 
             <div className={`space-y-5 ${isNewUser ? 'opacity-60' : ''}`}>
@@ -306,29 +404,21 @@ const TeamSidebar = ({ members, isNewUser }: { members: TeamMember[]; isNewUser:
     );
 };
 
-// Feed Sections Main Content
+// Feed Item
 const FeedItem = ({ event, isSample }: { event: PulseEvent; isSample?: boolean }) => {
-    // COLOR SCHEME AND ICONOGRAPHY
     const getStyles = (event: PulseEvent) => {
-        // Check for deleted task
         if (event.type === 'task_deleted' || event.details.toLowerCase().includes('deleted')) {
-            return {
-                icon: XCircle,
-                color: 'text-purple-500',
-                bg: 'bg-purple-50 dark:bg-purple-900/20',
-                border: 'border-purple-200 dark:border-purple-900'
-            };
+            return { icon: XCircle, color: 'text-purple-500', bg: 'bg-purple-900/20', border: 'border-purple-900' };
         }
-
         switch (event.type) {
             case 'blocker':
-                return { icon: AlertTriangle, color: 'text-rose-500', bg: 'bg-rose-50 dark:bg-rose-900/20', border: 'border-rose-200 dark:border-rose-900' };
+                return { icon: AlertTriangle, color: 'text-rose-500', bg: 'bg-rose-900/20', border: 'border-rose-900' };
             case 'status_change':
-                return { icon: ArrowRight, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-200 dark:border-emerald-900' };
+                return { icon: ArrowRight, color: 'text-emerald-500', bg: 'bg-emerald-900/20', border: 'border-emerald-900' };
             case 'handoff':
-                return { icon: User, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20', border: 'border-blue-200 dark:border-blue-900' };
+                return { icon: User, color: 'text-blue-500', bg: 'bg-blue-900/20', border: 'border-blue-900' };
             default:
-                return { icon: MessageSquare, color: 'text-gray-500', bg: 'bg-gray-50 dark:bg-gray-800', border: 'border-gray-200 dark:border-gray-800' };
+                return { icon: MessageSquare, color: 'text-gray-500', bg: 'bg-gray-800/50', border: 'border-gray-800' };
         }
     };
 
@@ -336,19 +426,28 @@ const FeedItem = ({ event, isSample }: { event: PulseEvent; isSample?: boolean }
     const Icon = style.icon;
     const isDeleted = event.type === 'task_deleted' || event.details.toLowerCase().includes('deleted');
 
+    // All values rendered as children must be confirmed strings
+    const actorName = safeString(event.actor?.name, 'Unknown');
+    const details = safeString(event.details, '');
+    const targetTask = safeString(event.targetTask, 'Task');
+    const timestamp = safeString(event.timestamp, 'Just now');
+    const metaFrom = safeString(event.metadata?.from, '');
+    const metaTo = safeString(event.metadata?.to, '');
+    const blockerReason = safeString(event.metadata?.blockerReason, '');
+
     return (
         <div className="flex gap-3 sm:gap-4 relative pb-8 last:pb-0">
             {/* Timeline Line */}
-            <div className={`absolute left-[19px] top-10 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-800 last:hidden ${isSample ? 'opacity-50' : ''}`} />
+            <div className={`absolute left-[19px] top-10 bottom-0 w-0.5 bg-slate-800 last:hidden ${isSample ? 'opacity-50' : ''}`} />
 
             {/* Avatar */}
             <div className="relative z-10">
                 <img
                     src={event.actor.avatar}
-                    alt={event.actor.name}
-                    className="w-10 h-10 rounded-full border-4 border-gray-50 dark:border-gray-950 object-cover shadow-sm"
+                    alt={actorName}
+                    className="w-10 h-10 rounded-full border-4 border-slate-950 object-cover shadow-sm"
                 />
-                <div className={`absolute -bottom-1 -right-1 p-0.5 rounded-full bg-white dark:bg-gray-900 ${style.color}`}>
+                <div className={`absolute -bottom-1 -right-1 p-0.5 rounded-full bg-slate-900 ${style.color}`}>
                     <Icon className="w-3 h-3" />
                 </div>
             </div>
@@ -357,32 +456,33 @@ const FeedItem = ({ event, isSample }: { event: PulseEvent; isSample?: boolean }
             <div className={`flex-1 p-3 sm:p-4 rounded-xl border ${style.border} ${style.bg} relative group transition-all hover:shadow-md ${isSample ? 'opacity-80' : ''}`}>
                 <div className="flex flex-col sm:flex-row sm:justify-between items-start mb-1 gap-1 sm:gap-0">
                     <p className="text-sm text-slate-200">
-                        <span className="font-bold">{event.actor.name}</span> <span className="text-slate-400 font-normal">{event.details}</span> <span className={`font-semibold ${isDeleted ? 'text-purple-400' : 'text-indigo-400 hover:underline cursor-pointer'}`}>&quot;{event.targetTask}&quot;</span>
-                        {isSample && <span className="ml-2 text-[10px] bg-slate-800/50 px-1.5 py-0.5 rounded text-slate-400 border border-slate-700">Sample</span>}
+                        <span className="font-bold">{actorName}</span>{' '}
+                        <span className="text-slate-400 font-normal">{details}</span>{' '}
+                        <span className={`font-semibold ${isDeleted ? 'text-purple-400' : 'text-indigo-400 hover:underline cursor-pointer'}`}>
+                            &quot;{targetTask}&quot;
+                        </span>
+                        {isSample && (
+                            <span className="ml-2 text-[10px] bg-slate-800/50 px-1.5 py-0.5 rounded text-slate-400 border border-slate-700">Sample</span>
+                        )}
                     </p>
-                    <span className="text-xs text-slate-500 whitespace-nowrap ml-0 sm:ml-2">{event.timestamp}</span>
+                    <span className="text-xs text-slate-500 whitespace-nowrap ml-0 sm:ml-2">{timestamp}</span>
                 </div>
 
-                {/* Metadata / Details */}
-                {/* WHEN OBSTACLE */}
-                {event.metadata?.blockerReason && (
-                    <div className="mt-2 p-2 bg-rose-100 dark:bg-rose-950/50 rounded-lg text-xs text-rose-800 dark:text-rose-200 font-medium flex items-start gap-2">
+                {blockerReason && (
+                    <div className="mt-2 p-2 bg-rose-950/50 rounded-lg text-xs text-rose-200 font-medium flex items-start gap-2">
                         <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
-                        &quot;{event.metadata.blockerReason}&quot;
-                    </div>
-                )}
-                {/* WHEN CONTINUING */}
-                {event.metadata?.from && (
-                    <div className="mt-2 flex items-center gap-2 text-xs font-mono text-slate-400">
-                        {/* TASK FROM */}
-                        <span className="px-2 py-0.5 bg-slate-800/50 rounded">{event.metadata.from}</span>
-                        <ArrowRight className="w-3 h-3" />
-                        {/* TASK TO */}
-                        <span className="px-2 py-0.5 bg-slate-800/50 rounded font-bold text-slate-200">{event.metadata.to}</span>
+                        &quot;{blockerReason}&quot;
                     </div>
                 )}
 
-                {/* Action Options */}
+                {metaFrom && (
+                    <div className="mt-2 flex items-center gap-2 text-xs font-mono text-slate-400">
+                        <span className="px-2 py-0.5 bg-slate-800/50 rounded">{metaFrom}</span>
+                        <ArrowRight className="w-3 h-3" />
+                        <span className="px-2 py-0.5 bg-slate-800/50 rounded font-bold text-slate-200">{metaTo}</span>
+                    </div>
+                )}
+
                 <div className="mt-3 flex gap-3 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                     {event.actionRequired ? (
                         <button className="text-xs flex items-center gap-1 bg-slate-900 px-3 py-1.5 rounded-full border border-slate-700 shadow-sm text-slate-200 hover:text-emerald-500 font-semibold">
@@ -408,8 +508,6 @@ const ActivityStream = ({ events, isNewUser }: { events: PulseEvent[]; isNewUser
                     Activity Stream
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 </h2>
-
-                {/* 🔎🔎SEARCH FIELD 🔎🔎 */}
                 <div className="flex gap-2 w-full sm:w-auto">
                     <div className="relative flex-1 sm:flex-none">
                         <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
@@ -425,7 +523,6 @@ const ActivityStream = ({ events, isNewUser }: { events: PulseEvent[]; isNewUser
                 </div>
             </div>
 
-            {/* EVENT FIELD */}
             <div className="pl-2 flex-1 overflow-y-auto pr-2">
                 {safeEvents.map(event => (
                     <FeedItem key={event.id} event={event} isSample={isNewUser} />
@@ -450,7 +547,6 @@ const ActivityStream = ({ events, isNewUser }: { events: PulseEvent[]; isNewUser
     );
 };
 
-// --- Pulse Focus ---
 const PulseFocusComponent = ({
     currentTask,
     nextTask,
@@ -462,6 +558,11 @@ const PulseFocusComponent = ({
     rationale: string | null;
     isNewUser: boolean;
 }) => {
+    // Guard: ensure these are strings, not objects
+    const safeCurrentTask = currentTask && typeof currentTask === 'string' ? currentTask : null;
+    const safeNextTask = nextTask && typeof nextTask === 'string' ? nextTask : null;
+    const safeRationale = rationale && typeof rationale === 'string' ? rationale : null;
+
     return (
         <div className="bg-slate-900 border border-indigo-900/30 rounded-2xl p-5 shadow-lg sticky top-6">
             <div className="flex items-center justify-between mb-6">
@@ -483,33 +584,32 @@ const PulseFocusComponent = ({
             ) : (
                 <>
                     <div className="space-y-4">
-                        {currentTask && (
+                        {safeCurrentTask && (
                             <div>
                                 <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Right Now</p>
                                 <div className="p-3 bg-indigo-900/20 rounded-lg border border-indigo-700/30">
-                                    <p className="text-sm font-semibold text-slate-200">{currentTask}</p>
+                                    <p className="text-sm font-semibold text-slate-200">{safeCurrentTask}</p>
                                 </div>
                             </div>
                         )}
-
-                        {nextTask && (
+                        {safeNextTask && (
                             <div>
                                 <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Up Next</p>
                                 <div className="p-3 bg-slate-800/30 rounded-lg border border-slate-700/50">
-                                    <p className="text-sm font-medium text-slate-300">{nextTask}</p>
+                                    <p className="text-sm font-medium text-slate-300">{safeNextTask}</p>
                                 </div>
                             </div>
                         )}
                     </div>
 
-                    {rationale && (
+                    {safeRationale && (
                         <div className="mt-6 pt-6 border-t border-slate-800">
                             <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Envoy Rationale</p>
-                            <p className="text-xs text-slate-400 leading-relaxed">{rationale}</p>
+                            <p className="text-xs text-slate-400 leading-relaxed">{safeRationale}</p>
                         </div>
                     )}
 
-                    {!currentTask && !nextTask && (
+                    {!safeCurrentTask && !safeNextTask && (
                         <div className="text-center py-8">
                             <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-20" />
                             <p className="text-sm text-slate-400">All caught up!</p>
@@ -527,7 +627,9 @@ export default function PulsePage() {
     const { userId, jwt } = useAuth();
     const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
     const [activityEvents, setActivityEvents] = useState<PulseEvent[]>([]);
-    const [focusData, setFocusData] = useState<{ currentTask: string | null; nextTask: string | null; rationale: string | null }>({ currentTask: null, nextTask: null, rationale: null });
+    const [focusData, setFocusData] = useState<{ currentTask: string | null; nextTask: string | null; rationale: string | null }>({
+        currentTask: null, nextTask: null, rationale: null
+    });
     const [stats, setStats] = useState<ProjectHealth>({
         velocity: 'Medium',
         blockers: { count: 0, type: 'blocker' },
@@ -537,22 +639,14 @@ export default function PulsePage() {
     const [hasSeenActivity, setHasSeenActivity] = useState(false);
     const [inviteStatus, setInviteStatus] = useState<'idle' | 'animating'>('idle');
 
-    // STRICT CHECK: Only show placeholders if backend explicitly says isNewUser is true.
-    // If stats.isNewUser is undefined (e.g. API error/429), default to FALSE to prevent placeholders from reappearing.
     const isNewUser = !loading && stats.isNewUser === true;
 
     function copyToClipboard() {
         setInviteStatus('animating');
         setTimeout(() => setInviteStatus('idle'), 2000);
-
         const textToCopy = 'https://tasklinex.vercel.app';
-
         if (navigator.clipboard && window.isSecureContext) {
-            navigator.clipboard.writeText(textToCopy).then(() => {
-                //alert("App Invite link copied!");
-            }).catch(err => {
-                console.error("Error: ", err);
-            });
+            navigator.clipboard.writeText(textToCopy).catch(err => console.error("Clipboard error:", err));
         } else {
             const textArea = document.createElement("textarea");
             textArea.value = textToCopy;
@@ -560,44 +654,12 @@ export default function PulsePage() {
             textArea.style.left = "-9999px";
             textArea.style.top = "0";
             document.body.appendChild(textArea);
-
             textArea.focus();
             textArea.select();
-
-            try {
-                const successful = document.execCommand('copy');
-                if (successful) {
-                    alert("Invite link copied!");
-                }
-            } catch (err) {
-                console.error("Error while generating invite link!", err);
-            }
-
+            try { document.execCommand('copy'); } catch (err) { console.error("Copy error:", err); }
             document.body.removeChild(textArea);
         }
     }
-
-    // Helper function to transform API event to PulseEvent
-    const transformEvent = (apiEvent: any): PulseEvent => {
-        return {
-            id: apiEvent.id || String(Math.random()),
-            type: apiEvent.type || 'status_change',
-            actor: {
-                id: apiEvent.actor?.id || 'unknown',
-                name: apiEvent.actor?.name || 'Unknown',
-                role: apiEvent.actor?.role || 'User',
-                avatar: apiEvent.actor?.avatar || `https://ui-avatars.com/api/?name=${apiEvent.actor?.name || 'U'}`,
-                status: apiEvent.actor?.status || 'offline',
-                workload: apiEvent.actor?.workload || 0
-            },
-            targetTask: apiEvent.targetTask || 'Task',
-            targetLink: apiEvent.targetLink || '#',
-            details: apiEvent.details || '',
-            timestamp: apiEvent.timestamp || 'Just now',
-            metadata: apiEvent.metadata,
-            actionRequired: apiEvent.actionRequired || false
-        };
-    };
 
     useEffect(() => {
         if (!userId || !jwt) return;
@@ -616,32 +678,42 @@ export default function PulsePage() {
                 ]);
 
                 const mappedTeam: TeamMember[] = Array.isArray(teamData) ? teamData.map((m: any) => ({
-                    id: m.id || String(Math.random()),
-                    name: m.name || 'Unknown',
-                    role: m.role || 'Member',
-                    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(m.name || 'U')}&background=random`,
-                    status: (m.status || 'offline') as TeamMember['status'],
-                    workload: m.workload || Math.floor(Math.random() * 100),
-                    currentTask: m.currentTask
+                    id: safeString(m.id, String(Math.random())),
+                    name: safeString(m.name, 'Unknown'),
+                    role: safeString(m.role, 'Member'),
+                    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(safeString(m.name, 'U'))}&background=random`,
+                    status: (['online', 'busy', 'offline'].includes(m.status) ? m.status : 'offline') as TeamMember['status'],
+                    workload: typeof m.workload === 'number' ? m.workload : Math.floor(Math.random() * 100),
+                    currentTask: m.currentTask ? safeString(m.currentTask) : undefined,
                 })) : [];
 
                 setTeamMembers(mappedTeam);
                 if (mappedTeam.length > 0) setHasSeenActivity(true);
 
-                // Transform API events to match PulseEvent interface
-                const events: PulseEvent[] = Array.isArray(activityData) 
-                    ? activityData.map(transformEvent)
+                // Transform and filter out any null results from bad rows
+                const events: PulseEvent[] = Array.isArray(activityData)
+                    ? activityData.map(transformEvent).filter((e): e is PulseEvent => e !== null)
                     : [];
-                
+
                 setActivityEvents(events);
                 if (events.length > 0) setHasSeenActivity(true);
 
-                if (focusDataResponse) {
-                    setFocusData(focusDataResponse);
+                if (focusDataResponse && typeof focusDataResponse === 'object') {
+                    setFocusData({
+                        currentTask: safeString(focusDataResponse.currentTask) || null,
+                        nextTask: safeString(focusDataResponse.nextTask) || null,
+                        rationale: safeString(focusDataResponse.rationale) || null,
+                    });
                 }
 
-                if (statsData) {
-                    setStats(statsData);
+                if (statsData && typeof statsData === 'object') {
+                    setStats(prev => ({
+                        ...prev,
+                        velocity: (['High', 'Medium', 'Low'].includes(statsData.velocity) ? statsData.velocity : 'Medium') as ProjectHealth['velocity'],
+                        blockers: statsData.blockers || prev.blockers,
+                        sprint: statsData.sprint || prev.sprint,
+                        isNewUser: Boolean(statsData.isNewUser),
+                    }));
                 }
 
             } catch (error) {
@@ -652,23 +724,19 @@ export default function PulsePage() {
         };
 
         fetchData();
-
-        // Poll for updates every 5 seconds
         const interval = setInterval(fetchData, 5000);
         return () => clearInterval(interval);
     }, [userId, jwt]);
 
     return (
         <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans selection:bg-indigo-500/30">
-            {/* Header Area */}
+            {/* Header */}
             <div className="max-w-7xl mx-auto mb-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                 <div>
                     <h1 className="text-4xl font-extrabold tracking-tight mb-2">
                         TaskLinex <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-500">Pulse</span>
                     </h1>
-                    <p className="text-slate-400 text-lg">
-                        Synchronize with your team without the meetings.
-                    </p>
+                    <p className="text-slate-400 text-lg">Synchronize with your team without the meetings.</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <div className="flex -space-x-3">
@@ -691,23 +759,22 @@ export default function PulsePage() {
             </div>
 
             <div className="max-w-7xl mx-auto">
-                {/* 1. Top Level Insights */}
+                {/* 1. Top Insights */}
                 <PulseInsights data={stats} isNewUser={isNewUser} />
 
-                {/* 2. Main Grid Layout */}
+                {/* 2. Main Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-
-                    {/* Left: Team Sidebar (20%) */}
+                    {/* Left: Team Sidebar */}
                     <div className="hidden lg:block lg:col-span-3">
                         <TeamSidebar members={isNewUser ? SAMPLE_MEMBERS : teamMembers} isNewUser={isNewUser} />
                     </div>
 
-                    {/* Middle: Activity Feed (50%) */}
+                    {/* Middle: Activity Feed */}
                     <div className="lg:col-span-6">
                         <ActivityStream events={isNewUser ? SYSTEM_EVENTS : activityEvents} isNewUser={isNewUser} />
                     </div>
 
-                    {/* Right: My Focus (30%) */}
+                    {/* Right: My Focus */}
                     <div className="lg:col-span-3">
                         <PulseFocusComponent
                             currentTask={focusData.currentTask}
@@ -716,7 +783,6 @@ export default function PulsePage() {
                             isNewUser={isNewUser}
                         />
 
-                        {/* Mini Widget: Upcoming Deadlines */}
                         <div className="mt-6 bg-slate-900 p-5 rounded-2xl border border-slate-800">
                             <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wide mb-4 flex items-center gap-2">
                                 <Calendar className="w-4 h-4" /> This Week
@@ -725,7 +791,7 @@ export default function PulsePage() {
                                 <div className="flex gap-3 items-start">
                                     <div className="flex flex-col items-center min-w-[30px]">
                                         <span className="text-xs font-bold text-gray-400">OCT</span>
-                                        <span className="text-lg font-black text-gray-800 dark:text-gray-200">24</span>
+                                        <span className="text-lg font-black text-gray-200">24</span>
                                     </div>
                                     <div>
                                         <p className="text-sm font-semibold leading-tight">Client Demo: V1 Prototype</p>
