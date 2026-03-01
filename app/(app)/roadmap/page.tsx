@@ -1021,7 +1021,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
         try {
             await MockAPI.completeTask(taskToEdit.id, currentUserId || 'u1', jwt!);
             // Refresh data
-            const data = await MockAPI.fetchData(jwt!);
+            const data = await MockAPI.fetchData(jwt!, currentUserId || 'u1');
             dispatch({ type: 'INIT_DATA', payload: data });
             onClose();
         } catch (e) {
@@ -1045,7 +1045,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
 
             if (!response.ok) throw new Error('Failed to uncomplete task');
 
-            const data = await MockAPI.fetchData(jwt!);
+            const data = await MockAPI.fetchData(jwt!, currentUserId || 'u1');
             dispatch({ type: 'INIT_DATA', payload: data });
             onClose();
         } catch (e) {
@@ -1288,7 +1288,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
 
 const AddProjectModal = ({ onClose, onSuccess }: { onClose: () => void, onSuccess: () => void }) => {
     const { state, dispatch } = useContext(AppContext)!;
-    const { jwt } = useAuth();
+    const { jwt, user } = useAuth();
     const [name, setName] = useState('');
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -1305,7 +1305,7 @@ const AddProjectModal = ({ onClose, onSuccess }: { onClose: () => void, onSucces
             const newProject = await response.json();
 
             // Refresh full data to ensure everything is in sync
-            const data = await MockAPI.fetchData(jwt!);
+            const data = await MockAPI.fetchData(jwt!, state.currentUser?.id || user?.id || 'u1');
             dispatch({ type: 'INIT_DATA', payload: data });
             onClose();
         } catch (error) {
@@ -1990,7 +1990,8 @@ const DependencyPanel = ({ taskId, onClose }: { taskId: string, onClose: () => v
     }, [taskId]);
 
     const refreshRoadmapData = async () => {
-        const data = await MockAPI.fetchData(jwt!);
+        if (!state.currentUser) return;
+        const data = await MockAPI.fetchData(jwt!, state.currentUser.id);
         dispatch({ type: 'INIT_DATA', payload: data });
     };
 
@@ -2971,7 +2972,7 @@ export default function RoadmapPage() {
 
             if (response.ok) {
                 setBalanceSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
-                const data = await MockAPI.fetchData(jwt);
+                const data = await MockAPI.fetchData(jwt, userId);
                 dispatch({ type: 'INIT_DATA', payload: data });
                 triggerPopup('Balance suggestion applied!');
             } else {
@@ -3142,8 +3143,10 @@ export default function RoadmapPage() {
         onClose={() => dispatch({ type: 'TRIGGER_ENVOY', payload: null })}
         onUpdateSuccess={async () => {
             // Refresh data after AI apply
-            const data = await MockAPI.fetchData(jwt!);
-            dispatch({ type: 'INIT_DATA', payload: data });
+            if (userId && jwt) {
+                const data = await MockAPI.fetchData(jwt, userId);
+                dispatch({ type: 'INIT_DATA', payload: data });
+            }
         }}
         />
 
@@ -3204,8 +3207,10 @@ export default function RoadmapPage() {
                 tasks={state.tasks}
                 onClose={() => setDependencyEditModal(null)}
                 onUpdate={async () => {
-                    const data = await MockAPI.fetchData(jwt!);
-                    dispatch({ type: 'INIT_DATA', payload: data });
+                    if (userId && jwt) {
+                        const data = await MockAPI.fetchData(jwt, userId);
+                        dispatch({ type: 'INIT_DATA', payload: data });
+                    }
                 }}
                 />
             )}
