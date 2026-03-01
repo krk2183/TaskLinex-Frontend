@@ -145,12 +145,13 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const MockAPI = {
     sleep: (ms: number) => new Promise(r => setTimeout(r, ms)),
     // Newly added: Fetchdata to replace MOCK data
-    fetchData: async (token: string) => {
+    // Updated fetchData in page (1).tsx
+    fetchData: async (token: string, userId: string) => {
         const headers = { Authorization: `Bearer ${token}` };
         const [tasksRes, personasRes, projectsRes] = await Promise.all([
             fetch(`${API_BASE_URL}/renderTask`, { headers, cache: 'no-store' }),
-                                                                       fetch(`${API_BASE_URL}/renderPersona`, { headers, cache: 'no-store' }),
-                                                                       fetch(`${API_BASE_URL}/projects`, { headers, cache: 'no-store' })
+            fetch(`${API_BASE_URL}/renderPersona`, { headers, cache: 'no-store' }),
+            fetch(`${API_BASE_URL}/projects`, { headers, cache: 'no-store' })
         ]);
 
         if (tasksRes.status === 401 || personasRes.status === 401 || projectsRes.status === 401) {
@@ -162,7 +163,6 @@ const MockAPI = {
             const personasData = await personasRes.json();
             const projects = await projectsRes.json();
 
-            // Map backend personas to frontend structure
             const mappedPersonas = Array.isArray(personasData) ? personasData.map((p: any) => ({
                 id: p.id,
                 name: p.name,
@@ -172,19 +172,24 @@ const MockAPI = {
             })) : [];
 
             const mapTask = (t: any): any => ({
-                    ...t,
-                    dependencySummary: {
-                        blocked_by_count: t.blocked_by_count || 0,
-                        waiting_on_count: t.waiting_on_count || 0,
-                        helpful_if_done_first_count: t.helpful_if_done_first_count || 0,
-                    },
-                    dependencyIds: Array.isArray(t.dependencyIds) ? t.dependencyIds : [],
-                    tags: Array.isArray(t.tags) ? t.tags : [],
-                    dependents: Array.isArray(t.dependents) ? t.dependents.map(mapTask) : [],
+                ...t,
+                dependencySummary: {
+                    blocked_by_count: t.blocked_by_count || 0,
+                    waiting_on_count: t.waiting_on_count || 0,
+                    helpful_if_done_first_count: t.helpful_if_done_first_count || 0,
+                },
+                dependencyIds: Array.isArray(t.dependencyIds) ? t.dependencyIds : [],
+                tags: Array.isArray(t.tags) ? t.tags : [],
+                dependents: Array.isArray(t.dependents) ? t.dependents.map(mapTask) : [],
             });
 
+            // CHANGE: Added filtering logic to ensure only this user's tasks are returned
+            const filteredTasks = Array.isArray(tasks) 
+                ? tasks.filter((t: any) => t.ownerId === userId).map(mapTask) 
+                : [];
+
             return {
-                tasks: Array.isArray(tasks) ? tasks.map(mapTask) : [],
+                tasks: filteredTasks,
                 users: [],
                 projects: Array.isArray(projects) ? projects : MOCK_PROJECTS,
                 personas: mappedPersonas
@@ -333,11 +338,16 @@ const AppContext = createContext<{ state: AppState; dispatch: React.Dispatch<Act
 function appReducer(state: AppState, action: Action): AppState {
     switch (action.type) {
         case 'INIT_DATA': {
-            // Preserve currentUser if not provided in payload
             const currentUser = action.payload.currentUser || state.currentUser;
+            
+            const userTasks = action.payload.tasks?.filter((t: Task) => 
+                !currentUser || t.ownerId === currentUser.id
+            ) || [];
+
             return {
                 ...state,
                 ...action.payload,
+                tasks: userTasks,
                 currentUser,
                 isLoading: false
             };
@@ -2732,68 +2742,23 @@ export default function RoadmapPage() {
 
     // Initial Data Fetch
     useEffect(() => {
-        // Wait for the AuthContext to provide the userId.
-        if (!userId || !jwt) return;
-
-        const loadData = async () => {
-            try {
-                const data = await MockAPI.fetchData(jwt); // This now calls /renderTask
-
-                // Fetch Team Members (Users) to populate owner fields
-                let teamMembers: User[] = [];
+        const loadInitialData = async () => {
+            // Ensure we have both the token and the user object
+            if (jwt && user?.id) {
                 try {
-                    const teamRes = await fetch(`${API_BASE_URL}/team/members?userId=${userId}`, {
-                        headers: { Authorization: `Bearer ${jwt}` }
+                    // Pass user.id to the fetchData function
+                    const data = await MockAPI.fetchData(jwt, user.id);
+                    dispatch({ 
+                        type: 'INIT_DATA', 
+                        payload: { ...data, currentUser: user } 
                     });
-                    if (teamRes.ok) {
-                        const members = await teamRes.json();
-                        teamMembers = members.map((m: any) => ({
-                            id: m.id,
-                            name: m.name,
-                            avatar: `https://ui-avatars.com/api/?name=${m.name}&background=random`,
-                            baseCapacity: 80, // Default
-                            personas: []
-                        }));
-                    }
-                } catch (e) { console.error("Failed to load team", e); }
-
-                // Ensure current user is in the list if not returned by team endpoint (e.g. admin/isolated)
-                let currentUser = teamMembers.find(u => u.id === userId);
-                if (!currentUser) {
-                    try {
-                        const res = await fetch(`${API_BASE_URL}/users/${userId}`, {
-                            headers: { Authorization: `Bearer ${jwt}` }
-                        });
-                        if (res.ok) {
-                            const u = await res.json();
-                            currentUser = {
-                                id: u.id,
-                                name: u.firstName || u.username || 'User',
-                                avatar: `https://ui-avatars.com/api/?name=${u.firstName || 'U'}&background=0D8ABC&color=fff`,
-                                baseCapacity: 100,
-                                personas: []
-                            };
-                            teamMembers.push(currentUser);
-                        }
-                    } catch (e) { console.error("Failed to load user", e); }
-                }
-
-                // Update data.users with fetched team members
-                if (teamMembers.length > 0) {
-                    data.users = teamMembers;
-                }
-
-                dispatch({ type: 'INIT_DATA', payload: { ...data, currentUser } });
-            } catch (e: any) {
-                if (e.message === "Unauthorized") {
-                    logout();
-                } else {
-                    console.error("Failed to load data", e);
+                } catch (err) {
+                    console.error("Failed to load initial data:", err);
                 }
             }
         };
-        loadData();
-    }, [userId, jwt, logout]);
+        loadInitialData();
+    }, [jwt, user?.id]); // Re-run if user ID changes
 
     // Filter Logic
     const filteredTasks = useMemo(() => {
