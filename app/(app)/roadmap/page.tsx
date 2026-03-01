@@ -1516,7 +1516,6 @@ const ProjectVisibilityDropdown: React.FC<{
             document.body
         )}
         </div>
-        </div>
     );
 };
 
