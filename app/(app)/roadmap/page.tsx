@@ -1,6 +1,6 @@
 "use client";
 
-import React, {
+import React {
     createContext, useContext, useReducer, useEffect, useState, useMemo, useRef
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -14,7 +14,7 @@ import {
 import { useAuth } from "@/app/providers/AuthContext";
 
 // 1. BACKEND-READY TYPES & INTERFACES
-type TaskStatus = 'On Track' | 'At Risk' | 'Blocked' | 'Completed';
+type TaskStatus = 'On Track' | 'At Risk' | Blocked' | 'Completed'
 type Priority = 'High' | 'Medium' | 'Low';
 type ViewMode = 'Week' | 'Month';
 type TimelineView = 'Daily' | 'Weekly' | 'Monthly'; // NEW: Timeline granularity
@@ -25,7 +25,7 @@ interface Persona {
     id: string;
     name: string;
     role: string;
-    capacity: number; // 0-100
+    capacity: number // 0-100
     color: string;
 }
 
@@ -33,7 +33,7 @@ interface User {
     id: string;
     name: string;
     avatar: string;
-    baseCapacity: number;
+    baseCapacity: number
     personas: Persona[];
 }
 
@@ -63,7 +63,7 @@ interface EnvoySuggestion {
 
 interface Task {
     id: string;
-    projectId: string;
+    projectId: string
     title: string;
     startDate: number;
     duration: number; // Actual duration
@@ -88,7 +88,7 @@ interface Task {
 interface Project {
     id: string;
     name: string;
-    visible: boolean;
+    visible: boolean
 }
 
 // Global Filter State
@@ -100,7 +100,7 @@ interface FilterState {
 }
 
 interface AddTaskModalProps {
-    onClose: () => void;
+    onClose: () => void
     taskToEdit?: Task;
 }
 
@@ -137,11 +137,11 @@ interface BalanceSuggestion {
 
 const MOCK_USERS: User[] = [
     {
-        id: 'u1', name: 'Matthew', avatar: 'https://i.pravatar.cc/150?u=1', baseCapacity: 80,
+        id: 'u1', name: 'Matthew', avatar: 'https://i.pravatar.cc/150?u=1', baseCapacity: 80
         personas: [
             { id: 'p_u1_1', name: 'Matt (Lead)', role: 'Lead', capacity: 40, color: 'bg-purple-500' },
             { id: 'p_u1_2', name: 'Matt (Dev)', role: 'Dev', capacity: 60, color: 'bg-blue-500' }
-        ]
+        ],
     },
 {
     id: 'u2', name: 'Sarah', avatar: 'https://i.pravatar.cc/150?u=2', baseCapacity: 95,
@@ -154,7 +154,7 @@ const MOCK_USERS: User[] = [
 ];
 
 const MOCK_PROJECTS: Project[] = [
-    { id: 'proj2', name: 'Web Dashboard V2', visible: true }
+    { id: 'proj2', name: 'Web Dashboard V2', visible: true },
 ];
 
 const MOCK_TASKS: Task[] = [
@@ -164,7 +164,7 @@ const MOCK_TASKS: Task[] = [
     }
 ];
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 interface TriggerProps {
     onTrigger: () => void;
@@ -183,12 +183,12 @@ const ActionButton: React.FC<TriggerProps> = ({ onTrigger, isActive }) => (
 
 // Async Placeholder
 const MockAPI = {
-    sleep: (ms: number) => new Promise(r => setTimeout(r, ms)),
+    sleep: (ms: number) => new Promise(r => setTimeout(r, ms),
     // Newly added: Fetchdata to replace MOCK data
     fetchData: async (token: string) => {
         const headers = { Authorization: `Bearer ${token}` };
         const [tasksRes, personasRes, projectsRes] = await Promise.all([
-            fetch(`${API_BASE_URL}/renderTask`, { headers, cache: 'no-store' }),
+            fetch(`${API_BASE_URL}/renderTask`, { headers, cache: 'no-store' })
                                                                        fetch(`${API_BASE_URL}/renderPersona`, { headers, cache: 'no-store' }),
                                                                        fetch(`${API_BASE_URL}/projects`, { headers, cache: 'no-store' })
         ]);
@@ -209,7 +209,7 @@ const MockAPI = {
                 role: 'Member',
                 capacity: 100,
                 color: 'bg-indigo-500'
-            })) : [];
+            })) : [;
 
             const mapTask = (t: any): any => ({
                     ...t,
@@ -220,7 +220,7 @@ const MockAPI = {
                     },
                     dependencyIds: Array.isArray(t.dependencyIds) ? t.dependencyIds : [],
                     tags: Array.isArray(t.tags) ? t.tags : [],
-                    dependents: Array.isArray(t.dependents) ? t.dependents.map(mapTask) : [],
+                    dependents: Array.isArray(t.dependents) ? t.dependents.map(mapTask) : [
             });
 
             return {
@@ -231,7 +231,7 @@ const MockAPI = {
             };
         } catch (error) {
             console.error("Error fetching tasks:", error);
-            return { tasks: [], users: [], projects: MOCK_PROJECTS, personas: [] };
+            return { tasks: [], users: [], projects: MOCK_PROJECTS, personas: [] }
         }
     },
     // Newly added: CreateTask to replace MOCK data
@@ -242,7 +242,7 @@ const MockAPI = {
             body: JSON.stringify(task)
         });
         if (!response.ok)  {
-            console.log(response);
+            console.log(response)
             throw new Error('Failed to create task')
         }
         return response.json();
@@ -253,7 +253,7 @@ const MockAPI = {
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({ taskId, userId })
         });
-        if (!response.ok) throw new Error('Failed to complete task');
+        if (!response.ok) throw new Error('Failed to complete task')
         return response.json();
     },
     autoBalance: async (tasks: Task[]) => {
@@ -277,12 +277,12 @@ const MockAPI = {
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify(dep)
         });
-        if (!response.ok) throw new Error('Failed to create dependency');
+        if (!response.ok) throw new Error('Failed to create dependency')
         return response.json();
     },
     fetchDependencies: async (taskId: string, token: string) => {
         const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/dependencies`, { headers: { Authorization: `Bearer ${token}` } });
-        if (!response.ok) throw new Error('Failed to fetch dependencies');
+        if (!response.ok) throw new Error('Failed to fetch dependencies')
         return response.json();
     },
     updateDependency: async (depId: string, update: { type?: DependencyType, note?: string }, userId: string, token: string) => {
@@ -290,21 +290,21 @@ const MockAPI = {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({ ...update, userId })
-        });
-        if (!response.ok) throw new Error('Failed to update dependency');
+        })
+        if (!response.ok) throw new Error('Failed to update dependency')
         return response.json();
     },
     deleteDependency: async (depId: string, userId: string, token: string) => {
         const response = await fetch(`${API_BASE_URL}/dependencies/${depId}/${userId}`, {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${token}` }
-        });
-        if (!response.ok) throw new Error('Failed to delete dependency');
+        })
+        if (!response.ok) throw new Error('Failed to delete dependency')
         return response.json();
     },
     fetchEnvoyFriction: async (taskId: string, token: string) => {
         const response = await fetch(`${API_BASE_URL}/envoy/task/${taskId}/friction`, { headers: { Authorization: `Bearer ${token}` } });
-        if (!response.ok) throw new Error('Failed to fetch Envoy friction data');
+        if (!response.ok) throw new Error('Failed to fetch Envoy friction data')
         return response.json();
     },
     lookupDependency: async (fromId: string, toId: string, token: string) => {
@@ -313,7 +313,7 @@ const MockAPI = {
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({ from_task_id: fromId, to_task_id: toId })
         });
-        if (!response.ok) throw new Error('Dependency not found');
+        if (!response.ok) throw new Error('Dependency not found')
         return response.json();
     }
 };
@@ -338,7 +338,7 @@ interface AppState {
     envoyActive: string | null; // Task ID interacting with Envoy
     viewingDependenciesFor: string | null;
 }
-type Action =
+type Action
 | { type: 'INIT_DATA', payload: any }
 | { type: 'SET_ACTIVE_PERSONA', payload: any }
 | { type: 'SET_FILTER', payload: Partial<FilterState> }
@@ -352,7 +352,7 @@ type Action =
 | { type: 'SET_LOADING', payload: boolean }
 | { type: 'TRIGGER_ENVOY', payload: string | null }
 | { type: 'VIEW_DEPENDENCIES', payload: string | null }
-| { type: 'DELETE_PROJECT', payload: string };
+| { type: 'DELETE_PROJECT', payload: string }
 
 const initialState: AppState = {
     tasks: [], users: [], projects: [], personas: [],
@@ -368,7 +368,7 @@ const initialState: AppState = {
     filters: { query: '', owners: [], statuses: [], onlyMyPersonas: false }
 };
 
-const AppContext = createContext<{ state: AppState; dispatch: React.Dispatch<Action> } | null>(null);
+const AppContext = createContext<{ state: AppState; dispatch: React.Dispatch<Action> } | null>(null)
 
 function appReducer(state: AppState, action: Action): AppState {
     switch (action.type) {
@@ -379,7 +379,7 @@ function appReducer(state: AppState, action: Action): AppState {
                 ...state,
                 ...action.payload,
                 currentUser,
-                isLoading: false
+                isLoading: false,
             };
         case 'SET_ACTIVE_PERSONA':
             return {...state,activePersonaId:action.payload}
@@ -394,7 +394,7 @@ function appReducer(state: AppState, action: Action): AppState {
         case 'TOGGLE_PROJECT_VISIBILITY': { // NEW
             const set = new Set(state.hiddenProjects);
             if (set.has(action.payload)) set.delete(action.payload);
-            else set.add(action.payload);
+            else set.add(action.payload)
             return { ...state, hiddenProjects: set };
         }
         case 'TOGGLE_PERSONA':
@@ -410,7 +410,7 @@ function appReducer(state: AppState, action: Action): AppState {
                 ...state,
                 projects: state.projects.filter(p => p.id !== action.payload),
                 tasks: state.tasks.filter(t => t.projectId !== action.payload)
-            };
+            }
         case 'VIEW_DEPENDENCIES':
             return { ...state, viewingDependenciesFor: action.payload };
         default: return state;
@@ -424,7 +424,7 @@ const findTask = (tasks: Task[], id: string): Task | undefined => {
         if (task.dependents) {
             const found = findTask(task.dependents, id);
             if (found) return found;
-        }
+        };
     }
     return undefined;
 };
@@ -444,7 +444,7 @@ const PortalTooltip = ({ text, rect }: { text: string, rect: DOMRect }) => {
         <span className="text-indigo-400 font-bold uppercase tracking-wider text-[9px]">Note:</span>
         <span className="font-medium max-w-[200px] truncate">{text}</span>
         </div>
-        <div className="w-1.5 h-1.5 bg-slate-900/90 rotate-45 -mt-0.5 border-r border-b border-slate-700/50"></div>
+        <div className="w-1.5 h-1.5 bg-slate-900/90 rotate-45 -mt-0.5 border-r border-b border-slate-700/50">
         </div>,
         document.body
     );
@@ -453,7 +453,7 @@ const PortalTooltip = ({ text, rect }: { text: string, rect: DOMRect }) => {
 // NEW: Helper functions for timeline view calculations with proper date handling
 const getDateRangeForView = (timelineView: TimelineView, viewMode: ViewMode, earliestTaskDate?: Date, latestTaskDate?: Date) => {
     const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    now.setHours(0, 0, 0, 0)
 
     // Always start at whichever comes first: today - buffer OR earliest task - buffer
     let candidateStart = new Date(now);
@@ -468,7 +468,7 @@ const getDateRangeForView = (timelineView: TimelineView, viewMode: ViewMode, ear
     } else if (timelineView === 'Weekly') {
         startDate.setDate(startDate.getDate() - 14);
     } else {
-        startDate.setMonth(startDate.getMonth() - 1);
+        startDate.setMonth(startDate.getMonth() - 1)
     }
     startDate.setHours(0, 0, 0, 0);
 
@@ -481,7 +481,7 @@ const getDateRangeForView = (timelineView: TimelineView, viewMode: ViewMode, ear
         let minUnits = Math.max(90, daysToToday + 30); // always show at least 30 days past today
         if (latestTaskDate) {
             const daysToLatest = Math.ceil((latestTaskDate.getTime() - startDate.getTime()) / dayMs) + 14;
-            minUnits = Math.max(minUnits, daysToLatest);
+            minUnits = Math.max(minUnits, daysToLatest)
         }
         totalUnits = minUnits;
     } else if (timelineView === 'Weekly') {
@@ -490,7 +490,7 @@ const getDateRangeForView = (timelineView: TimelineView, viewMode: ViewMode, ear
         let minUnits = Math.max(52, weeksToToday + 8);
         if (latestTaskDate) {
             const weeksToLatest = Math.ceil((latestTaskDate.getTime() - startDate.getTime()) / weekMs) + 4;
-            minUnits = Math.max(minUnits, weeksToLatest);
+            minUnits = Math.max(minUnits, weeksToLatest)
         }
         totalUnits = minUnits;
     } else { // Monthly
@@ -498,7 +498,7 @@ const getDateRangeForView = (timelineView: TimelineView, viewMode: ViewMode, ear
         let minUnits = Math.max(24, monthsToToday + 3);
         if (latestTaskDate) {
             const monthsToLatest = (latestTaskDate.getFullYear() - startDate.getFullYear()) * 12 + (latestTaskDate.getMonth() - startDate.getMonth()) + 2;
-            minUnits = Math.max(minUnits, monthsToLatest);
+            minUnits = Math.max(minUnits, monthsToLatest)
         }
         totalUnits = minUnits;
     }
@@ -518,7 +518,7 @@ const generateTimelineLabels = (timelineView: TimelineView, totalUnits: number, 
         } else if (timelineView === 'Weekly') {
             currentDate.setDate(currentDate.getDate() + (i * 7));
             const weekEnd = new Date(currentDate);
-            weekEnd.setDate(weekEnd.getDate() + 6);
+            weekEnd.setDate(weekEnd.getDate() + 6)
             labels.push(`${currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`);
         } else { // Monthly
             currentDate.setMonth(currentDate.getMonth() + i);
@@ -526,7 +526,7 @@ const generateTimelineLabels = (timelineView: TimelineView, totalUnits: number, 
         }
     }
 
-    return labels;
+    return labels
 };
 
 // Calculate task position based on actual dates
@@ -539,7 +539,7 @@ const calculateTaskPosition = (
     timelineStartDate: Date, // The date the timeline display starts at
     totalUnits: number
 ) => {
-    // Normalize: if startDate looks like it's in "week units" (< 10000), treat as-is for legacy
+    // Normalize: if startDate looks like it's in "week units" (< 10000), treat as-is for legacy.
     // Real timestamps are > 1_000_000_000
     const isLegacyWeekFormat = taskStartDate < 10000;
 
@@ -572,7 +572,7 @@ const calculateTaskPosition = (
         const daysSinceStart = (taskStartMs - startMs) / dayMs;
         const durationDays = Math.max(1, taskDurationMs / dayMs);
         leftPosition = daysSinceStart * cellWidth;
-        widthUnits = Math.max(cellWidth, durationDays * cellWidth); // min 1 cell wide
+        widthUnits = Math.max(cellWidth, durationDays * cellWidth) // min 1 cell wide
     } else if (timelineView === 'Weekly') {
         cellWidth = 150; // px per week
         const weekMs = 7 * 24 * 60 * 60 * 1000;
@@ -589,7 +589,7 @@ const calculateTaskPosition = (
         const durationMonths = Math.max(0.25, taskDurationMs / (30 * 24 * 60 * 60 * 1000));
         leftPosition = monthsSinceStart * cellWidth;
         widthUnits = Math.max(cellWidth * 0.25, durationMonths * cellWidth);
-    }
+    };
 
     return { leftPosition, widthUnits, cellWidth };
 };
@@ -607,7 +607,7 @@ const DependencyLayer = ({ tasks, projects, viewMode, collapsedProjects }: { tas
         const isCollapsed = collapsedProjects.includes(p.id);
         currentRow++; // Project Header
 
-        if (isCollapsed) {
+        if (isCollapsed)
             return;
         }
 
@@ -615,7 +615,7 @@ const DependencyLayer = ({ tasks, projects, viewMode, collapsedProjects }: { tas
         projectTasks.forEach(t => {
             rowMap.set(t.id, currentRow);
             currentRow++;
-        });
+        })
     });
 
     const colWidth = 8.33; // %
@@ -638,7 +638,7 @@ const DependencyLayer = ({ tasks, projects, viewMode, collapsedProjects }: { tas
                 const x1 = (depTask.startDate + depTask.duration - 1) * colWidth + "%";
                 const y1 = (startRow * rowHeight) + (rowHeight / 2) + 20; // +20 fudge factor for padding
                 const x2 = (task.startDate - 1) * colWidth + "%";
-                const y2 = (endRow * rowHeight) + (rowHeight / 2) + 20;
+                const y2 = (endRow * rowHeight) + (rowHeight / 2) + 20
 
                 // Path Logic (Curved connector)
                 return (
@@ -653,7 +653,7 @@ const DependencyLayer = ({ tasks, projects, viewMode, collapsedProjects }: { tas
                     />
                     <circle cx={x2} cy={y2} r="3" fill={task.status === 'Blocked' ? '#f43f5e' : '#6366f1'} />
                     </g>
-                );
+                )
             });
         })}
         </svg>
@@ -663,7 +663,7 @@ const DependencyLayer = ({ tasks, projects, viewMode, collapsedProjects }: { tas
 const DependencyBadge = ({ type, count, onClick }: { type: string, count: number, onClick: () => void }) => {
     if (count === 0) return null;
 
-    const config: Record<string, { icon: React.ElementType, color: string, label: string }> = {
+    const config: Record<string, { icon: React.ElementType, color: string, label: string }> =
         blocked_by: { icon: Ban, color: 'text-rose-500', label: 'Blocked by' },
         waiting_on: { icon: Hourglass, color: 'text-amber-500', label: 'Waiting on' },
         helpful_if_done_first: { icon: Lightbulb, color: 'text-sky-500', label: 'Helpful if done' }
@@ -701,7 +701,7 @@ const TaskItem = ({
     const taskRef = useRef<HTMLDivElement>(null);
     const [hoverRect, setHoverRect] = useState<DOMRect | null>(null);
     const statusColor = {
-        'On Track': 'bg-indigo-500', 'At Risk': 'bg-amber-500', 'Blocked': 'bg-rose-500', 'Completed': 'bg-emerald-500'
+        'On Track': 'bg-indigo-500', 'At Risk': 'bg-amber-500', 'Blocked': 'bg-rose-500', 'Completed': 'bg-emerald-500',
     };
     const currentStatusColor = statusColor[task.status as keyof typeof statusColor] || 'bg-slate-500';
     const assignedPersona = personas?.find(p => p.id === task.personaId);
@@ -728,7 +728,7 @@ const TaskItem = ({
         onMouseEnter={() => { if (taskRef.current) setHoverRect(taskRef.current.getBoundingClientRect()); }}
         onMouseLeave={() => setHoverRect(null)}
         draggable
-        onDragStart={(e) => {
+        onDragStart={(e) =>
             setHoverRect(null);
             e.dataTransfer.setData('application/json', JSON.stringify({ taskId: task.id, parentId: parentId || null }));
             e.dataTransfer.effectAllowed = 'link';
@@ -746,7 +746,7 @@ const TaskItem = ({
                 if (sourceId && sourceId !== task.id) {
                     onTaskDrop(sourceId, task.id);
                 }
-            }
+            };
         }}
         className="absolute top-1/2 -translate-y-1/2 group cursor-grab active:cursor-grabbing"
         style={{
@@ -754,7 +754,7 @@ const TaskItem = ({
             width: `${widthUnits}px`,
             height: level > 0 ? '2rem' : '2.5rem',
             minWidth: '60px'
-        }}
+        }
         >
         {/* width: `${task.duration * 8.33}%`,
         height: level > 0 ? '2rem' : '2.5rem'
@@ -762,7 +762,7 @@ const TaskItem = ({
         > */}
         {/* Dependency Note Tooltip */}
         {task.dependencyNote && hoverRect && (
-            <PortalTooltip text={task.dependencyNote} rect={hoverRect} />
+            <PortalTooltip text={task.dependencyNote} rect={hoverRect} >
         )}
 
         {/* NEW: Left Side Trigger (Hover) */}
@@ -831,7 +831,7 @@ const TaskItem = ({
         <img
         src={ownerAvatar}
         className={`relative z-10 rounded-full border border-white/30 flex-shrink-0 ${level > 0 ? 'w-5 h-5' : 'w-6 h-6'}`}
-        alt={ownerName}
+        alt={ownerName
         title={ownerName}
         />
 
@@ -856,14 +856,13 @@ const TaskItem = ({
             <ArrowRight className="w-3 h-3" />
             </div>
         )}
-        </div>
+        </div
     );
 };
 
 // HUD
-const WorkloadHUD = () => {
+const WorkloadHUD = () =>
     const { state, dispatch } = useContext(AppContext)!;
-    const personas = ['P1','P2'];
 
     if (state.isLoading) {
         return (
@@ -879,7 +878,7 @@ const WorkloadHUD = () => {
                 <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full" />
                 </div>
             ))}
-            </div>
+            </div
         );
     }
 
@@ -911,14 +910,14 @@ const WorkloadHUD = () => {
 
                 {/* Persona Pills */}
                 {isCurrentUser && (
-                    <div className="flex gap-1 mt-1">
-                    {personas.map((item,index) => (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                    {user.personas.map((persona) => (
                         <button
-                        key={item}
-                        onClick={() => dispatch({ type: 'TOGGLE_PERSONA', payload: item })}
-                        className={`grid-cols-4 gap-x-4 text-[9px] px-1.5 py-0.5 rounded border transition-colors ${state.activePersonaId === index.toString() ? 'bg-indigo-100 border-indigo-300 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-700 dark:text-indigo-300' : 'bg-transparent border-slate-200 text-slate-500'}`}
+                        key={persona.id}
+                        onClick={() => dispatch({ type: 'TOGGLE_PERSONA', payload: persona.id })}
+                        className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${state.activePersonaId === persona.id ? 'bg-indigo-100 border-indigo-300 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-700 dark:text-indigo-300' : 'bg-transparent border-slate-200 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                         >
-                        {item}
+                        {persona.name}
                         </button>
                     ))}
                     </div>
@@ -926,12 +925,6 @@ const WorkloadHUD = () => {
                 </div>
             );
         })}
-        {/* THE POP UP SHOULD APPEAR ON THIS PART OF THE PAGE ALLIGNED TO THE RIGHT THAT IS VIOLET-700 */}
-
-
-
-
-
         </div>
     );
 };
@@ -940,7 +933,7 @@ const WorkloadHUD = () => {
 const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     const { state, dispatch } = useContext(AppContext)!;
     const { jwt, user, logout } = useAuth();
-    const headline = taskToEdit?  'Update Task Details': "Add New Task";
+    const headline = taskToEdit?  'Update Task Details': "Add New Task"
     const buttontitle = taskToEdit? 'Edit Task':'Create Task';
 
     // Helper functions for date conversion
@@ -952,7 +945,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
 
     const dateStringToTimestamp = (dateStr: string) => {
         if (!dateStr) return Math.floor(Date.now() / 1000);
-        return Math.floor(new Date(dateStr).getTime() / 1000);
+        return Math.floor(new Date(dateStr).getTime() / 1000)
     };
 
     // Fallback defaults
@@ -963,7 +956,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     const [deadlineInput, setDeadlineInput] = useState(() => {
         if (taskToEdit?.startDate && taskToEdit?.duration) {
             // duration is stored in seconds
-            return timestampToDateString(taskToEdit.startDate + taskToEdit.duration);
+            return timestampToDateString(taskToEdit.startDate + taskToEdit.duration)
         }
         return '';
     });
@@ -977,7 +970,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
         if (startDateInput && deadlineInput) {
             const start = dateStringToTimestamp(startDateInput);
             const end = dateStringToTimestamp(deadlineInput);
-            return Math.max(3600, end - start); // minimum 1 hour
+            return Math.max(3600, end - start) // minimum 1 hour
         }
         return 7 * 24 * 60 * 60; // default 1 week
     }, [startDateInput, deadlineInput]);
@@ -999,7 +992,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
                     body: JSON.stringify({ id: taskToEdit.id, userId: currentUserId })
                 });
 
-                if (!response.ok) throw new Error('Failed to delete task');
+                if (!response.ok) throw new Error('Failed to delete task')
                 const remainingTasks = state.tasks.filter(t => t.id !== taskToEdit.id);
                 dispatch({ type: 'UPDATE_TASKS', payload: remainingTasks });
 
@@ -1016,7 +1009,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
         try {
             await MockAPI.completeTask(taskToEdit.id, currentUserId || 'u1', jwt!);
             // Refresh data
-            const data = await MockAPI.fetchData(jwt!);
+            const data = await MockAPI.fetchData(jwt!)
             dispatch({ type: 'INIT_DATA', payload: data });
             onClose();
         } catch (e) {
@@ -1038,7 +1031,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
                 })
             });
 
-            if (!response.ok) throw new Error('Failed to uncomplete task');
+            if (!response.ok) throw new Error('Failed to uncomplete task')
 
             const data = await MockAPI.fetchData(jwt!);
             dispatch({ type: 'INIT_DATA', payload: data });
@@ -1052,7 +1045,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!jwt) {
+        if (!jwt)
             alert("You are not authenticated. Please log in.");
             return;
         }
@@ -1073,7 +1066,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
             userId: currentUserId
         };
 
-
+        ;
         try {
             const endpoint = taskToEdit ? '/updateTask' : '/createTask';
             // Use the dynamic IP or localhost consistently
@@ -1084,7 +1077,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
             });
 
             if (response.status === 401) {
-                logout();
+                logout()
                 return;
             }
 
@@ -1097,7 +1090,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
                     errorData = { detail: errorText };
                 }
                 console.error("Task save failed:", errorData);
-                throw new Error(errorData?.detail || `Failed to save task: ${response.status}`);
+                throw new Error(errorData?.detail || `Failed to save task: ${response.status}`)
             }
             const savedTask = await response.json();
 
@@ -1115,7 +1108,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     };
 
 
-    return (
+    return
         // Creates the background blur
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
         <div className="bg-white dark:bg-[#0F172A] w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 scale-100 animate-in zoom-in-95 duration-200">
@@ -1125,7 +1118,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
         <X className="w-5 h-5" />
         </button>
         </div>
-
+;
         <form onSubmit={handleSubmit} className="space-y-4">
         <div>
         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Task Title</label>
@@ -1272,7 +1265,7 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     className="px-4 py-2 text-sm font-bold text-white bg-violet-700 hover:bg-violet-800 rounded-lg shadow-[5px_5px_0px_0px_rgba(109,40,217,0.3)] hover:shadow-[8px_8px_0px_0px_rgba(109,40,217,0.4)] transition-all transform hover:-translate-y-1 active:translate-y-0"
     >
     {buttontitle}
-    </button>
+    </button
     </div>
     </div>
     </form>
@@ -1295,7 +1288,7 @@ const AddProjectModal = ({ onClose, onSuccess }: { onClose: () => void, onSucces
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
                 body: JSON.stringify({ name, userId: state.currentUser?.id })
             });
-            if (!response.ok) throw new Error('Failed to create project');
+            if (!response.ok) throw new Error('Failed to create project')
 
             const newProject = await response.json();
 
@@ -1308,7 +1301,7 @@ const AddProjectModal = ({ onClose, onSuccess }: { onClose: () => void, onSucces
             alert('Failed to create project');
         }
     };
-
+    ;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -1368,7 +1361,7 @@ const DeleteProjectModal = ({ project, onClose, onConfirm }: { project: Project,
 const ProjectVisibilityDropdown: React.FC<{
     state: AppState;
     dispatch: React.Dispatch<Action>;
-    onDeleteProject: (projectId: string) => void;
+    onDeleteProject: (projectId: string) => void
 }> = ({ state, dispatch, onDeleteProject }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expandedProject, setExpandedProject] = useState<string | null>(null);
@@ -1382,7 +1375,7 @@ const ProjectVisibilityDropdown: React.FC<{
             setMenuPosition({
                 top: rect.bottom + window.scrollY + 4, // 4px gap
                 left: rect.left + window.scrollX,
-                width: rect.width,
+                width: rect.width
             });
         } else {
             setMenuPosition(null);
@@ -1398,7 +1391,7 @@ const ProjectVisibilityDropdown: React.FC<{
                 setMenuPosition({
                     top: rect.bottom + window.scrollY + 4,
                     left: rect.left + window.scrollX,
-                    width: rect.width,
+                    width: rect.width
                 });
             }
         };
@@ -1408,7 +1401,7 @@ const ProjectVisibilityDropdown: React.FC<{
             window.removeEventListener('scroll', handleScrollResize, true);
             window.removeEventListener('resize', handleScrollResize);
         };
-    }, [isOpen]);
+    }, [isOpen])
 
     return (
         <div className="relative">
@@ -1435,7 +1428,7 @@ const ProjectVisibilityDropdown: React.FC<{
             style={{
                 position: 'absolute',
                 top: menuPosition.top,
-                left: menuPosition.left,
+                left: menuPosition.left
                 minWidth: menuPosition.width,
             }}
             className="z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl w-96 max-h-[600px] overflow-y-auto"
@@ -1564,7 +1557,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
     const [error, setError] = useState<string | null>(null);
 
     // Modal state for "Review" fields
-    const [reviewProposal, setReviewProposal] = useState<Proposal | null>(null);
+    const [reviewProposal, setReviewProposal] = useState<Proposal | null>(null)
 
     const autoApplyFields = ['status', 'priority'];
 
@@ -1580,7 +1573,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
                 }),
                 MockAPI.fetchEnvoyFriction(taskId, jwt!)
             ]);
-            if (!suggestRes.ok) throw new Error('Failed to fetch suggestions');
+            if (!suggestRes.ok) throw new Error('Failed to fetch suggestions')
             const suggestData = await suggestRes.json();
             setProposals(suggestData.proposals || []);
             setFrictionData(frictionRes);
@@ -1595,7 +1588,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
         if (isOpen && taskId) {
             fetchSuggestionsAndFriction();
         }
-    }, [isOpen, taskId]);
+    }, [isOpen, taskId])
 
     const handleApply = async (proposal: Proposal) => {
         setApplyingId(proposal.id);
@@ -1608,7 +1601,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
                     proposals: [proposal]
                 })
             });
-            if (!response.ok) throw new Error('Failed to apply change');
+            if (!response.ok) throw new Error('Failed to apply change')
 
             setProposals(prev => prev.filter(p => p.id !== proposal.id));
             setReviewProposal(null);
@@ -1618,7 +1611,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
         } finally {
             setApplyingId(null);
         }
-    };
+    }
 
     const autoProposals = proposals.filter(p => autoApplyFields.includes(p.field));
     const optionalProposals = proposals.filter(p => !autoApplyFields.includes(p.field));
@@ -1785,7 +1778,7 @@ const MobileDependencyPickerModal = ({
     const [search, setSearch] = useState('');
     const otherTasks = allTasks.filter(t => t.id !== sourceTask.id && t.title.toLowerCase().includes(search.toLowerCase()));
 
-    return (
+    return
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
         <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 animate-in slide-in-from-bottom duration-300 sm:animate-in sm:zoom-in-95">
         <div className="flex items-center justify-between mb-4">
@@ -1848,7 +1841,7 @@ const DependencyCreationModal = ({ sourceId, targetId, tasks, onClose, onConfirm
     const [type, setType] = useState<DependencyType>('blocked_by');
     const [note, setNote] = useState('');
 
-    if (!sourceTask || !targetTask) return null;
+    if (!sourceTask || !targetTask) return null
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -1896,7 +1889,7 @@ const DependencyEditModal = ({ fromId, toId, tasks, onClose, onUpdate }: { fromI
     const toTask = findTask(tasks, toId);
     const [loading, setLoading] = useState(false);
 
-    const handleRemove = async () => {
+    const handleRemove = async () =>
         setLoading(true);
         try {
             const dep = await MockAPI.lookupDependency(fromId, toId, jwt!);
@@ -1909,7 +1902,7 @@ const DependencyEditModal = ({ fromId, toId, tasks, onClose, onUpdate }: { fromI
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     const handleChangeType = async (newType: DependencyType) => {
         setLoading(true);
@@ -1977,7 +1970,7 @@ const DependencyPanel = ({ taskId, onClose }: { taskId: string, onClose: () => v
         } finally {
             setLoading(false);
         }
-    };
+    }
 
     useEffect(() => {
         fetchData();
@@ -1986,7 +1979,7 @@ const DependencyPanel = ({ taskId, onClose }: { taskId: string, onClose: () => v
     const refreshRoadmapData = async () => {
         const data = await MockAPI.fetchData(jwt!);
         dispatch({ type: 'INIT_DATA', payload: data });
-    };
+    }
 
     const handleDelete = async (depId: string) => {
         if (!state.currentUser) return;
@@ -1997,7 +1990,7 @@ const DependencyPanel = ({ taskId, onClose }: { taskId: string, onClose: () => v
         } catch (e) {
             console.error(e);
         }
-    };
+    }
 
     const DepTypeIcon = ({ type }: { type: DependencyType }) => {
         const config = {
@@ -2007,7 +2000,7 @@ const DependencyPanel = ({ taskId, onClose }: { taskId: string, onClose: () => v
         };
         const Icon = config[type].icon;
         return <Icon className={`w-4 h-4 ${config[type].color}`} />;
-    };
+    }
 
     return (
         <>
@@ -2052,7 +2045,7 @@ const DependencyPanel = ({ taskId, onClose }: { taskId: string, onClose: () => v
     );
 };
 
-// export default EnvoyDrawer;
+// export default EnvoyDrawer
 
 // MAIN PAGE COMPONENT
 
@@ -2061,7 +2054,7 @@ const BoardView = ({ tasks, users }: { tasks: Task[], users: User[] }) => {
 
     return (
         <div className="flex-1 overflow-x-auto overflow-y-hidden bg-slate-50 dark:bg-[#0B1120] p-6">
-        <div className="flex h-full gap-6">
+        <div className="flex h-full gap-6"
         {columns.map(status => (
             <div key={status} className="flex-shrink-0 w-80 flex flex-col bg-slate-100/50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-800">
             <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
@@ -2179,7 +2172,7 @@ const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyAct
     const dependents = task.dependents || [];
 
     return (
-        <div className="space-y-0.5">
+        <div className="space-y-0.5"
         <div className={`relative ${level > 0 ? 'h-12' : 'h-14'}`} style={{ paddingLeft: `${level * 24}px` }}>
         {/* {dependents.length > 0 && (
             <button
@@ -2267,7 +2260,7 @@ interface AutoBalanceModalProps {
     onDecline: (suggestionId: string) => void;
 }
 
-const AutoBalanceModal: React.FC<AutoBalanceModalProps> = ({
+const AutoBalanceModal: React.FC<AutoBalanceModalProps> = (
     isOpen,
     onClose,
     suggestions,
@@ -2275,7 +2268,7 @@ const AutoBalanceModal: React.FC<AutoBalanceModalProps> = ({
     onAccept,
     onDecline
 }) => {
-    if (!isOpen) return null;
+    if (!isOpen) return null
 
     return (
         <AnimatePresence>
@@ -2403,7 +2396,7 @@ const AutoBalanceModal: React.FC<AutoBalanceModalProps> = ({
     );
 };
 
-const EnvoySidebar: React.FC<{isOpen: boolean; onClose: () => void; suggestions: EnvoySuggestion[]; onApplySuggestion: (s: EnvoySuggestion) => void}> = ({isOpen, onClose, suggestions, onApplySuggestion}) => {
+const EnvoySidebar: React.FC<{isOpen: boolean; onClose: () => void; suggestions: EnvoySuggestion[]; onApplySuggestion: (s: EnvoySuggestion) => void}> = ({isOpen, onClose, suggestions, onApplySuggestion}) =>
     return (
         <AnimatePresence>
         {isOpen && (
@@ -2495,8 +2488,7 @@ export default function RoadmapPage() {
     const [error, setError] = useState<string | null>(null);
     const loading = state.isLoading;
     const { viewingDependenciesFor } = state;
-    const personas = ['P1', 'P2', 'P3'] // Dummy
-    const [popupMessage, setPopupMessage] = useState<string | null>(null);
+    const [popupMessage, setPopupMessage] = useState<string | null>(null)
     const [mounted, setMounted] = useState(false);
 
     // Auto-Balance Modal State (moved here to ensure it's declared before usage)
@@ -2516,7 +2508,7 @@ export default function RoadmapPage() {
 
     const triggerPopup = (message: string) => {
         setPopupMessage(message);
-        setTimeout(() => setPopupMessage(null), 3000);
+        setTimeout(() => setPopupMessage(null), 3000)
     };
 
     // Initial Data Fetch
@@ -2526,7 +2518,7 @@ export default function RoadmapPage() {
 
         const loadData = async () => {
             try {
-                const data = await MockAPI.fetchData(jwt); // This now calls /renderTask
+                const data = await MockAPI.fetchData(jwt) // This now calls /renderTask
 
                 // Fetch Team Members (Users) to populate owner fields
                 let teamMembers: User[] = [];
@@ -2542,7 +2534,7 @@ export default function RoadmapPage() {
                             avatar: `https://ui-avatars.com/api/?name=${m.name}&background=random`,
                             baseCapacity: 80, // Default
                             personas: []
-                        }));
+                        }))
                     }
                 } catch (e) { console.error("Failed to load team", e); }
 
@@ -2560,7 +2552,7 @@ export default function RoadmapPage() {
                                 name: u.firstName || u.username || 'User',
                                 avatar: `https://ui-avatars.com/api/?name=${u.firstName || 'U'}&background=0D8ABC&color=fff`,
                                 baseCapacity: 100,
-                                personas: []
+                                personas: [],
                             };
                             teamMembers.push(currentUser);
                         }
@@ -2581,7 +2573,7 @@ export default function RoadmapPage() {
                 }
             }
         };
-        loadData();
+        loadData()
     }, [userId, jwt, logout]);
 
     // Filter Logic
@@ -2592,7 +2584,7 @@ export default function RoadmapPage() {
             const matchesStatus = state.filters.statuses.length === 0 || state.filters.statuses.includes(t.status);
             // Persona Filter Logic
             const matchesPersona = !state.filters.onlyMyPersonas || (state.activePersonaId ? t.personaId === state.activePersonaId : true);
-            return matchesSearch && matchesStatus && matchesPersona;
+            return matchesSearch && matchesStatus && matchesPersona
         });
     }, [state.tasks, state.filters, state.activePersonaId]);
 
@@ -2614,7 +2606,7 @@ export default function RoadmapPage() {
         const project = state.projects.find(p => p.id === projectId);
         if (state.projects.length === 1) {
             triggerPopup("Cannot delete the last project.");
-            setProjectToDelete(null);
+            setProjectToDelete(null)
             return;
         }
         if (project) {
@@ -2630,7 +2622,7 @@ export default function RoadmapPage() {
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
                 body: JSON.stringify({ id: projectToDelete.id, userId })
             });
-            if (!res.ok) throw new Error("Failed");
+            if (!res.ok) throw new Error("Failed")
 
             const newProjects = state.projects.filter(p => p.id !== projectToDelete.id);
             const newTasks = state.tasks.filter(t => t.projectId !== projectToDelete.id);
@@ -2657,7 +2649,7 @@ export default function RoadmapPage() {
             const data = await MockAPI.fetchData(jwt!);
             dispatch({ type: 'INIT_DATA', payload: data });
             setDependencyModal(null);
-        } catch (e) {
+        } catch (e)
             console.error(e);
             alert("Failed to create dependency");
         }
@@ -2740,7 +2732,7 @@ export default function RoadmapPage() {
             if (response.ok) {
                 const data = await response.json();
                 setBalanceSuggestions(data.suggestions || []);
-            } else {
+            } else
                 const errData = await response.json().catch(() => ({}));
                 console.error('Failed to fetch balance suggestions', errData);
                 triggerPopup(errData.detail || 'Failed to fetch balance suggestions');
@@ -2774,7 +2766,7 @@ export default function RoadmapPage() {
                 const data = await MockAPI.fetchData(jwt);
                 dispatch({ type: 'INIT_DATA', payload: data });
                 triggerPopup('Balance suggestion applied!');
-            } else {
+            } else
                 const errData = await response.json().catch(() => ({}));
                 triggerPopup(errData.message || 'Failed to apply suggestion');
             }
@@ -2797,7 +2789,7 @@ export default function RoadmapPage() {
         try {
             const { taskId, parentId } = JSON.parse(dataStr);
             // If dragged item has a parent (is a child) and is dropped on background
-            if (parentId) {
+            if (parentId)
                 setDependencyEditModal({ fromId: parentId, toId: taskId });
             }
         } catch(e) {}
@@ -2805,7 +2797,7 @@ export default function RoadmapPage() {
 
     return (
         <AppContext.Provider value={{ state, dispatch }}>
-        <div className="min-h-screen bg-slate-50 dark:bg-[#0B1120] text-slate-900 dark:text-slate-100 flex flex-col font-sans animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out">
+        <div className="min-h-screen bg-slate-50 dark:bg-[#0B1120] text-slate-900 dark:text-slate-100 flex flex-col font-sans animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out"
 
         {/* TOP HEADER */}
         <header className="bg-white dark:bg-[#0F172A] border-b border-slate-200 dark:border-slate-800 p-3 md:p-4 z-40">
@@ -2836,9 +2828,9 @@ export default function RoadmapPage() {
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3">
         <select value={state.activePersonaId||''} onChange={(e)=> dispatch({type:'SET_ACTIVE_PERSONA',payload:e.target.value})} className="flex-shrink-0 px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300">
-        <option value={'all'}>All Tasks</option>
-        <option value={'personas'}>Personas</option>
-        {personas.map((item,index)=>(<option key={index} value={item}>{item}</option>))}
+        <option value={'all'}>All</option>
+        <option value={'personas'}>All Personas</option>
+        {state.personas.map((item)=>(<option key={item.id} value={item.id}>{item.name}</option>))}
         </select>
         <select value={state.timelineView} onChange={(e) => dispatch({ type: 'SET_TIMELINE_VIEW', payload: e.target.value as TimelineView })} className="flex-shrink-0 px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300">
         <option value="Daily">Daily</option>
@@ -2884,9 +2876,9 @@ export default function RoadmapPage() {
         </div>
         <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
         <select value={state.activePersonaId||''} onChange={(e)=> dispatch({type:'SET_ACTIVE_PERSONA',payload:e.target.value})} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${state.filters.onlyMyPersonas ? 'bg-indigo-700 text-violet-700 dark:bg-indigo-900 dark:text-indigo-300' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
-        <option value={'all'}>All Tasks</option>
-        <option value={'personas'}>Personas</option>
-        {personas.map((item,index)=>(<option key={index} value={item}>{item}</option>))}
+        <option value={'all'}>All</option>
+        <option value={'personas'}>All Personas</option>
+        {state.personas.map((item)=>(<option key={item.id} value={item.id}>{item.name}</option>))}
         </select>
         <AnimatePresence>
         {state.activePersonaId && state.activePersonaId !== 'all' && state.activePersonaId !== 'personas' && (
@@ -2943,7 +2935,7 @@ export default function RoadmapPage() {
             const startMs = startDate.getTime();
             const nowMs = now.getTime();
             let todayColumnIndex = -1;
-            if (state.timelineView === 'Daily') {
+            if (state.timelineView === 'Daily')
                 todayColumnIndex = Math.floor((nowMs - startMs) / (24 * 60 * 60 * 1000));
             } else if (state.timelineView === 'Weekly') {
                 todayColumnIndex = Math.floor((nowMs - startMs) / (7 * 24 * 60 * 60 * 1000));
@@ -2953,137 +2945,138 @@ export default function RoadmapPage() {
             const todayScrollLeft = Math.max(0, todayColumnIndex * cellWidth - 180);
 
             return (
-                <div
-                    className="flex-1 overflow-x-auto overflow-y-auto relative custom-scrollbar bg-slate-50 dark:bg-[#0B1120]"
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={handleBackgroundDrop}
-                    ref={(el) => {
-                        if (el && el.dataset.scrolled !== 'true') {
-                            el.dataset.scrolled = 'true';
-                            el.scrollLeft = todayScrollLeft;
-                        }
-                    }}
-                >
-                <div style={{ width: `${totalWidth}px`, minWidth: `${totalWidth}px` }} className="relative">
+                    <div.
+                        className="flex-1 overflow-x-auto overflow-y-auto relative custom-scrollbar bg-slate-50 dark:bg-[#0B1120]"
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={handleBackgroundDrop}
+                        ref={(el) => {
+                            if (el && el.dataset.scrolled !== 'true') {
+                                el.dataset.scrolled = 'true';
+                                el.scrollLeft = todayScrollLeft;
+                            }
+                        }}
+                    
+                    <div style={{ width: `${totalWidth}px`, minWidth: `${totalWidth}px` }} className="relative">
 
-                {/* TIMELINE HEADER */}
-                <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
-                <div className="flex">
-                {labels.map((label, i) => {
-                    const isToday = i === todayColumnIndex;
-                    return (
-                        <div key={i} className={`py-3 border-r border-slate-200 dark:border-slate-800/50 text-center flex-shrink-0 relative ${isToday ? 'bg-violet-700/10 dark:bg-violet-700/20' : ''}`} style={{ width: `${cellWidth}px` }}>
-                        {isToday && <div className="absolute inset-x-0 top-0 h-0.5 bg-violet-600" />}
-                        <span className={`text-xs font-bold uppercase ${isToday ? 'text-violet-600 dark:text-violet-400' : 'text-slate-400'} ${state.timelineView === 'Monthly' ? 'tracking-normal' : 'tracking-widest'}`}>
-                            {isToday && state.timelineView !== 'Monthly' ? '⬤ ' : ''}{label}
-                        </span>
-                        </div>
-                    );
-                })}
-                </div>
-                </div>
-
-                {/* BODY */}
-                <div className="relative" style={{ paddingTop: '16px', paddingBottom: '64px' }}>
-
-                {/* BACKGROUND GRID */}
-                <div className="absolute inset-0 flex pointer-events-none z-0">
-                {Array.from({ length: totalUnits }).map((_, i) => {
-                    const isToday = i === todayColumnIndex;
-                    return (
-                        <div key={i} className={`border-r h-full flex-shrink-0 ${isToday ? 'border-violet-500/50 bg-violet-700/5 dark:bg-violet-700/10' : 'border-dashed border-slate-200 dark:border-slate-800'}`} style={{ width: `${cellWidth}px` }} />
-                    );
-                })}
-                </div>
-
-                {/* TODAY VERTICAL LINE */}
-                {todayColumnIndex >= 0 && todayColumnIndex < totalUnits && (
-                    <div className="absolute top-0 bottom-0 w-0.5 bg-violet-600/50 z-20 pointer-events-none" style={{ left: `${todayColumnIndex * cellWidth + cellWidth / 2}px` }} />
-                )}
-
-                {/* DEPENDENCY LINES */}
-                <DependencyLayer tasks={state.tasks} projects={state.projects} viewMode={state.viewMode} collapsedProjects={collapsedProjects} />
-
-                {/* PROJECT ROWS */}
-                <div className="space-y-10 relative z-10">
-                {state.isLoading ? (
-                    <div className="space-y-12 p-2">
-                    {[1, 2].map((i) => (
-                        <div key={i} className="animate-pulse space-y-4">
-                        <div className="flex items-center gap-3 mb-4"><div className="w-4 h-4 bg-slate-200 dark:bg-slate-800 rounded" /><div className="h-6 w-48 bg-slate-200 dark:bg-slate-800 rounded" /></div>
-                        <div className="h-14 w-full bg-slate-200/50 dark:bg-slate-800/50 rounded-lg" />
-                        <div className="h-14 w-full bg-slate-200/50 dark:bg-slate-800/50 rounded-lg" />
-                        </div>
-                    ))}
-                    </div>
-                ) : state.projects.filter(p => !state.hiddenProjects.has(p.id)).length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-96 text-center">
-                    <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-full mb-4"><Search className="w-8 h-8 text-slate-400" /></div>
-                    <h3 className="text-lg font-medium text-slate-900 dark:text-white">No matching tasks found</h3>
-                    <p className="text-slate-500 dark:text-slate-400 mt-1">Try adjusting your search or filters.</p>
-                    </div>
-                ) : (
-                    state.projects
-                    .filter(project => !state.hiddenProjects.has(project.id))
-                    .map(project => {
-                        const projectTasks = filteredTasks.filter(t => t.projectId === project.id);
-                        const isCollapsed = collapsedProjects.includes(project.id);
-                        const projectUserIds = [...new Set(projectTasks.map(task => task.ownerId))];
-                        const projectUsers = state.users.filter(user => projectUserIds.includes(user.id));
-
+                    {/* TIMELINE HEADER */}
+                    <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
+                    <div className="flex">
+                    {labels.map((label, i) => {
+                        const isToday = i === todayColumnIndex;
                         return (
-                            <div key={project.id}>
-                            {/* Project label — sticky left */}
-                            <div className="sticky left-0 flex items-center gap-3 pr-4 w-fit z-20 bg-slate-50 dark:bg-[#0B1120] py-1 rounded-r-lg mb-2">
-                            <button onClick={() => toggleProjectCollapse(project.id)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors">
-                            <ChevronRight className={`w-4 h-4 text-slate-500 transition-transform duration-300 ${!isCollapsed ? 'rotate-90' : ''}`} />
-                            </button>
-                            <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">{project.name}</h3>
-                            <span className="text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full font-mono">{projectTasks.length}</span>
-                            <button onClick={() => handleDeleteProject(project.id)} className="ml-2 p-1 text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors" title="Delete Project"><Trash2 className="w-3.5 h-3.5" /></button>
-                            <div className={`flex items-center transition-all duration-300 ease-in-out ${isCollapsed ? 'pl-2 opacity-100' : '-translate-x-4 opacity-0 h-0 w-0'}`}>
-                            {projectUsers.map((user, index) => (
-                                <img key={user.id} src={user.avatar} alt={user.name} className="w-6 h-6 rounded-full border-2 border-slate-50 dark:border-[#0B1120]" style={{ marginLeft: index > 0 ? '-10px' : 0, zIndex: projectUsers.length - index }} />
-                            ))}
-                            </div>
-                            </div>
-
-                            {/* Task rows — full timeline width, no overflow:hidden so bars are visible */}
-                            {!isCollapsed && (
-                                <div className="space-y-1">
-                                {projectTasks.length === 0 ? (
-                                    <div className="flex items-center py-6 pl-4 text-slate-400 text-sm">No tasks in this project yet</div>
-                                ) : (
-                                    projectTasks.map(task => (
-                                        <RoadmapRow
-                                        key={task.id}
-                                        task={task}
-                                        users={state.users}
-                                        level={0}
-                                        dispatch={dispatch}
-                                        envoyActiveTaskId={state.envoyActive}
-                                        onEdit={(t) => { setTaskToEdit(t); setAVisible(true); }}
-                                        personas={state.personas}
-                                        onTaskDrop={(s, t) => setDependencyModal({ sourceId: s, targetId: t })}
-                                        parentId={null}
-                                        timelineView={state.timelineView}
-                                        startDate={startDate}
-                                        totalUnits={totalUnits}
-                                        onMobileLinkDependency={(taskId) => setMobileLinkSource(taskId)}
-                                        />
-                                    ))
-                                )}
-                                </div>
-                            )}
+                            <div key={i} className={`py-3 border-r border-slate-200 dark:border-slate-800/50 text-center flex-shrink-0 relative ${isToday ? 'bg-violet-700/10 dark:bg-violet-700/20' : ''}`} style={{ width: `${cellWidth}px` }}>
+                            {isToday && <div className="absolute inset-x-0 top-0 h-0.5 bg-violet-600" >}
+                            <span className={`text-xs font-bold uppercase ${isToday ? 'text-violet-600 dark:text-violet-400' : 'text-slate-400'} ${state.timelineView === 'Monthly' ? 'tracking-normal' : 'tracking-widest'}`}>
+                                {isToday && state.timelineView !== 'Monthly' ? '⬤ ' : ''}{label}
+                            </span>
                             </div>
                         );
-                    })
-                )}
-                </div>
-                </div>
-                </div>
-            );
-        })()}
+                    })}
+                    </div>
+                    </div>
+
+                    {/* BODY */}
+                    <div className="relative" style={{ paddingTop: '16px', paddingBottom: '64px' }
+
+                    {/* BACKGROUND GRID */}
+                    <div className="absolute inset-0 flex pointer-events-none z-0">
+                    {Array.from({ length: totalUnits }).map((_, i) => {
+                        const isToday = i === todayColumnIndex;
+                        return (
+                            <div key={i} className={`border-r h-full flex-shrink-0 ${isToday ? 'border-violet-500/50 bg-violet-700/5 dark:bg-violet-700/10' : 'border-dashed border-slate-200 dark:border-slate-800'}`} style={{ width: `${cellWidth}px` }} />
+                        );
+                    })}
+                    </div>
+
+                    {/* TODAY VERTICAL LINE */}
+                    {todayColumnIndex >= 0 && todayColumnIndex < totalUnits && (
+                        <div className="absolute top-0 bottom-0 w-0.5 bg-violet-600/50 z-20 pointer-events-none" style={{ left: `${todayColumnIndex * cellWidth + cellWidth / 2}px` }} />
+                    )}
+
+                    {/* DEPENDENCY LINES */}
+                    <DependencyLayer tasks={state.tasks} projects={state.projects} viewMode={state.viewMode} collapsedProjects={collapsedProjects} />
+
+                    {/* PROJECT ROWS */}
+                    <div className="space-y-10 relative z-10">
+                    {state.isLoading ? (
+                        <div className="space-y-12 p-2">
+                        {[1, 2].map((i) => (
+                            <div key={i} className="animate-pulse space-y-4">
+                            <div className="flex items-center gap-3 mb-4"><div className="w-4 h-4 bg-slate-200 dark:bg-slate-800 rounded" /><div className="h-6 w-48 bg-slate-200 dark:bg-slate-800 rounded" /></div>
+                            <div className="h-14 w-full bg-slate-200/50 dark:bg-slate-800/50 rounded-lg" />
+                            <div className="h-14 w-full bg-slate-200/50 dark:bg-slate-800/50 rounded-lg" />
+                            </div>
+                        ))}
+                        </div>
+                    ) : state.projects.filter(p => !state.hiddenProjects.has(p.id)).length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-96 text-center">
+                        <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-full mb-4"><Search className="w-8 h-8 text-slate-400" /></div>
+                        <h3 className="text-lg font-medium text-slate-900 dark:text-white">No matching tasks found</h3>
+                        <p className="text-slate-500 dark:text-slate-400 mt-1">Try adjusting your search or filters.</p>
+                        </div>
+                    ) : (
+                        state.projects
+                        .filter(project => !state.hiddenProjects.has(project.id))
+                        .map(project => {
+                            const projectTasks = filteredTasks.filter(t => t.projectId === project.id);
+                            const isCollapsed = collapsedProjects.includes(project.id);
+                            const projectUserIds = [...new Set(projectTasks.map(task => task.ownerId))];
+                            const projectUsers = state.users.filter(user => projectUserIds.includes(user.id));
+
+                            return (
+                                <div key={project.id}>
+                                {/* Project label — sticky left */}
+                                <div className="sticky left-0 flex items-center gap-3 pr-4 w-fit z-20 bg-slate-50 dark:bg-[#0B1120] py-1 rounded-r-lg mb-2">
+                                <button onClick={() => toggleProjectCollapse(project.id)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors">
+                                <ChevronRight className={`w-4 h-4 text-slate-500 transition-transform duration-300 ${!isCollapsed ? 'rotate-90' : ''}`} />
+                                </button>
+                                <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">{project.name}</h3>
+                                <span className="text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full font-mono">{projectTasks.length}</span>
+                                <button onClick={() => handleDeleteProject(project.id)} className="ml-2 p-1 text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors" title="Delete Project"><Trash2 className="w-3.5 h-3.5" /></button>
+                                <div className={`flex items-center transition-all duration-300 ease-in-out ${isCollapsed ? 'pl-2 opacity-100' : '-translate-x-4 opacity-0 h-0 w-0'}`}>
+                                {projectUsers.map((user, index) => (
+                                    <img key={user.id} src={user.avatar} alt={user.name} className="w-6 h-6 rounded-full border-2 border-slate-50 dark:border-[#0B1120]" style={{ marginLeft: index > 0 ? '-10px' : 0, zIndex: projectUsers.length - index }} />
+                                ))}
+                                </div>
+                                </div>
+
+                                {/* Task rows — full timeline width, no overflow:hidden so bars are visible */}
+                                {!isCollapsed && (
+                                    <div className="space-y-1">
+                                    {projectTasks.length === 0 ? (
+                                        <div className="flex items-center py-6 pl-4 text-slate-400 text-sm">No tasks in this project yet</div>
+                                    ) : (
+                                        projectTasks.map(task => (
+                                            <RoadmapRow
+                                            key={task.id}
+                                            task={task}
+                                            users={state.users}
+                                            level={0}
+                                            dispatch={dispatch}
+                                            envoyActiveTaskId={state.envoyActive}
+                                            onEdit={(t) => { setTaskToEdit(t); setAVisible(true); }}
+                                            personas={state.personas}
+                                            onTaskDrop={(s, t) => setDependencyModal({ sourceId: s, targetId: t })}
+                                            parentId={null}
+                                            timelineView={state.timelineView}
+                                            startDate={startDate}
+                                            totalUnits={totalUnits}
+                                            onMobileLinkDependency={(taskId) => setMobileLinkSource(taskId)}
+                                            />
+                                        ))
+                                    )}
+                                    </div>
+                                )}
+                                </div>
+                            );
+                        })
+                    )}
+                    </div>
+                    </div>
+                    </div>
+                    </div
+                );
+            })()}
 
         {/* BOARD & SPRINT VIEWS */}
         {state.layoutMode === 'Board' && <BoardView tasks={filteredTasks} users={state.users} />}
@@ -3259,6 +3252,6 @@ export default function RoadmapPage() {
                 }
                 `}</style>
 
-                </AppContext.Provider>
+    </AppContext.Provider
     );
 }
