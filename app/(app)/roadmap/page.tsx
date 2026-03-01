@@ -1,7 +1,7 @@
 "use client";
 
 import React, {
-    createContext, useContext, useReducer, useEffect, useState, useMemo, useRef
+    createContext, useContext, useReducer, useEffect, useState, useMemo, useRef, useCallback
 } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from "framer-motion";
@@ -646,157 +646,144 @@ const DependencyBadge = ({ type, count, onClick }: { type: string, count: number
 const TaskItem = ({
     task, user, dispatch, isEnvoyActive, onEdit, personas, onTaskDrop, level = 0,
     parentId, onToggleExpand, isExpanded, hasDependents, timelineView, startDate, totalUnits,
-    onMobileLinkDependency
+    onMobileLinkDependency, allTasks
 }: {
     task: Task, user: User | undefined, dispatch: any, isEnvoyActive: boolean,
     onEdit: (t: Task) => void, personas: Persona[],
-                  onTaskDrop: (sourceId: string, targetId: string) => void, level?: number,
-                  parentId?: string | null,
-                  onToggleExpand?: () => void,
-                  isExpanded?: boolean,
-                  hasDependents?: boolean,
-                  timelineView: TimelineView,
-                  startDate: Date,
-                  totalUnits: number,
-                  onMobileLinkDependency?: (taskId: string) => void
+    onTaskDrop: (sourceId: string, targetId: string) => void, level?: number,
+    parentId?: string | null,
+    onToggleExpand?: () => void,
+    isExpanded?: boolean,
+    hasDependents?: boolean,
+    timelineView: TimelineView,
+    startDate: Date,
+    totalUnits: number,
+    onMobileLinkDependency?: (taskId: string) => void,
+    allTasks?: Task[],
 }) => {
     const triggerRef = useRef<HTMLButtonElement>(null);
     const taskRef = useRef<HTMLDivElement>(null);
     const [hoverRect, setHoverRect] = useState<DOMRect | null>(null);
-    const statusColor = {
+    const [isHovered, setIsHovered] = useState(false);
+
+    const statusColor: Record<string, string> = {
         'On Track': 'bg-indigo-500', 'At Risk': 'bg-amber-500', 'Blocked': 'bg-rose-500', 'Completed': 'bg-emerald-500'
     };
-    const currentStatusColor = statusColor[task.status as keyof typeof statusColor] || 'bg-slate-500';
+    const currentStatusColor = statusColor[task.status] || 'bg-slate-500';
     const assignedPersona = personas?.find(p => p.id === task.personaId);
 
-    // Calculate slippage
     const isSlipping = task.duration > task.plannedDuration;
     const ghostWidth = (task.plannedDuration / task.duration) * 100;
-
     const ownerName = user?.name || task.ownerName || 'Unknown';
     const ownerAvatar = user?.avatar || `https://ui-avatars.com/api/?name=${ownerName}&background=random`;
 
-    // Calculate position based on actual dates
     const { leftPosition, widthUnits } = calculateTaskPosition(
-        task.startDate,
-        task.duration,
-        timelineView,
-        startDate,
-        totalUnits
+        task.startDate, task.duration, timelineView, startDate, totalUnits
     );
+
+    // Dependency tasks that THIS task depends on
+    const depTasks = useMemo(() => {
+        if (!allTasks || !task.dependencyIds?.length) return [];
+        return task.dependencyIds.map(id => allTasks.find(t => t.id === id)).filter(Boolean) as Task[];
+    }, [allTasks, task.dependencyIds]);
 
     return (
         <div
         ref={taskRef}
-        onMouseEnter={() => { if (taskRef.current) setHoverRect(taskRef.current.getBoundingClientRect()); }}
-        onMouseLeave={() => setHoverRect(null)}
+        onMouseEnter={() => { if (taskRef.current) setHoverRect(taskRef.current.getBoundingClientRect()); setIsHovered(true); }}
+        onMouseLeave={() => { setHoverRect(null); setIsHovered(false); }}
         draggable
         onDragStart={(e) => {
-            setHoverRect(null);
+            setHoverRect(null); setIsHovered(false);
             e.dataTransfer.setData('application/json', JSON.stringify({ taskId: task.id, parentId: parentId || null }));
             e.dataTransfer.effectAllowed = 'link';
         }}
-        onDragOver={(e) => { // Allow drop
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'link';
-        }}
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'link'; }}
         onDrop={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            e.preventDefault(); e.stopPropagation();
             const dataStr = e.dataTransfer.getData('application/json');
             if (dataStr) {
                 const { taskId: sourceId } = JSON.parse(dataStr);
-                if (sourceId && sourceId !== task.id) {
-                    onTaskDrop(sourceId, task.id);
-                }
+                if (sourceId && sourceId !== task.id) onTaskDrop(sourceId, task.id);
             }
         }}
-        className="absolute top-1/2 -translate-y-1/2 group cursor-grab active:cursor-grabbing"
-        style={{
-            left: `${leftPosition}px`,
-            width: `${widthUnits}px`,
-            height: level > 0 ? '2rem' : '2.5rem',
-            minWidth: '60px'
-        }}
+        className="absolute top-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing"
+        style={{ left: `${leftPosition}px`, width: `${widthUnits}px`, height: level > 0 ? '2rem' : '2.5rem', minWidth: '60px', zIndex: isHovered ? 60 : 10 }}
         >
-        {/* width: `${task.duration * 8.33}%`,
-        height: level > 0 ? '2rem' : '2.5rem'
-        }}
-        > */}
-        {/* Dependency Note Tooltip */}
-        {task.dependencyNote && hoverRect && (
-            <PortalTooltip text={task.dependencyNote} rect={hoverRect} />
-        )}
+        {task.dependencyNote && hoverRect && <PortalTooltip text={task.dependencyNote} rect={hoverRect} />}
 
-        {/* NEW: Left Side Trigger (Hover) */}
-        <button
-        onClick={() => onEdit(task)} // Trigger the edit flow
-        className="absolute top-6 -right-3 z-[60] bg-white dark:bg-slate-900 text-gray-400 rounded-full shadow transition-all scale-0 group-hover:scale-100 hover:text-indigo-600 p-1">
+        {/* Edit Button */}
+        <motion.button
+        onClick={() => onEdit(task)}
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: isHovered ? 1 : 0, opacity: isHovered ? 1 : 0 }}
+        transition={{ duration: 0.15, ease: 'backOut' }}
+        className="absolute top-6 -right-3 z-[60] bg-white dark:bg-slate-900 text-gray-400 rounded-full shadow hover:text-indigo-600 p-1">
         <Info className="w-4 h-4" />
-        </button>
+        </motion.button>
 
-        {/* Mobile Dependency Link Button — always visible on touch, hover-only on desktop */}
+        {/* Mobile Dependency Link Button */}
         {onMobileLinkDependency && (
-            <button
+            <motion.button
             onClick={(e) => { e.stopPropagation(); onMobileLinkDependency(task.id); }}
-            className="absolute -top-3 -left-3 z-[60] bg-white dark:bg-slate-900 text-gray-400 rounded-full shadow border transition-all scale-100 md:scale-0 md:group-hover:scale-100 hover:text-violet-600 p-1"
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: isHovered ? 1 : 0, opacity: isHovered ? 1 : 0 }}
+            transition={{ duration: 0.15, ease: 'backOut', delay: 0.04 }}
+            className="absolute -top-3 -left-3 z-[60] bg-white dark:bg-slate-900 text-gray-400 rounded-full shadow border hover:text-violet-600 p-1"
             title="Add dependency (mobile)"
             >
             <GitCommit className="w-4 h-4" />
-            </button>
+            </motion.button>
         )}
 
-        {/* Envoy Trigger (Hover) - Right Side */}
-        <button
+        {/* Envoy Trigger */}
+        <motion.button
         ref={triggerRef}
         onClick={() => dispatch({ type: 'TRIGGER_ENVOY', payload: isEnvoyActive ? null : task.id })}
-        className={`absolute -top-3 -right-3 z-[60] bg-white dark:bg-slate-900 rounded-full p-1 shadow border transition-all ${task.envoySuggestion ? 'text-indigo-600 scale-100' : 'text-gray-400 scale-0 group-hover:scale-100'}`}
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: (isHovered || !!task.envoySuggestion) ? 1 : 0, opacity: (isHovered || !!task.envoySuggestion) ? 1 : 0 }}
+        transition={{ duration: 0.15, ease: 'backOut', delay: 0.06 }}
+        className={`absolute -top-3 -right-3 z-[60] bg-white dark:bg-slate-900 rounded-full p-1 shadow border ${task.envoySuggestion ? 'text-indigo-600' : 'text-gray-400'}`}
         >
         <BrainCircuit className="w-4 h-4" />
-        </button>
+        </motion.button>
 
+        {/* Ghost Bar (slippage) */}
+        {isSlipping && (
+            <div className="absolute inset-0 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-md opacity-50" style={{ width: `${ghostWidth}%` }} />
+        )}
 
-        {/* Envoy Popup */}
-        {/* {isEnvoyActive && (
-            <EnvoyPopup task={task} onClose={() => dispatch({ type: 'TRIGGER_ENVOY', payload: null })} triggerRef={triggerRef} />
-    )} */}
-
-    {/* Ghost Bar */}
-    {isSlipping && (
-        <div className="absolute inset-0 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-md opacity-50 w-full" style={{ width: `${ghostWidth}%` }} />
-    )}
-
-    {/* Main Bar */}
-    <div className={`
-        relative h-full rounded-md shadow-sm
-        flex items-center px-2 gap-2 overflow-hidden
-        ${currentStatusColor}
-        transition-all transition-gpu duration-300 ease-in-out
-        group-hover:w-max hover:min-w-full hover:z-50 hover:shadow-xl
-        `}>
+        {/* Main Bar */}
+        <motion.div
+        layout="size"
+        className={`relative h-full rounded-md shadow-sm flex items-center px-2 gap-2 overflow-hidden ${currentStatusColor}`}
+        animate={{
+            width: isHovered ? 'max-content' : '100%',
+            minWidth: '100%',
+            boxShadow: isHovered ? '0 8px 25px -5px rgba(0,0,0,0.4), 0 4px 10px -5px rgba(0,0,0,0.3)' : '0 1px 3px 0 rgba(0,0,0,0.1)',
+        }}
+        transition={{ duration: 0.3, ease: [0.34, 1.56, 0.64, 1] }}
+        >
         {/* Dropdown Toggle for Dependents */}
         {hasDependents && onToggleExpand && (
             <button
             onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
-            className="relative z-20 mr-1 p-0.5 rounded hover:bg-black/20 text-white/80 hover:text-white transition-colors"
+            className="relative z-20 mr-1 p-0.5 rounded hover:bg-black/20 text-white/80 hover:text-white transition-colors flex-shrink-0"
             title="Toggle Dependents"
             >
-            {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            <motion.div animate={{ rotate: isExpanded ? 90 : 0 }} transition={{ duration: 0.2 }}>
+            <ChevronRight className="w-3 h-3" />
+            </motion.div>
             </button>
         )}
 
-        <div className="absolute left-0 top-0 bottom-0 bg-black/20" style={{ width: `${task.progress}%` }} />
+        <div className="absolute left-0 top-0 bottom-0 bg-black/20 transition-all duration-500" style={{ width: `${task.progress}%` }} />
 
-        <span className={`relative z-10 font-bold text-white truncate transition-all duration-300 ${level > 0 ? 'text-[11px]' : 'text-xs'}`}>
+        <span className={`relative z-10 font-bold text-white whitespace-nowrap transition-all duration-200 ${level > 0 ? 'text-[11px]' : 'text-xs'}`}>
         {task.title}
         </span>
 
-        <img
-        src={ownerAvatar}
-        className={`relative z-10 rounded-full border border-white/30 flex-shrink-0 ${level > 0 ? 'w-5 h-5' : 'w-6 h-6'}`}
-        alt={ownerName}
-        title={ownerName}
-        />
+        <img src={ownerAvatar} className={`relative z-10 rounded-full border border-white/30 flex-shrink-0 ${level > 0 ? 'w-5 h-5' : 'w-6 h-6'}`} alt={ownerName} title={ownerName} />
 
         <div className="absolute bottom-1 left-2 z-20 flex items-center gap-1.5">
         <DependencyBadge type="blocked_by" count={task.dependencySummary?.blocked_by_count || 0} onClick={() => dispatch({ type: 'VIEW_DEPENDENCIES', payload: task.id })} />
@@ -804,16 +791,55 @@ const TaskItem = ({
         <DependencyBadge type="helpful_if_done_first" count={task.dependencySummary?.helpful_if_done_first_count || 0} onClick={() => dispatch({ type: 'VIEW_DEPENDENCIES', payload: task.id })} />
         </div>
 
-
-        {/* Persona Indicator */}
         {assignedPersona && (
-            <div className="absolute bottom-0.5 right-0.5 z-20 w-4 h-4 rounded-full bg-violet-600 text-[8px] flex items-center justify-center text-white border border-white font-bold" title={assignedPersona.name}>
+            <div className="absolute bottom-0.5 right-0.5 z-20 w-4 h-4 rounded-full bg-violet-600 text-[8px] flex items-center justify-center text-white border border-white font-bold flex-shrink-0" title={assignedPersona.name}>
             {assignedPersona.name.charAt(0).toUpperCase()}
             </div>
         )}
-        </div>
+        </motion.div>
 
-        {/* Handoff Indicator */}
+        {/* Dependency tasks that cascade below on hover */}
+        <AnimatePresence>
+        {isHovered && depTasks.length > 0 && (
+            <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="absolute top-full left-0 z-[80] pt-2 pointer-events-none" style={{ minWidth: '220px' }}>
+            <div className="flex flex-col gap-1">
+            {depTasks.map((depTask, idx) => {
+                const depColor =
+                    depTask.status === 'Completed' ? 'border-l-emerald-500 bg-emerald-50/97 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200' :
+                    depTask.status === 'Blocked' ? 'border-l-rose-500 bg-rose-50/97 dark:bg-rose-900/50 text-rose-800 dark:text-rose-200' :
+                    depTask.status === 'At Risk' ? 'border-l-amber-500 bg-amber-50/97 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200' :
+                    'border-l-indigo-500 bg-white/97 dark:bg-slate-800/97 text-slate-700 dark:text-slate-200';
+                return (
+                    <motion.div
+                    key={depTask.id}
+                    initial={{ opacity: 0, y: -14, scaleY: 0.7, scaleX: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scaleY: 1, scaleX: 1 }}
+                    exit={{ opacity: 0, y: -8, scaleY: 0.8 }}
+                    transition={{ duration: 0.25, delay: idx * 0.06, ease: [0.34, 1.56, 0.64, 1] }}
+                    style={{ originY: 0 }}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-r-xl border-l-4 shadow-xl backdrop-blur-md ${depColor}`}
+                    >
+                    <GitCommit className="w-3 h-3 opacity-60 flex-shrink-0" />
+                    <span className="text-[11px] font-semibold truncate max-w-[180px]">{depTask.title}</span>
+                    <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${
+                        depTask.status === 'Completed' ? 'bg-emerald-200 text-emerald-800' :
+                        depTask.status === 'Blocked' ? 'bg-rose-200 text-rose-800' :
+                        depTask.status === 'At Risk' ? 'bg-amber-200 text-amber-800' :
+                        'bg-indigo-200 text-indigo-800'
+                    }`}>{depTask.status}</span>
+                    </motion.div>
+                );
+            })}
+            </div>
+            </motion.div>
+        )}
+        </AnimatePresence>
+
         {task.handOffToId && (
             <div className="absolute top-1/2 -right-3 -translate-y-1/2 w-5 h-5 bg-slate-900 rounded-full flex items-center justify-center text-white border border-white z-20">
             <ArrowRight className="w-3 h-3" />
@@ -822,6 +848,7 @@ const TaskItem = ({
         </div>
     );
 };
+
 
 // HUD
 const WorkloadHUD = () => {
@@ -869,7 +896,12 @@ const WorkloadHUD = () => {
 
                 {/* Capacity Bar */}
                 <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full ${user.baseCapacity > 90 ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: `${user.baseCapacity}%` }} />
+                <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${user.baseCapacity}%` }}
+                transition={{ duration: 0.8, ease: 'easeOut', delay: 0.1 }}
+                className={`h-full rounded-full ${user.baseCapacity > 90 ? 'bg-rose-500' : user.baseCapacity > 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                />
                 </div>
 
                 {/* Persona Pills */}
@@ -896,7 +928,6 @@ const WorkloadHUD = () => {
 
 
         </div>
-       // </div>
     );
 };
 
@@ -1516,6 +1547,7 @@ const ProjectVisibilityDropdown: React.FC<{
             document.body
         )}
         </div>
+        </div>
     );
 };
 
@@ -1732,7 +1764,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
         </div>
         </div>
         </div>
-
+        </div>
     );
 };
 
@@ -2041,7 +2073,14 @@ const BoardView = ({ tasks, users }: { tasks: Task[], users: User[] }) => {
                 const ownerName = owner?.name || task.ownerName || 'Unknown';
                 const ownerAvatar = owner?.avatar || `https://ui-avatars.com/api/?name=${ownerName}&background=random`;
                 return (
-                    <div key={task.id} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:shadow-md transition-shadow cursor-pointer group">
+                    <motion.div
+                    key={task.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:shadow-md hover:border-indigo-200 dark:hover:border-indigo-700 transition-all cursor-pointer group"
+                    whileHover={{ y: -2, transition: { duration: 0.15 } }}
+                    >
                     <div className="flex justify-between items-start mb-2">
                     <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
                         task.priority === 'High' ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400' :
@@ -2056,7 +2095,7 @@ const BoardView = ({ tasks, users }: { tasks: Task[], users: User[] }) => {
                     <span>•</span>
                     <span>{task.duration}w</span>
                     </div>
-                    </div>
+                    </motion.div>
                 );
             })}
             </div>
@@ -2125,7 +2164,7 @@ const SprintView = ({ tasks, users }: { tasks: Task[], users: User[] }) => {
     );
 };
 
-const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyActiveTaskId, personas, parentId, timelineView, startDate, totalUnits, onMobileLinkDependency }: {
+const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyActiveTaskId, personas, parentId, timelineView, startDate, totalUnits, onMobileLinkDependency, allTasks }: {
     task: Task;
     users: User[];
     level: number;
@@ -2139,6 +2178,7 @@ const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyAct
     startDate: Date;
     totalUnits: number;
     onMobileLinkDependency?: (taskId: string) => void;
+    allTasks?: Task[];
 }) => {
     const [isExpanded, setIsExpanded] = useState(true);
     const dependents = task.dependents || [];
@@ -2179,6 +2219,7 @@ const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyAct
     startDate={startDate}
     totalUnits={totalUnits}
     onMobileLinkDependency={onMobileLinkDependency}
+    allTasks={allTasks}
     />
     </div>
     <AnimatePresence initial={false}>
@@ -2211,6 +2252,7 @@ const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyAct
             startDate={startDate}
             totalUnits={totalUnits}
             onMobileLinkDependency={onMobileLinkDependency}
+            allTasks={allTasks}
             />
             </motion.div>
         ))}
@@ -2500,17 +2542,30 @@ const GanttCanvas: React.FC<GanttCanvasProps> = ({
     }
     const todayScrollLeft = Math.max(0, todayColumnIndex * cellWidth - 180);
 
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const lastScrolledViewRef = useRef<string>('');
+
+    useEffect(() => {
+        const el = scrollContainerRef.current;
+        if (!el) return;
+        if (lastScrolledViewRef.current === state.timelineView) return;
+        lastScrolledViewRef.current = state.timelineView;
+        // Use double rAF to ensure layout has fully computed
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                if (scrollContainerRef.current) {
+                    scrollContainerRef.current.scrollLeft = todayScrollLeft;
+                }
+            });
+        });
+    }, [state.timelineView, todayScrollLeft]);
+
     return (
         <div
+            ref={scrollContainerRef}
             className="flex-1 overflow-x-auto overflow-y-auto relative custom-scrollbar bg-slate-50 dark:bg-[#0B1120]"
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleBackgroundDrop}
-            ref={(el) => {
-                if (el && el.dataset.scrolled !== 'true') {
-                    el.dataset.scrolled = 'true';
-                    el.scrollLeft = todayScrollLeft;
-                }
-            }}
         >
         <div style={{ width: `${totalWidth}px`, minWidth: `${totalWidth}px` }} className="relative">
 
@@ -2580,7 +2635,12 @@ const GanttCanvas: React.FC<GanttCanvasProps> = ({
                 const projectUsers = state.users.filter(user => projectUserIds.includes(user.id));
 
                 return (
-                    <div key={project.id}>
+                    <motion.div
+                    key={project.id}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35, ease: 'easeOut' }}
+                    >
                     {/* Project label — sticky left */}
                     <div className="sticky left-0 flex items-center gap-3 pr-4 w-fit z-20 bg-slate-50 dark:bg-[#0B1120] py-1 rounded-r-lg mb-2">
                     <button onClick={() => toggleProjectCollapse(project.id)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors">
@@ -2618,12 +2678,14 @@ const GanttCanvas: React.FC<GanttCanvasProps> = ({
                                 startDate={startDate}
                                 totalUnits={totalUnits}
                                 onMobileLinkDependency={(taskId) => setMobileLinkSource(taskId)}
+                                allTasks={state.tasks}
                                 />
                             ))
                         )}
                         </div>
                     )}
-                    </div>
+
+                </motion.div>
                 );
             })
         )}
@@ -2792,21 +2854,48 @@ export default function RoadmapPage() {
     };
 
     const handleCreateDependency = async (type: DependencyType, note: string) => {
-        if (!dependencyModal || !state.currentUser) return;
+        if (!dependencyModal) return;
+        const effectiveUserId = state.currentUser?.id || userId;
+        if (!effectiveUserId) {
+            triggerPopup('You must be logged in to create dependencies');
+            return;
+        }
         try {
-            await MockAPI.createDependency({
+            const result = await MockAPI.createDependency({
                 from_task_id: dependencyModal.sourceId,
                 to_task_id: dependencyModal.targetId,
                 type,
-                note,
-                userId: state.currentUser.id
+                note: note || undefined,
+                userId: effectiveUserId
             }, jwt!);
-            const data = await MockAPI.fetchData(jwt!);
-            dispatch({ type: 'INIT_DATA', payload: data });
+            // Update local state optimistically
+            const sourceId = dependencyModal.sourceId;
+            const targetId = dependencyModal.targetId;
+            const updatedTasks = state.tasks.map(t => {
+                if (t.id === targetId) {
+                    return { ...t, dependencyIds: [...(t.dependencyIds || []), sourceId] };
+                }
+                return t;
+            });
+            dispatch({ type: 'UPDATE_TASKS', payload: updatedTasks });
             setDependencyModal(null);
-        } catch (e) {
-            console.error(e);
-            alert("Failed to create dependency");
+            triggerPopup('Dependency created successfully!');
+            // Then refresh from server in background
+            try {
+                const data = await MockAPI.fetchData(jwt!);
+                dispatch({ type: 'INIT_DATA', payload: data });
+            } catch (_) {
+                // Ignore refresh errors - optimistic update is already applied
+            }
+        } catch (e: any) {
+            console.error('Dependency creation error:', e);
+            const msg = e?.message || 'Failed to create dependency';
+            if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('fetch')) {
+                triggerPopup('⚠️ Cannot reach server. Check your connection or NEXT_PUBLIC_API_URL setting.');
+            } else {
+                triggerPopup(`Error: ${msg}`);
+            }
+            setDependencyModal(null);
         }
     };
 
@@ -2955,25 +3044,20 @@ export default function RoadmapPage() {
         <div className="min-h-screen bg-slate-50 dark:bg-[#0B1120] text-slate-900 dark:text-slate-100 flex flex-col font-sans animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out">
 
         {/* TOP HEADER */}
-        <header className="bg-white dark:bg-[#0F172A] border-b border-slate-200 dark:border-slate-800 p-3 md:p-4 z-40">
+        <header className="bg-white dark:bg-[#0F172A] border-b border-slate-200 dark:border-slate-800 px-3 py-2 md:px-4 z-40 sticky top-0 flex-shrink-0 shadow-sm">
         <div className="max-w-[1800px] mx-auto">
         {/* MOBILE LAYOUT */}
-        <div className="flex flex-col gap-3 md:hidden">
-        <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-        <div className="p-1.5 bg-violet-500/10 rounded-lg">
-        <Layers className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+        <div className="flex flex-col gap-2 md:hidden">
+        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+        <div className="p-1.5 bg-violet-500/10 rounded-lg flex-shrink-0">
+        <Layers className="w-4 h-4 text-violet-600 dark:text-violet-400" />
         </div>
-        <div>
-        <h1 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Execution Roadmap</h1>
-        <div className="flex items-center gap-2 text-[10px] text-slate-500">
-        <span className="flex items-center gap-1"><GitCommit className="w-2 h-2"/> v2.4.0</span>
-        <span>•</span>
-        <span>{logDateAndQuarter()}</span>
+        <div className="min-w-0">
+        <h1 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white truncate">Roadmap</h1>
         </div>
         </div>
-        </div>
-        <button onClick={handleAutoBalance} className="bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-violet-500/20 transition-all active:scale-95">
+        <button onClick={handleAutoBalance} className="flex-shrink-0 bg-violet-600 hover:bg-violet-700 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-lg shadow-violet-500/20 transition-all active:scale-95">
         <Zap className="w-3 h-3" /> Balance
         </button>
         </div>
@@ -2981,13 +3065,8 @@ export default function RoadmapPage() {
         <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
         <input type="text" placeholder="Search tasks..." className="pl-8 pr-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs w-full focus:ring-2 focus:ring-violet-500 outline-none" onChange={(e) => dispatch({ type: 'SET_FILTER', payload: { query: e.target.value } })} />
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3">
-        <select value={state.activePersonaId||''} onChange={(e)=> dispatch({type:'SET_ACTIVE_PERSONA',payload:e.target.value})} className="flex-shrink-0 px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300">
-        <option value={'all'}>All Tasks</option>
-        <option value={'personas'}>Personas</option>
-        {personas.map((item,index)=>(<option key={index} value={item}>{item}</option>))}
-        </select>
-        <select value={state.timelineView} onChange={(e) => dispatch({ type: 'SET_TIMELINE_VIEW', payload: e.target.value as TimelineView })} className="flex-shrink-0 px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300">
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{scrollbarWidth:'none'}}>
+        <select value={state.timelineView} onChange={(e) => dispatch({ type: 'SET_TIMELINE_VIEW', payload: e.target.value as TimelineView })} className="flex-shrink-0 px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300">
         <option value="Daily">Daily</option>
         <option value="Weekly">Weekly</option>
         <option value="Monthly">Monthly</option>
@@ -2998,25 +3077,16 @@ export default function RoadmapPage() {
         <button onClick={() => dispatch({ type: 'SET_LAYOUT_MODE', payload: 'Sprint' })} className={`p-1.5 rounded-md transition-all ${state.layoutMode === 'Sprint' ? 'bg-white dark:bg-slate-700 shadow text-violet-600' : 'text-slate-400'}`}><List className="w-3.5 h-3.5" /></button>
         </div>
         </div>
-        <AnimatePresence>
-        {state.activePersonaId && state.activePersonaId !== 'all' && state.activePersonaId !== 'personas' && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="flex items-center gap-2 px-3 py-2 bg-violet-500/10 border border-violet-500/30 rounded-lg">
-            <div className="w-2 h-2 bg-violet-500 rounded-full animate-pulse" />
-            <span className="text-xs font-medium text-violet-600 dark:text-violet-400 flex-1">Filtering: {state.activePersonaId}</span>
-            <button onClick={() => dispatch({type:'SET_ACTIVE_PERSONA', payload: 'all'})} className="text-violet-500 hover:text-violet-700"><X className="w-3.5 h-3.5" /></button>
-            </motion.div>
-        )}
-        </AnimatePresence>
         </div>
 
         {/* DESKTOP LAYOUT */}
-        <div className="hidden md:flex flex-col xl:flex-row justify-between gap-4">
-        <div className="flex items-center gap-4">
+        <div className="hidden md:flex items-center gap-2 flex-wrap xl:flex-nowrap">
+        <div className="flex items-center gap-3 flex-shrink-0">
         <div className="p-2 bg-indigo-500/10 rounded-lg">
-        <Layers className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+        <Layers className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
         </div>
         <div>
-        <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Execution Roadmap</h1>
+        <h1 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white leading-tight">Execution Roadmap</h1>
         <div className="flex items-center gap-2 text-xs text-slate-500">
         <span className="flex items-center gap-1"><GitCommit className="w-3 h-3"/> v2.4.0</span>
         <span>•</span>
@@ -3024,42 +3094,42 @@ export default function RoadmapPage() {
         </div>
         </div>
         </div>
-        <div className="flex items-center z-50 gap-3 bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto overflow-y-visible">
-        <div className="relative group">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-        <input type="text" placeholder="Search (JQL support pending)..." className="pl-9 pr-4 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm w-64 focus:ring-2 focus:ring-indigo-500 outline-none" onChange={(e) => dispatch({ type: 'SET_FILTER', payload: { query: e.target.value } })} />
+        <div className="flex items-center z-50 gap-1.5 bg-slate-50 dark:bg-slate-900/50 p-1 rounded-xl border border-slate-200 dark:border-slate-800 flex-wrap flex-1 min-w-0">
+        <div className="relative">
+        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+        <input type="text" placeholder="Search tasks..." className="pl-8 pr-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm w-36 lg:w-48 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" onChange={(e) => dispatch({ type: 'SET_FILTER', payload: { query: e.target.value } })} />
         </div>
-        <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
-        <select value={state.activePersonaId||''} onChange={(e)=> dispatch({type:'SET_ACTIVE_PERSONA',payload:e.target.value})} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${state.filters.onlyMyPersonas ? 'bg-indigo-700 text-violet-700 dark:bg-indigo-900 dark:text-indigo-300' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
+        <div className="h-5 w-px bg-slate-300 dark:bg-slate-700" />
+        <select value={state.activePersonaId||''} onChange={(e)=> dispatch({type:'SET_ACTIVE_PERSONA',payload:e.target.value})} className="px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 transition-colors">
         <option value={'all'}>All Tasks</option>
         <option value={'personas'}>Personas</option>
         {personas.map((item,index)=>(<option key={index} value={item}>{item}</option>))}
         </select>
         <AnimatePresence>
         {state.activePersonaId && state.activePersonaId !== 'all' && state.activePersonaId !== 'personas' && (
-            <motion.div initial={{ opacity: 0, scale: 0.95, x: -10 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.95, x: -10 }} className="flex items-center gap-2 px-3 py-1.5 bg-violet-500/10 border border-violet-500/30 rounded-lg">
-            <div className="w-2 h-2 bg-violet-500 rounded-full animate-pulse" />
-            <span className="text-sm font-medium text-violet-600 dark:text-violet-400">{state.activePersonaId}</span>
-            <button onClick={() => dispatch({type:'SET_ACTIVE_PERSONA', payload: 'all'})} className="ml-1 text-violet-500 hover:text-violet-700"><X className="w-3 h-3" /></button>
+            <motion.div initial={{ opacity: 0, scale: 0.95, x: -10 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.95, x: -10 }} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-violet-500/10 border border-violet-500/30 rounded-lg">
+            <div className="w-1.5 h-1.5 bg-violet-500 rounded-full animate-pulse" />
+            <span className="text-xs font-medium text-violet-600 dark:text-violet-400">{state.activePersonaId}</span>
+            <button onClick={() => dispatch({type:'SET_ACTIVE_PERSONA', payload: 'all'})} className="ml-0.5 text-violet-500 hover:text-violet-700"><X className="w-3 h-3" /></button>
             </motion.div>
         )}
         </AnimatePresence>
-        <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
-        <select value={state.timelineView} onChange={(e) => dispatch({ type: 'SET_TIMELINE_VIEW', payload: e.target.value as TimelineView })} className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+        <div className="h-5 w-px bg-slate-300 dark:bg-slate-700" />
+        <select value={state.timelineView} onChange={(e) => dispatch({ type: 'SET_TIMELINE_VIEW', payload: e.target.value as TimelineView })} className="px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
         <option value="Daily">Daily View</option>
         <option value="Weekly">Weekly View</option>
         <option value="Monthly">Monthly View</option>
         </select>
         <ProjectVisibilityDropdown state={state} dispatch={dispatch} onDeleteProject={handleDeleteProject} />
-        <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
+        <div className="h-5 w-px bg-slate-300 dark:bg-slate-700" />
         <button onClick={() => setAddProjectVisible(true)} className="p-1.5 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-slate-800 transition-all" title="Add Project"><FolderPlus className="w-4 h-4" /></button>
-        <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
-        <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-1">
+        <div className="h-5 w-px bg-slate-300 dark:bg-slate-700" />
+        <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 gap-0.5">
         <button onClick={() => dispatch({ type: 'SET_LAYOUT_MODE', payload: 'Roadmap' })} className={`p-1.5 rounded-md transition-all ${state.layoutMode === 'Roadmap' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}><Calendar className="w-4 h-4" /></button>
         <button onClick={() => dispatch({ type: 'SET_LAYOUT_MODE', payload: 'Board' })} className={`p-1.5 rounded-md transition-all ${state.layoutMode === 'Board' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}><LayoutGrid className="w-4 h-4" /></button>
         <button onClick={() => dispatch({ type: 'SET_LAYOUT_MODE', payload: 'Sprint' })} className={`p-1.5 rounded-md transition-all ${state.layoutMode === 'Sprint' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}><List className="w-4 h-4" /></button>
         </div>
-        <button onClick={handleAutoBalance} className="ml-auto bg-violet-600 dark:bg-violet-600 hover:bg-violet-700 dark:hover:bg-violet-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg shadow-violet-500/20 transition-all"><Zap className="w-3 h-3" /> Auto-Balance</button>
+        <button onClick={handleAutoBalance} className="ml-auto flex-shrink-0 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1.5 shadow-lg shadow-violet-500/25 transition-all active:scale-95 whitespace-nowrap"><Zap className="w-3.5 h-3.5" /> Auto-Balance</button>
         </div>
         </div>
         </div>
@@ -3195,7 +3265,7 @@ export default function RoadmapPage() {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 100 }}
                     transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                    className="fixed top-28 right-6 z-[9999] flex items-center gap-3 bg-violet-700 text-white px-6 py-4 rounded-xl shadow-2xl border-l-4 border-violet-400"
+                    className="fixed top-28 right-6 z-[9999] flex items-center gap-3 bg-violet-700 text-white px-6 py-4 rounded-xl shadow-2xl border-l-4 border-violet-400 max-w-sm"
                     >
                     <Sparkles className="w-5 h-5 text-violet-200" />
                     <div>
@@ -3235,6 +3305,7 @@ export default function RoadmapPage() {
                 }
                 .scrollbar-thin::-webkit-scrollbar {
                     height: 4px;
+                    width: 4px;
                 }
                 .scrollbar-thin::-webkit-scrollbar-track {
                     background: transparent;
@@ -3243,13 +3314,36 @@ export default function RoadmapPage() {
                     background: #4a5568;
                     border-radius: 2px;
                 }
+                .custom-scrollbar::-webkit-scrollbar {
+                    height: 6px;
+                    width: 6px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                    background: #334155;
+                    border-radius: 3px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background: #475569;
+                }
                 .touch-none {
                     -webkit-touch-callout: none;
                     -webkit-user-select: none;
                     user-select: none;
                 }
                 button:active {
-                    transform: scale(0.98);
+                    transform: scale(0.97);
+                }
+                @keyframes shimmer {
+                    0% { background-position: -200% 0; }
+                    100% { background-position: 200% 0; }
+                }
+                .animate-shimmer {
+                    background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.1) 50%, transparent 75%);
+                    background-size: 200% 100%;
+                    animation: shimmer 2s infinite;
                 }
                 @media (max-width: 768px) {
                     .task-card {
