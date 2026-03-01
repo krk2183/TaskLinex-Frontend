@@ -135,51 +135,11 @@ interface BalanceSuggestion {
 // ==========================================
 
 
-const MOCK_USERS: User[] = [
-    {
-        id: 'u1', name: 'Matthew', avatar: 'https://i.pravatar.cc/150?u=1', baseCapacity: 80,
-        personas: [
-            { id: 'p_u1_1', name: 'Matt (Lead)', role: 'Lead', capacity: 40, color: 'bg-purple-500' },
-            { id: 'p_u1_2', name: 'Matt (Dev)', role: 'Dev', capacity: 60, color: 'bg-blue-500' }
-        ]
-    },
-{
-    id: 'u2', name: 'Sarah', avatar: 'https://i.pravatar.cc/150?u=2', baseCapacity: 95,
-    personas: [{ id: 'p_u2_1', name: 'Sarah', role: 'Data Scientist', capacity: 95, color: 'bg-emerald-500' }]
-},
-{
-    id: 'u3', name: 'David', avatar: 'https://i.pravatar.cc/150?u=3', baseCapacity: 40,
-    personas: [{ id: 'p_u3_1', name: 'David', role: 'Backend', capacity: 40, color: 'bg-indigo-500' }]
-}
-];
-
 const MOCK_PROJECTS: Project[] = [
     { id: 'proj2', name: 'Web Dashboard V2', visible: true }
 ];
 
-const MOCK_TASKS: Task[] = [
-    {
-        id: 't1', projectId: 'proj1', title: 'Model Training P1', startDate: 1, duration: 4, plannedDuration: 4,
-        progress: 100, status: 'Completed', priority: 'High', ownerId: 'u1', personaId: 'p_u1_1', dependencyIds: [], tags: ['AI']
-    }
-];
-
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-interface TriggerProps {
-    onTrigger: () => void;
-    isActive: boolean;
-}
-
-const ActionButton: React.FC<TriggerProps> = ({ onTrigger, isActive }) => (
-    <button
-    onClick={onTrigger}
-    disabled={isActive}
-    className="btn-trigger"
-    >
-    {isActive ? 'Active...' : 'Show Notification'}
-    </button>
-);
 
 // Async Placeholder
 const MockAPI = {
@@ -372,7 +332,7 @@ const AppContext = createContext<{ state: AppState; dispatch: React.Dispatch<Act
 
 function appReducer(state: AppState, action: Action): AppState {
     switch (action.type) {
-        case 'INIT_DATA':
+        case 'INIT_DATA': {
             // Preserve currentUser if not provided in payload
             const currentUser = action.payload.currentUser || state.currentUser;
             return {
@@ -381,6 +341,7 @@ function appReducer(state: AppState, action: Action): AppState {
                 currentUser,
                 isLoading: false
             };
+        }
         case 'SET_ACTIVE_PERSONA':
             return {...state,activePersonaId:action.payload}
         case 'SET_LAYOUT_MODE':
@@ -399,6 +360,8 @@ function appReducer(state: AppState, action: Action): AppState {
         }
         case 'TOGGLE_PERSONA':
             return { ...state, activePersonaId: action.payload === state.activePersonaId ? null : action.payload };
+        case 'ADD_TASK':
+            return { ...state, tasks: [...state.tasks, ...action.payload] };
         case 'UPDATE_TASKS':
             return { ...state, tasks: action.payload };
         case 'SET_LOADING':
@@ -2678,9 +2641,6 @@ export default function RoadmapPage() {
     const [dependencyModal, setDependencyModal] = useState<{ sourceId: string, targetId: string } | null>(null);
     const [dependencyEditModal, setDependencyEditModal] = useState<{ fromId: string, toId: string } | null>(null);
     const [mobileLinkSource, setMobileLinkSource] = useState<string | null>(null); // mobile dep linking
-    const [timelineScale, setTimelineScale] = useState<'Week' | 'Month' | 'Quarter'>('Week');
-    const [error, setError] = useState<string | null>(null);
-    const loading = state.isLoading;
     const { viewingDependenciesFor } = state;
     const personas = ['P1', 'P2', 'P3'] // Dummy
     const [popupMessage, setPopupMessage] = useState<string | null>(null);
@@ -2818,9 +2778,6 @@ export default function RoadmapPage() {
                 body: JSON.stringify({ id: projectToDelete.id, userId })
             });
             if (!res.ok) throw new Error("Failed");
-
-            const newProjects = state.projects.filter(p => p.id !== projectToDelete.id);
-            const newTasks = state.tasks.filter(t => t.projectId !== projectToDelete.id);
 
             dispatch({ type: 'DELETE_PROJECT', payload: projectToDelete.id });
         } catch (e) {
