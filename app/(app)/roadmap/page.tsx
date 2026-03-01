@@ -896,6 +896,7 @@ const WorkloadHUD = () => {
 
 
         </div>
+        </div>
     );
 };
 
@@ -1515,6 +1516,7 @@ const ProjectVisibilityDropdown: React.FC<{
             document.body
         )}
         </div>
+        </div>
     );
 };
 
@@ -1727,6 +1729,7 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
             </div>
             </div>
         )}
+        </div>
         </div>
         </div>
         </div>
@@ -2625,6 +2628,7 @@ const GanttCanvas: React.FC<GanttCanvasProps> = ({
                 );
             })
         )}
+        </div>
         </div>
         </div>
         </div>
