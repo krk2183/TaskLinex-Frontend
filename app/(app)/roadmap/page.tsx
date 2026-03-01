@@ -2481,6 +2481,193 @@ const EnvoySidebar: React.FC<{isOpen: boolean; onClose: () => void; suggestions:
 };
 
 
+
+// ============================================================
+// GANTT CANVAS COMPONENT (extracted from IIFE for Turbopack)
+// ============================================================
+interface GanttCanvasProps {
+    filteredTasks: Task[];
+    state: AppState;
+    dispatch: React.Dispatch<Action>;
+    collapsedProjects: string[];
+    toggleProjectCollapse: (id: string) => void;
+    handleDeleteProject: (id: string) => void;
+    setDependencyModal: (v: { sourceId: string; targetId: string } | null) => void;
+    setTaskToEdit: (t: Task | undefined) => void;
+    setAVisible: (v: boolean) => void;
+    setMobileLinkSource: (id: string | null) => void;
+    handleBackgroundDrop: (e: React.DragEvent) => void;
+}
+
+const GanttCanvas: React.FC<GanttCanvasProps> = ({
+    filteredTasks, state, dispatch, collapsedProjects,
+    toggleProjectCollapse, handleDeleteProject,
+    setDependencyModal, setTaskToEdit, setAVisible,
+    setMobileLinkSource, handleBackgroundDrop,
+}) => {
+    const visibleTasks = filteredTasks.filter(t => !state.hiddenProjects.has(t.projectId));
+    const realTimestampTasks = visibleTasks.filter(t => t.startDate > 10000);
+
+    const earliestTaskDate = realTimestampTasks.length > 0
+        ? new Date(Math.min(...realTimestampTasks.map(t => t.startDate * 1000)))
+        : undefined;
+    const latestTaskDate = realTimestampTasks.length > 0
+        ? new Date(Math.max(...realTimestampTasks.map(t => (t.startDate + (t.duration || 86400)) * 1000)))
+        : undefined;
+
+    const { totalUnits, startDate } = getDateRangeForView(state.timelineView, state.viewMode, earliestTaskDate, latestTaskDate);
+    const labels = generateTimelineLabels(state.timelineView, totalUnits, startDate);
+    const cellWidth = state.timelineView === 'Daily' ? 120 : state.timelineView === 'Weekly' ? 150 : 200;
+    const totalWidth = totalUnits * cellWidth;
+
+    // Today column calculation
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const startMs = startDate.getTime();
+    const nowMs = now.getTime();
+    let todayColumnIndex = -1;
+    if (state.timelineView === 'Daily') {
+        todayColumnIndex = Math.floor((nowMs - startMs) / (24 * 60 * 60 * 1000));
+    } else if (state.timelineView === 'Weekly') {
+        todayColumnIndex = Math.floor((nowMs - startMs) / (7 * 24 * 60 * 60 * 1000));
+    } else {
+        todayColumnIndex = (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth());
+    }
+    const todayScrollLeft = Math.max(0, todayColumnIndex * cellWidth - 180);
+
+    return (
+        <div
+            className="flex-1 overflow-x-auto overflow-y-auto relative custom-scrollbar bg-slate-50 dark:bg-[#0B1120]"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleBackgroundDrop}
+            ref={(el) => {
+                if (el && el.dataset.scrolled !== 'true') {
+                    el.dataset.scrolled = 'true';
+                    el.scrollLeft = todayScrollLeft;
+                }
+            }}
+        >
+        <div style={{ width: `${totalWidth}px`, minWidth: `${totalWidth}px` }} className="relative">
+
+        {/* TIMELINE HEADER */}
+        <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
+        <div className="flex">
+        {labels.map((label, i) => {
+            const isToday = i === todayColumnIndex;
+            return (
+                <div key={i} className={`py-3 border-r border-slate-200 dark:border-slate-800/50 text-center flex-shrink-0 relative ${isToday ? 'bg-violet-700/10 dark:bg-violet-700/20' : ''}`} style={{ width: `${cellWidth}px` }}>
+                {isToday && <div className="absolute inset-x-0 top-0 h-0.5 bg-violet-600" />}
+                <span className={`text-xs font-bold uppercase ${isToday ? 'text-violet-600 dark:text-violet-400' : 'text-slate-400'} ${state.timelineView === 'Monthly' ? 'tracking-normal' : 'tracking-widest'}`}>
+                    {isToday && state.timelineView !== 'Monthly' ? '⬤ ' : ''}{label}
+                </span>
+                </div>
+            );
+        })}
+        </div>
+        </div>
+
+        {/* BODY */}
+        <div className="relative" style={{ paddingTop: '16px', paddingBottom: '64px' }}>
+
+        {/* BACKGROUND GRID */}
+        <div className="absolute inset-0 flex pointer-events-none z-0">
+        {Array.from({ length: totalUnits }).map((_, i) => {
+            const isToday = i === todayColumnIndex;
+            return (
+                <div key={i} className={`border-r h-full flex-shrink-0 ${isToday ? 'border-violet-500/50 bg-violet-700/5 dark:bg-violet-700/10' : 'border-dashed border-slate-200 dark:border-slate-800'}`} style={{ width: `${cellWidth}px` }} />
+            );
+        })}
+        </div>
+
+        {/* TODAY VERTICAL LINE */}
+        {todayColumnIndex >= 0 && todayColumnIndex < totalUnits && (
+            <div className="absolute top-0 bottom-0 w-0.5 bg-violet-600/50 z-20 pointer-events-none" style={{ left: `${todayColumnIndex * cellWidth + cellWidth / 2}px` }} />
+        )}
+
+        {/* DEPENDENCY LINES */}
+        <DependencyLayer tasks={state.tasks} projects={state.projects} viewMode={state.viewMode} collapsedProjects={collapsedProjects} />
+
+        {/* PROJECT ROWS */}
+        <div className="space-y-10 relative z-10">
+        {state.isLoading ? (
+            <div className="space-y-12 p-2">
+            {[1, 2].map((i) => (
+                <div key={i} className="animate-pulse space-y-4">
+                <div className="flex items-center gap-3 mb-4"><div className="w-4 h-4 bg-slate-200 dark:bg-slate-800 rounded" /><div className="h-6 w-48 bg-slate-200 dark:bg-slate-800 rounded" /></div>
+                <div className="h-14 w-full bg-slate-200/50 dark:bg-slate-800/50 rounded-lg" />
+                <div className="h-14 w-full bg-slate-200/50 dark:bg-slate-800/50 rounded-lg" />
+                </div>
+            ))}
+            </div>
+        ) : state.projects.filter(p => !state.hiddenProjects.has(p.id)).length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-96 text-center">
+            <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-full mb-4"><Search className="w-8 h-8 text-slate-400" /></div>
+            <h3 className="text-lg font-medium text-slate-900 dark:text-white">No matching tasks found</h3>
+            <p className="text-slate-500 dark:text-slate-400 mt-1">Try adjusting your search or filters.</p>
+            </div>
+        ) : (
+            state.projects
+            .filter(project => !state.hiddenProjects.has(project.id))
+            .map(project => {
+                const projectTasks = filteredTasks.filter(t => t.projectId === project.id);
+                const isCollapsed = collapsedProjects.includes(project.id);
+                const projectUserIds = [...new Set(projectTasks.map(task => task.ownerId))];
+                const projectUsers = state.users.filter(user => projectUserIds.includes(user.id));
+
+                return (
+                    <div key={project.id}>
+                    {/* Project label — sticky left */}
+                    <div className="sticky left-0 flex items-center gap-3 pr-4 w-fit z-20 bg-slate-50 dark:bg-[#0B1120] py-1 rounded-r-lg mb-2">
+                    <button onClick={() => toggleProjectCollapse(project.id)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors">
+                    <ChevronRight className={`w-4 h-4 text-slate-500 transition-transform duration-300 ${!isCollapsed ? 'rotate-90' : ''}`} />
+                    </button>
+                    <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">{project.name}</h3>
+                    <span className="text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full font-mono">{projectTasks.length}</span>
+                    <button onClick={() => handleDeleteProject(project.id)} className="ml-2 p-1 text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors" title="Delete Project"><Trash2 className="w-3.5 h-3.5" /></button>
+                    <div className={`flex items-center transition-all duration-300 ease-in-out ${isCollapsed ? 'pl-2 opacity-100' : '-translate-x-4 opacity-0 h-0 w-0'}`}>
+                    {projectUsers.map((user, index) => (
+                        <img key={user.id} src={user.avatar} alt={user.name} className="w-6 h-6 rounded-full border-2 border-slate-50 dark:border-[#0B1120]" style={{ marginLeft: index > 0 ? '-10px' : 0, zIndex: projectUsers.length - index }} />
+                    ))}
+                    </div>
+                    </div>
+
+                    {/* Task rows — no overflow:hidden so absolutely-positioned bars are visible */}
+                    {!isCollapsed && (
+                        <div className="space-y-1">
+                        {projectTasks.length === 0 ? (
+                            <div className="flex items-center py-6 pl-4 text-slate-400 text-sm">No tasks in this project yet</div>
+                        ) : (
+                            projectTasks.map(task => (
+                                <RoadmapRow
+                                key={task.id}
+                                task={task}
+                                users={state.users}
+                                level={0}
+                                dispatch={dispatch}
+                                envoyActiveTaskId={state.envoyActive}
+                                onEdit={(t) => { setTaskToEdit(t); setAVisible(true); }}
+                                personas={state.personas}
+                                onTaskDrop={(s, t) => setDependencyModal({ sourceId: s, targetId: t })}
+                                parentId={null}
+                                timelineView={state.timelineView}
+                                startDate={startDate}
+                                totalUnits={totalUnits}
+                                onMobileLinkDependency={(taskId) => setMobileLinkSource(taskId)}
+                                />
+                            ))
+                        )}
+                        </div>
+                    )}
+                    </div>
+                );
+            })
+        )}
+        </div>
+        </div>
+        </div>
+    );
+};
+
 export default function RoadmapPage() {
     const { user, jwt, logout } = useAuth();
     const userId = user?.id;
@@ -2921,169 +3108,21 @@ export default function RoadmapPage() {
         <WorkloadHUD />
 
         {/* GANTT CANVAS */}
-        {state.layoutMode === 'Roadmap' && (() => {
-            const visibleTasks = filteredTasks.filter(t => !state.hiddenProjects.has(t.projectId));
-            const realTimestampTasks = visibleTasks.filter(t => t.startDate > 10000);
-
-            const earliestTaskDate = realTimestampTasks.length > 0
-                ? new Date(Math.min(...realTimestampTasks.map(t => t.startDate * 1000)))
-                : undefined;
-            const latestTaskDate = realTimestampTasks.length > 0
-                ? new Date(Math.max(...realTimestampTasks.map(t => (t.startDate + (t.duration || 86400)) * 1000)))
-                : undefined;
-
-            const { totalUnits, startDate } = getDateRangeForView(state.timelineView, state.viewMode, earliestTaskDate, latestTaskDate);
-            const labels = generateTimelineLabels(state.timelineView, totalUnits, startDate);
-            const cellWidth = state.timelineView === 'Daily' ? 120 : state.timelineView === 'Weekly' ? 150 : 200;
-            const totalWidth = totalUnits * cellWidth;
-
-            // Calculate today's column index for highlight + auto-scroll
-            const now = new Date();
-            now.setHours(0, 0, 0, 0);
-            const startMs = startDate.getTime();
-            const nowMs = now.getTime();
-            let todayColumnIndex = -1;
-            if (state.timelineView === 'Daily') {
-                todayColumnIndex = Math.floor((nowMs - startMs) / (24 * 60 * 60 * 1000));
-            } else if (state.timelineView === 'Weekly') {
-                todayColumnIndex = Math.floor((nowMs - startMs) / (7 * 24 * 60 * 60 * 1000));
-            } else {
-                todayColumnIndex = (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth());
-            }
-            const todayScrollLeft = Math.max(0, todayColumnIndex * cellWidth - 180);
-
-            return (
-                <div
-                    className="flex-1 overflow-x-auto overflow-y-auto relative custom-scrollbar bg-slate-50 dark:bg-[#0B1120]"
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={handleBackgroundDrop}
-                    ref={(el) => {
-                        if (el && el.dataset.scrolled !== 'true') {
-                            el.dataset.scrolled = 'true';
-                            el.scrollLeft = todayScrollLeft;
-                        }
-                    }}
-                >
-                <div style={{ width: `${totalWidth}px`, minWidth: `${totalWidth}px` }} className="relative">
-
-                {/* TIMELINE HEADER */}
-                <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
-                <div className="flex">
-                {labels.map((label, i) => {
-                    const isToday = i === todayColumnIndex;
-                    return (
-                        <div key={i} className={`py-3 border-r border-slate-200 dark:border-slate-800/50 text-center flex-shrink-0 relative ${isToday ? 'bg-violet-700/10 dark:bg-violet-700/20' : ''}`} style={{ width: `${cellWidth}px` }}>
-                        {isToday && <div className="absolute inset-x-0 top-0 h-0.5 bg-violet-600" />}
-                        <span className={`text-xs font-bold uppercase ${isToday ? 'text-violet-600 dark:text-violet-400' : 'text-slate-400'} ${state.timelineView === 'Monthly' ? 'tracking-normal' : 'tracking-widest'}`}>
-                            {isToday && state.timelineView !== 'Monthly' ? '⬤ ' : ''}{label}
-                        </span>
-                        </div>
-                    );
-                })}
-                </div>
-                </div>
-
-                {/* BODY */}
-                <div className="relative" style={{ paddingTop: '16px', paddingBottom: '64px' }}>
-
-                {/* BACKGROUND GRID */}
-                <div className="absolute inset-0 flex pointer-events-none z-0">
-                {Array.from({ length: totalUnits }).map((_, i) => {
-                    const isToday = i === todayColumnIndex;
-                    return (
-                        <div key={i} className={`border-r h-full flex-shrink-0 ${isToday ? 'border-violet-500/50 bg-violet-700/5 dark:bg-violet-700/10' : 'border-dashed border-slate-200 dark:border-slate-800'}`} style={{ width: `${cellWidth}px` }} />
-                    );
-                })}
-                </div>
-
-                {/* TODAY VERTICAL LINE */}
-                {todayColumnIndex >= 0 && todayColumnIndex < totalUnits && (
-                    <div className="absolute top-0 bottom-0 w-0.5 bg-violet-600/50 z-20 pointer-events-none" style={{ left: `${todayColumnIndex * cellWidth + cellWidth / 2}px` }} />
-                )}
-
-                {/* DEPENDENCY LINES */}
-                <DependencyLayer tasks={state.tasks} projects={state.projects} viewMode={state.viewMode} collapsedProjects={collapsedProjects} />
-
-                {/* PROJECT ROWS */}
-                <div className="space-y-10 relative z-10">
-                {state.isLoading ? (
-                    <div className="space-y-12 p-2">
-                    {[1, 2].map((i) => (
-                        <div key={i} className="animate-pulse space-y-4">
-                        <div className="flex items-center gap-3 mb-4"><div className="w-4 h-4 bg-slate-200 dark:bg-slate-800 rounded" /><div className="h-6 w-48 bg-slate-200 dark:bg-slate-800 rounded" /></div>
-                        <div className="h-14 w-full bg-slate-200/50 dark:bg-slate-800/50 rounded-lg" />
-                        <div className="h-14 w-full bg-slate-200/50 dark:bg-slate-800/50 rounded-lg" />
-                        </div>
-                    ))}
-                    </div>
-                ) : state.projects.filter(p => !state.hiddenProjects.has(p.id)).length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-96 text-center">
-                    <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-full mb-4"><Search className="w-8 h-8 text-slate-400" /></div>
-                    <h3 className="text-lg font-medium text-slate-900 dark:text-white">No matching tasks found</h3>
-                    <p className="text-slate-500 dark:text-slate-400 mt-1">Try adjusting your search or filters.</p>
-                    </div>
-                ) : (
-                    state.projects
-                    .filter(project => !state.hiddenProjects.has(project.id))
-                    .map(project => {
-                        const projectTasks = filteredTasks.filter(t => t.projectId === project.id);
-                        const isCollapsed = collapsedProjects.includes(project.id);
-                        const projectUserIds = [...new Set(projectTasks.map(task => task.ownerId))];
-                        const projectUsers = state.users.filter(user => projectUserIds.includes(user.id));
-
-                        return (
-                            <div key={project.id}>
-                            {/* Project label — sticky left */}
-                            <div className="sticky left-0 flex items-center gap-3 pr-4 w-fit z-20 bg-slate-50 dark:bg-[#0B1120] py-1 rounded-r-lg mb-2">
-                            <button onClick={() => toggleProjectCollapse(project.id)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors">
-                            <ChevronRight className={`w-4 h-4 text-slate-500 transition-transform duration-300 ${!isCollapsed ? 'rotate-90' : ''}`} />
-                            </button>
-                            <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">{project.name}</h3>
-                            <span className="text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full font-mono">{projectTasks.length}</span>
-                            <button onClick={() => handleDeleteProject(project.id)} className="ml-2 p-1 text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors" title="Delete Project"><Trash2 className="w-3.5 h-3.5" /></button>
-                            <div className={`flex items-center transition-all duration-300 ease-in-out ${isCollapsed ? 'pl-2 opacity-100' : '-translate-x-4 opacity-0 h-0 w-0'}`}>
-                            {projectUsers.map((user, index) => (
-                                <img key={user.id} src={user.avatar} alt={user.name} className="w-6 h-6 rounded-full border-2 border-slate-50 dark:border-[#0B1120]" style={{ marginLeft: index > 0 ? '-10px' : 0, zIndex: projectUsers.length - index }} />
-                            ))}
-                            </div>
-                            </div>
-
-                            {/* Task rows — full timeline width, no overflow:hidden so bars are visible */}
-                            {!isCollapsed && (
-                                <div className="space-y-1">
-                                {projectTasks.length === 0 ? (
-                                    <div className="flex items-center py-6 pl-4 text-slate-400 text-sm">No tasks in this project yet</div>
-                                ) : (
-                                    projectTasks.map(task => (
-                                        <RoadmapRow
-                                        key={task.id}
-                                        task={task}
-                                        users={state.users}
-                                        level={0}
-                                        dispatch={dispatch}
-                                        envoyActiveTaskId={state.envoyActive}
-                                        onEdit={(t) => { setTaskToEdit(t); setAVisible(true); }}
-                                        personas={state.personas}
-                                        onTaskDrop={(s, t) => setDependencyModal({ sourceId: s, targetId: t })}
-                                        parentId={null}
-                                        timelineView={state.timelineView}
-                                        startDate={startDate}
-                                        totalUnits={totalUnits}
-                                        onMobileLinkDependency={(taskId) => setMobileLinkSource(taskId)}
-                                        />
-                                    ))
-                                )}
-                                </div>
-                            )}
-                            </div>
-                        );
-                    })
-                )}
-                </div>
-                </div>
-                </div>
-            );
-        })()}
+        {state.layoutMode === 'Roadmap' && (
+            <GanttCanvas
+                filteredTasks={filteredTasks}
+                state={state}
+                dispatch={dispatch}
+                collapsedProjects={collapsedProjects}
+                toggleProjectCollapse={toggleProjectCollapse}
+                handleDeleteProject={handleDeleteProject}
+                setDependencyModal={setDependencyModal}
+                setTaskToEdit={setTaskToEdit}
+                setAVisible={setAVisible}
+                setMobileLinkSource={setMobileLinkSource}
+                handleBackgroundDrop={handleBackgroundDrop}
+            />
+        )}
 
         {/* BOARD & SPRINT VIEWS */}
         {state.layoutMode === 'Board' && <BoardView tasks={filteredTasks} users={state.users} />}
