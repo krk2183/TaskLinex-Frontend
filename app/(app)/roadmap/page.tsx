@@ -2846,7 +2846,7 @@ export default function RoadmapPage() {
             triggerPopup('Dependency created successfully!');
             // Then refresh from server in background
             try {
-                const data = await MockAPI.fetchData(jwt!);
+                const data = await MockAPI.fetchData(jwt!,userId);
                 dispatch({ type: 'INIT_DATA', payload: data });
             } catch (_) {
                 // Ignore refresh errors - optimistic update is already applied
