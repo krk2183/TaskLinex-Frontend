@@ -439,9 +439,24 @@ const PortalTooltip = ({ text, rect }: { text: string, rect: DOMRect }) => {
 };
 
 // NEW: Helper functions for timeline view calculations with proper date handling
-const getDateRangeForView = (timelineView: TimelineView, viewMode: ViewMode) => {
+const getDateRangeForView = (timelineView: TimelineView, viewMode: ViewMode, earliestTaskDate?: Date) => {
+    // Start from earliest task date (or 2 weeks before it), or today if no tasks
     const now = new Date();
-    const startDate = new Date(now);
+    let startDate: Date;
+
+    if (earliestTaskDate) {
+        // Start 1 unit before the earliest task so it's clearly visible
+        startDate = new Date(earliestTaskDate);
+        if (timelineView === 'Daily') {
+            startDate.setDate(startDate.getDate() - 7); // 1 week buffer
+        } else if (timelineView === 'Weekly') {
+            startDate.setDate(startDate.getDate() - 14); // 2 week buffer
+        } else {
+            startDate.setMonth(startDate.getMonth() - 1); // 1 month buffer
+        }
+    } else {
+        startDate = new Date(now);
+    }
     startDate.setHours(0, 0, 0, 0);
 
     let totalUnits = 0;
@@ -620,7 +635,8 @@ const DependencyBadge = ({ type, count, onClick }: { type: string, count: number
 // Task Item
 const TaskItem = ({
     task, user, dispatch, isEnvoyActive, onEdit, personas, onTaskDrop, level = 0,
-    parentId, onToggleExpand, isExpanded, hasDependents, timelineView, startDate, totalUnits
+    parentId, onToggleExpand, isExpanded, hasDependents, timelineView, startDate, totalUnits,
+    onMobileLinkDependency
 }: {
     task: Task, user: User | undefined, dispatch: any, isEnvoyActive: boolean,
     onEdit: (t: Task) => void, personas: Persona[],
@@ -631,7 +647,8 @@ const TaskItem = ({
                   hasDependents?: boolean,
                   timelineView: TimelineView,
                   startDate: Date,
-                  totalUnits: number
+                  totalUnits: number,
+                  onMobileLinkDependency?: (taskId: string) => void
 }) => {
     const triggerRef = useRef<HTMLButtonElement>(null);
     const taskRef = useRef<HTMLDivElement>(null);
@@ -707,6 +724,17 @@ const TaskItem = ({
         className="absolute top-6 -right-3 z-[60] bg-white dark:bg-slate-900 text-gray-400 rounded-full shadow transition-all scale-0 group-hover:scale-100 hover:text-indigo-600 p-1">
         <Info className="w-4 h-4" />
         </button>
+
+        {/* Mobile Dependency Link Button — always visible on touch, hover-only on desktop */}
+        {onMobileLinkDependency && (
+            <button
+            onClick={(e) => { e.stopPropagation(); onMobileLinkDependency(task.id); }}
+            className="absolute -top-3 -left-3 z-[60] bg-white dark:bg-slate-900 text-gray-400 rounded-full shadow border transition-all scale-100 md:scale-0 md:group-hover:scale-100 hover:text-violet-600 p-1"
+            title="Add dependency (mobile)"
+            >
+            <GitCommit className="w-4 h-4" />
+            </button>
+        )}
 
         {/* Envoy Trigger (Hover) - Right Side */}
         <button
@@ -884,13 +912,11 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
     const [title, setTitle] = useState(taskToEdit?.title || '');
     const [projectId, setProjectId] = useState(taskToEdit?.projectId || state.projects[0]?.id || '');
     const [ownerId, setOwnerId] = useState(taskToEdit?.ownerId || state.currentUser?.id || state.users[0]?.id || '');
-    const [startDate, setStartDate] = useState(taskToEdit?.startDate || 1);
     const [startDateInput, setStartDateInput] = useState(timestampToDateString(taskToEdit?.startDate));
-    const [duration, setDuration] = useState(taskToEdit?.duration || 1);
     const [deadlineInput, setDeadlineInput] = useState(() => {
         if (taskToEdit?.startDate && taskToEdit?.duration) {
-            const deadline = taskToEdit.startDate + (taskToEdit.duration * 7 * 24 * 60 * 60);
-            return timestampToDateString(deadline);
+            // duration is stored in seconds
+            return timestampToDateString(taskToEdit.startDate + taskToEdit.duration);
         }
         return '';
     });
@@ -899,30 +925,20 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
 
     const currentUserId = state.currentUser?.id || user?.id;
 
-    // Update duration when deadline changes
-    const handleDeadlineChange = (deadlineStr: string) => {
-        setDeadlineInput(deadlineStr);
-        if (startDateInput && deadlineStr) {
+    // Compute duration in seconds from start/end dates
+    const computedDurationSeconds = useMemo(() => {
+        if (startDateInput && deadlineInput) {
             const start = dateStringToTimestamp(startDateInput);
-            const end = dateStringToTimestamp(deadlineStr);
-            const durationInWeeks = Math.max(1, Math.ceil((end - start) / (7 * 24 * 60 * 60)));
-            setDuration(durationInWeeks);
+            const end = dateStringToTimestamp(deadlineInput);
+            return Math.max(3600, end - start); // minimum 1 hour
         }
-    };
+        return 7 * 24 * 60 * 60; // default 1 week
+    }, [startDateInput, deadlineInput]);
 
-    // Update deadline when start date changes
-    const handleStartDateChange = (startStr: string) => {
-        setStartDateInput(startStr);
-        if (startStr) {
-            setStartDate(dateStringToTimestamp(startStr));
-            if (deadlineInput) {
-                const start = dateStringToTimestamp(startStr);
-                const end = dateStringToTimestamp(deadlineInput);
-                const durationInWeeks = Math.max(1, Math.ceil((end - start) / (7 * 24 * 60 * 60)));
-                setDuration(durationInWeeks);
-            }
-        }
-    };
+    const computedStartTimestamp = useMemo(() => {
+        if (startDateInput) return dateStringToTimestamp(startDateInput);
+        return Math.floor(Date.now() / 1000);
+    }, [startDateInput]);
 
     const handleDelete = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -998,9 +1014,9 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
             id: taskToEdit ? taskToEdit.id : `t${Date.now()}`,
             projectId,
             title,
-            startDate: Number(startDate),
-            duration: Number(duration),
-            plannedDuration: taskToEdit ? taskToEdit.plannedDuration : Number(duration),
+            startDate: computedStartTimestamp,
+            duration: computedDurationSeconds,
+            plannedDuration: taskToEdit ? taskToEdit.plannedDuration : computedDurationSeconds,
             progress: taskToEdit ? taskToEdit.progress : 0,
             status,
             priority,
@@ -1105,35 +1121,35 @@ const AddTaskModal = ({ onClose, taskToEdit}: AddTaskModalProps) => {
 
         <div className="grid grid-cols-2 gap-4">
         <div>
-        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Start Date</label>
+        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Start Date *</label>
         <input
         type="date"
+        required
         value={startDateInput}
-        onChange={e => handleStartDateChange(e.target.value)}
+        onChange={e => setStartDateInput(e.target.value)}
         className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
         />
         </div>
         <div>
-        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Deadline</label>
+        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">End Date *</label>
         <input
         type="date"
+        required
         value={deadlineInput}
-        onChange={e => handleDeadlineChange(e.target.value)}
+        min={startDateInput}
+        onChange={e => setDeadlineInput(e.target.value)}
         className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
         />
         </div>
         </div>
 
-        <div>
-        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Duration (Weeks)</label>
-        <input
-        type="number"
-        min="1" max="52"
-        value={duration}
-        onChange={e => setDuration(Number(e.target.value))}
-        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-        />
-        </div>
+        {/* Duration Preview */}
+        {startDateInput && deadlineInput && computedDurationSeconds > 0 && (
+            <div className="px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs text-indigo-700 dark:text-indigo-300">
+            ⏱ Duration: {Math.round(computedDurationSeconds / (24 * 60 * 60))} day{Math.round(computedDurationSeconds / (24 * 60 * 60)) !== 1 ? 's' : ''}
+            {' '}({Math.round(computedDurationSeconds / (7 * 24 * 60 * 60) * 10) / 10} weeks)
+            </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
         <div>
@@ -1708,6 +1724,77 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
     );
 };
 
+const MobileDependencyPickerModal = ({
+    sourceTask,
+    allTasks,
+    onClose,
+    onSelect
+}: {
+    sourceTask: Task,
+    allTasks: Task[],
+    onClose: () => void,
+    onSelect: (targetId: string) => void
+}) => {
+    const [search, setSearch] = useState('');
+    const otherTasks = allTasks.filter(t => t.id !== sourceTask.id && t.title.toLowerCase().includes(search.toLowerCase()));
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 animate-in slide-in-from-bottom duration-300 sm:animate-in sm:zoom-in-95">
+        <div className="flex items-center justify-between mb-4">
+        <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Add Dependency</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Select a task that <span className="font-semibold text-indigo-600 dark:text-indigo-400">"{sourceTask.title}"</span> depends on</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 transition-colors">
+            <X className="w-5 h-5" />
+        </button>
+        </div>
+
+        <div className="relative mb-3">
+        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+        <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search tasks..."
+            className="pl-9 pr-3 py-2 w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+        </div>
+
+        <div className="max-h-64 overflow-y-auto space-y-1">
+        {otherTasks.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-6 italic">No matching tasks found</p>
+        ) : (
+            otherTasks.map(task => {
+                const statusColors: Record<TaskStatus, string> = {
+                    'On Track': 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+                    'At Risk': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+                    'Blocked': 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
+                    'Completed': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+                };
+                return (
+                    <button
+                        key={task.id}
+                        onClick={() => onSelect(task.id)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition-colors border border-transparent hover:border-indigo-200 dark:hover:border-indigo-800 group"
+                    >
+                        <span className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate flex-1 mr-2">{task.title}</span>
+                        <span className={`flex-shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${statusColors[task.status]}`}>{task.status}</span>
+                    </button>
+                );
+            })
+        )}
+        </div>
+
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 mt-3">
+        <button onClick={onClose} className="w-full py-2 text-sm font-medium text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
+        </div>
+        </div>
+        </div>
+    );
+};
+
 const DependencyCreationModal = ({ sourceId, targetId, tasks, onClose, onConfirm }: { sourceId: string, targetId: string, tasks: Task[], onClose: () => void, onConfirm: (type: DependencyType, note: string) => void }) => {
     const sourceTask = findTask(tasks, sourceId);
     const targetTask = findTask(tasks, targetId);
@@ -2026,7 +2113,7 @@ const SprintView = ({ tasks, users }: { tasks: Task[], users: User[] }) => {
     );
 };
 
-const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyActiveTaskId, personas, parentId, timelineView, startDate, totalUnits }: {
+const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyActiveTaskId, personas, parentId, timelineView, startDate, totalUnits, onMobileLinkDependency }: {
     task: Task;
     users: User[];
     level: number;
@@ -2039,6 +2126,7 @@ const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyAct
     timelineView: TimelineView;
     startDate: Date;
     totalUnits: number;
+    onMobileLinkDependency?: (taskId: string) => void;
 }) => {
     const [isExpanded, setIsExpanded] = useState(true);
     const dependents = task.dependents || [];
@@ -2078,6 +2166,7 @@ const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyAct
     timelineView={timelineView}
     startDate={startDate}
     totalUnits={totalUnits}
+    onMobileLinkDependency={onMobileLinkDependency}
     />
     </div>
     <AnimatePresence initial={false}>
@@ -2109,6 +2198,7 @@ const RoadmapRow = ({ task, users, level, onEdit, onTaskDrop, dispatch, envoyAct
             timelineView={timelineView}
             startDate={startDate}
             totalUnits={totalUnits}
+            onMobileLinkDependency={onMobileLinkDependency}
             />
             </motion.div>
         ))}
@@ -2352,6 +2442,7 @@ export default function RoadmapPage() {
     const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
     const [dependencyModal, setDependencyModal] = useState<{ sourceId: string, targetId: string } | null>(null);
     const [dependencyEditModal, setDependencyEditModal] = useState<{ fromId: string, toId: string } | null>(null);
+    const [mobileLinkSource, setMobileLinkSource] = useState<string | null>(null); // mobile dep linking
     const [timelineScale, setTimelineScale] = useState<'Week' | 'Month' | 'Quarter'>('Week');
     const [error, setError] = useState<string | null>(null);
     const loading = state.isLoading;
@@ -2359,15 +2450,15 @@ export default function RoadmapPage() {
     const personas = ['P1', 'P2', 'P3'] // Dummy
     const [popupMessage, setPopupMessage] = useState<string | null>(null);
     const [mounted, setMounted] = useState(false);
-    
+
     // Auto-Balance Modal State (moved here to ensure it's declared before usage)
     const [showAutoBalanceModal, setShowAutoBalanceModal] = useState(false);
     const [balanceSuggestions, setBalanceSuggestions] = useState<BalanceSuggestion[]>([]);
     const [autoBalanceLoading, setAutoBalanceLoading] = useState(false);
-    
+
     // Add task modal state
     const [addVisible, setAVisible] = useState(false);
-    
+
     // Envoy Sidebar State
     const [showEnvoySidebar, setShowEnvoySidebar] = useState(false);
 
@@ -2773,7 +2864,13 @@ export default function RoadmapPage() {
 
         {/* GANTT CANVAS */}
         {state.layoutMode === 'Roadmap' && (() => {
-            const { totalUnits, startDate } = getDateRangeForView(state.timelineView, state.viewMode);
+            // Compute earliest task date across all visible tasks for smart timeline start
+            const visibleTasks = filteredTasks.filter(t => !state.hiddenProjects.has(t.projectId));
+            const earliestTaskDate = visibleTasks.length > 0
+                ? new Date(Math.min(...visibleTasks.map(t => t.startDate * 1000)))
+                : undefined;
+
+            const { totalUnits, startDate } = getDateRangeForView(state.timelineView, state.viewMode, earliestTaskDate);
             const labels = generateTimelineLabels(state.timelineView, totalUnits, startDate);
             const cellWidth = state.timelineView === 'Daily' ? 120 : state.timelineView === 'Weekly' ? 150 : 200;
             const totalWidth = totalUnits * cellWidth;
@@ -2906,6 +3003,7 @@ export default function RoadmapPage() {
                                     timelineView={state.timelineView}
                                     startDate={startDate}
                                     totalUnits={totalUnits}
+                                    onMobileLinkDependency={(taskId) => setMobileLinkSource(taskId)}
                                     />
                                 ))
                             )}
@@ -2974,6 +3072,19 @@ export default function RoadmapPage() {
                 project={projectToDelete}
                 onClose={() => setProjectToDelete(null)}
                 onConfirm={confirmDeleteProject}
+                />
+            )}
+
+            {/* Mobile Dependency Picker */}
+            {mobileLinkSource && (
+                <MobileDependencyPickerModal
+                sourceTask={state.tasks.find(t => t.id === mobileLinkSource)!}
+                allTasks={state.tasks}
+                onClose={() => setMobileLinkSource(null)}
+                onSelect={(targetId) => {
+                    setDependencyModal({ sourceId: mobileLinkSource, targetId });
+                    setMobileLinkSource(null);
+                }}
                 />
             )}
 
