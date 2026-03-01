@@ -1764,7 +1764,6 @@ const EnvoyDrawer: React.FC<EnvoyDrawerProps> = ({ taskId, isOpen, onClose, onUp
         </div>
         </div>
         </div>
-        </div>
     );
 };
 
