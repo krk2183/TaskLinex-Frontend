@@ -3006,7 +3006,7 @@ export default function RoadmapPage() {
 
     return (
         <AppContext.Provider value={{ state, dispatch }}>
-        <div className="min-h-screen bg-slate-50 dark:bg-[#0B1120] text-slate-900 dark:text-slate-100 flex flex-col font-sans animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out">
+        <div className="min-h-screen overflow-y-auto bg-slate-50 dark:bg-[#0B1120] text-slate-900 dark:text-slate-100 flex flex-col font-sans animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out">
 
         {/* TOP HEADER */}
         <header className="bg-white dark:bg-[#0F172A] border-b border-slate-200 dark:border-slate-800 px-3 py-2 md:px-4 z-40 sticky top-0 flex-shrink-0 shadow-sm">
