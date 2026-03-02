@@ -762,7 +762,7 @@ export default function PulsePage() {
     }, [userId, jwt]);
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 font-sans selection:bg-indigo-500/30">
+        <div className="min-h-screen bg-slate-950 text-slate-200 p-4 md:p-8 overflow-y-auto font-sans selection:bg-indigo-500/30">
         {/* Header */}
         <div className="max-w-7xl mx-auto mb-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
